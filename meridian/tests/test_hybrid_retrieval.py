@@ -1,5 +1,6 @@
 """The one hybrid search: pure helpers, the arms, the gate, the fallback, the labels."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -298,9 +299,106 @@ def test_phase_5_and_phase_3_call_the_same_function():
     assert "from backend.retrieval.hybrid import retrieval_search" in source
 
 
-def test_only_the_hybrid_module_queries_the_vector_function():
-    offenders = [
-        str(path) for path in Path("backend").rglob("*.py")
-        if "FROM semantic_trip_search(" in path.read_text() and path.name != "hybrid.py"
-    ]
-    assert offenders == []
+MERIDIAN = Path(__file__).resolve().parents[1]
+# The vector function's readers: the hybrid module and its dependency-free Lambda port. The
+# Workflow Runtime's staged copy of backend/ is generated and not scanned.
+VECTOR_FUNCTION_READERS = {
+    "backend/retrieval/hybrid.py",
+    "meridian_agentcore/agentcore/gateway_targets/meridian_catalog/lambda_function.py",
+    # The retired target's Lambda reads it too until Task 14 deletes that folder and this line.
+    "meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/lambda_function.py",
+}
+
+
+# Code a Runtime stages from backend/ or generates at build time; the originals are scanned.
+STAGED_COPIES = (
+    "meridian_agentcore/app/MeridianWorkflow/backend",
+    "meridian_agentcore/app/MeridianConcierge/concierge_definition.py",
+)
+SCANNED_ROOTS = (
+    "backend", "meridian_agentcore/agentcore/gateway_targets", "meridian_agentcore/app")
+# A call of the function in SQL, any case: the name followed by "(", after the keyword FROM,
+# JOIN, SELECT or LATERAL or after a comma, with optional space, a "(" (ROWS FROM (, SELECT (),
+# and an optional schema, each part optionally double-quoted. Prose such as "call
+# semantic_trip_search(query)" has none of those before the name and is not matched.
+VECTOR_CALL = re.compile(
+    r'(?:\bfrom|\bjoin|\bselect|\blateral|,)\s*\(?\s*(?:"?\w+"?\.)?"?semantic_trip_search"?\s*\(',
+    re.IGNORECASE)
+VECTOR_STATEMENT = re.compile(r"\bSEMANTIC_SQL\b")
+
+
+def vector_function_readers(base):
+    """Relative paths under ``base`` whose Python source reads the vector function."""
+    staged = tuple(base / name for name in STAGED_COPIES)
+    readers = set()
+    for root in SCANNED_ROOTS:
+        for path in (base / root).rglob("*.py"):
+            if any(path == copy or copy in path.parents for copy in staged):
+                continue
+            text = path.read_text()
+            if VECTOR_CALL.search(text) or VECTOR_STATEMENT.search(text):
+                readers.add(path.relative_to(base).as_posix())
+    return readers
+
+
+def test_only_the_hybrid_module_and_its_lambda_port_query_the_vector_function():
+    assert vector_function_readers(MERIDIAN) == VECTOR_FUNCTION_READERS
+
+
+@pytest.mark.parametrize("source", [
+    'SQL = "SELECT * FROM semantic_trip_search(%s::vector, 5)"',
+    'SQL = "select * from semantic_trip_search (%s::vector, 5)"',
+    'SQL = "SELECT * FROM public.semantic_trip_search(%s)"',
+    'SQL = """SELECT *\n  FROM\n  SEMANTIC_TRIP_SEARCH(%s)"""',
+    'SQL = "SELECT semantic_trip_search(%s)"',
+    'SQL = "SELECT * FROM t,semantic_trip_search(%s)"',
+    'SQL = \'SELECT * FROM "semantic_trip_search"(%s)\'',
+    'SQL = \'SELECT * FROM "public"."semantic_trip_search"(%s)\'',
+    'SQL = "SELECT * FROM ROWS FROM (semantic_trip_search(%s))"',
+    'SQL = "SELECT (semantic_trip_search(%s)).package_id"',
+    'SQL = "SELECT * FROM t CROSS JOIN LATERAL semantic_trip_search(%s)"',
+    "from backend.retrieval.hybrid import SEMANTIC_SQL",
+    "rows = execute(hybrid.SEMANTIC_SQL, (vector, 5))",
+], ids=["plain", "lowercase and spaced", "schema", "line break and caps", "select list",
+        "comma without space", "quoted", "schema quoted", "rows from",
+        "select parenthesized", "lateral", "imported statement", "used statement"])
+@pytest.mark.parametrize("where", [
+    "backend/tools/other.py", "meridian_agentcore/agentcore/gateway_targets/meridian_holds/x.py",
+    "meridian_agentcore/app/MeridianConcierge/reader.py",
+])
+def test_a_second_reader_of_the_vector_function_is_rejected(tmp_path, source, where):
+    for name in VECTOR_FUNCTION_READERS:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("SQL = 'FROM semantic_trip_search(%s)'")
+    for root in SCANNED_ROOTS:
+        (tmp_path / root).mkdir(parents=True, exist_ok=True)
+    assert vector_function_readers(tmp_path) == VECTOR_FUNCTION_READERS
+    (tmp_path / where).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / where).write_text(source)
+    assert vector_function_readers(tmp_path) == VECTOR_FUNCTION_READERS | {where}
+
+
+def test_a_staged_copy_and_prose_about_the_function_are_not_readers(tmp_path):
+    for root in SCANNED_ROOTS:
+        (tmp_path / root).mkdir(parents=True, exist_ok=True)
+    staged = tmp_path / "meridian_agentcore/app/MeridianWorkflow/backend/retrieval/hybrid.py"
+    staged.parent.mkdir(parents=True)
+    staged.write_text("SQL = 'FROM semantic_trip_search(%s)'")
+    prose = tmp_path / "meridian_agentcore/app/MeridianConcierge/prompts.py"
+    prose.parent.mkdir(parents=True, exist_ok=True)
+    prose.write_text("PROMPT = 'call semantic_trip_search(query, limit=5) once'")
+    assert vector_function_readers(tmp_path) == set()
+
+
+async def test_a_duplicate_rerank_index_lists_its_trip_once(run):
+    semantic = [row("A", similarity=0.9), row("B", similarity=0.8)]
+    details = [row("A"), row("B")]
+    rerank = [{"index": 1, "score": 0.97}, {"index": 1, "score": 0.5},
+              {"index": 0, "score": 0.12}]
+
+    ranked, _spans, counts = await run(FakeDb(semantic=semantic, details=details),
+                                       FakeEmbeddings(rerank=rerank))
+
+    assert [r["package_id"] for r in ranked] == ["B", "A"]
+    assert [r["rank_delta"] for r in ranked] == [1, -1]
+    assert counts["reranked"] is True

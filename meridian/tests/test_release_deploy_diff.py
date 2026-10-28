@@ -319,3 +319,152 @@ def test_a_failed_diffs_tail_is_masked_too():
     found = findings(f"boom {rs.POOL} \"allowedClients\": [\"{rs.CLIENT}\"]", code=1)
 
     assert rs.POOL not in found[0] and rs.CLIENT not in found[0]
+
+
+# ------------------------------------------- the catalog release at the complete stage
+
+CATALOG_ADDED = fx.line("+", TARGET, fx.JWT_GATEWAY, "TargetMeridianCatalog")
+HOLDS_TARGET_UPDATED = fx.line("~", TARGET, fx.JWT_GATEWAY, "TargetMeridianHolds")
+HOLDS_FUNCTION_UPDATED = fx.line(
+    "~", "AWS::Lambda::Function", fx.JWT_GATEWAY, "LambdaMeridianHolds/Function")
+RULE_UPDATED = fx.line("~", "AWS::BedrockAgentCore::Policy", fx.ENGINE, "Policymeridian_read_tools")
+SEMANTIC_REMOVED = fx.line("-", TARGET, fx.JWT_GATEWAY, "TargetSemanticTripSearchLambda")
+
+
+def complete(*blocks):
+    return findings(fx.plan(*blocks), stage=stages.COMPLETE, replacing=False)
+
+
+def test_deploy_a_adds_the_catalog_target_and_updates_the_holds_target_and_function():
+    assert complete(CATALOG_ADDED, HOLDS_TARGET_UPDATED, HOLDS_FUNCTION_UPDATED) == []
+
+
+def test_deploy_b_changes_a_rule_retires_the_semantic_target_and_updates_the_runtime():
+    assert complete(RULE_UPDATED, SEMANTIC_REMOVED, fx.CONCIERGE) == []
+
+
+OTHER_REMOVALS = [
+    fx.line("-", TARGET, fx.JWT_GATEWAY, "TargetMeridianHolds"),
+    fx.line("-", TARGET, fx.JWT_GATEWAY, "TargetMeridianCatalog"),
+    fx.line("-", TARGET, fx.JWT_GATEWAY, "TargetSemanticTripSearchLambdaV2"),
+    fx.line("-", TARGET, fx.JWT_GATEWAY, "TargetOldSemanticTripSearchLambda"),
+    fx.line("-", "AWS::Lambda::Function", fx.JWT_GATEWAY, "LambdaMeridianHolds/Function"),
+    fx.line("-", "AWS::Lambda::Function", fx.JWT_GATEWAY, "TargetSemanticTripSearchLambda"),
+    fx.line("-", "AWS::BedrockAgentCore::Policy", fx.ENGINE, "Policymeridian_read_tools"),
+    fx.line("-", "AWS::BedrockAgentCore::PolicyEngine", fx.ENGINE),
+    fx.line("-", GATEWAY, fx.JWT_GATEWAY),
+    fx.line("-", "AWS::BedrockAgentCore::Runtime", (
+        "Application/AgentMeridianConcierge/Runtime",
+        "ApplicationAgentMeridianConciergeRuntime")),
+]
+STAGE_PLANS = {
+    stages.GATEWAY: lambda: fx.first_stage(old=None),
+    stages.TARGETS: lambda: fx.targets_stage(),
+    stages.GOVERNANCE: lambda: fx.governance_stage(),
+    stages.COMPLETE: lambda: fx.plan(RULE_UPDATED, SEMANTIC_REMOVED, fx.CONCIERGE),
+}
+
+
+@pytest.mark.parametrize("removed", OTHER_REMOVALS)
+@pytest.mark.parametrize("stage", list(STAGE_PLANS))
+def test_a_removal_other_than_the_retired_target_is_refused_at_every_stage(stage, removed):
+    output = STAGE_PLANS[stage]() + "\n" + removed
+
+    found = findings(output, stage=stage, replacing=False)
+
+    assert any(removed.split()[2] in line and "the plan deletes" in line for line in found)
+
+
+@pytest.mark.parametrize("stage", [stages.TARGETS, stages.GOVERNANCE])
+def test_the_retired_target_may_not_go_in_an_earlier_stage(stage):
+    output = STAGE_PLANS[stage]() + "\n" + SEMANTIC_REMOVED
+
+    found = findings(output, stage=stage, replacing=False)
+
+    assert any("the plan deletes" in line for line in found)
+
+
+def test_the_first_stage_still_removes_only_the_replaced_gateways_constructs():
+    removed = fx.first_stage(old=None) + "\n" + SEMANTIC_REMOVED
+
+    found = findings(removed, replacing=False)
+
+    assert any("the plan deletes" in line for line in found)
+
+
+def test_a_complete_plan_with_none_of_the_catalog_changes_is_still_refused():
+    found = complete(HOLDS_FUNCTION_UPDATED)
+
+    assert any("AWS::BedrockAgentCore::Runtime" in line and "MeridianCatalog" in line
+               for line in found)
+
+
+def test_a_complete_plan_adding_a_different_target_is_refused():
+    found = complete(fx.line("+", TARGET, fx.JWT_GATEWAY, "TargetMeridianHolds"))
+
+    assert any("expects" in line for line in found)
+
+
+def test_a_complete_plan_adding_a_lookalike_catalog_target_is_refused():
+    found = complete(fx.line("+", TARGET, fx.JWT_GATEWAY, "TargetMeridianCatalogExtra"))
+
+    assert any("expects" in line for line in found)
+
+
+def test_a_complete_plan_adding_a_second_gateway_is_still_refused():
+    found = complete(CATALOG_ADDED, *fx.construct_lines("+", fx.IAM_GATEWAY, *fx.GATEWAY_PARTS))
+
+    assert any("must not add a Gateway" in line for line in found)
+
+
+def test_an_in_place_authorizer_change_is_still_refused_in_a_catalog_release():
+    changed = ("[~] AWS::BedrockAgentCore::Gateway Mcp/GatewayMeridianAuroraJwt/Resource Gw1\n"
+               " └─ [~] AuthorizerType\n")
+
+    found = complete(CATALOG_ADDED, changed)
+
+    assert any("authorizer type in place" in line for line in found)
+
+
+# ------------------------------------------- retiring a target needs the new Runtime
+
+def test_retiring_the_target_with_only_a_rule_update_is_refused():
+    found = complete(RULE_UPDATED, SEMANTIC_REMOVED)
+
+    assert any("retired" in line and "update a Runtime" in line for line in found)
+
+
+def test_retiring_the_target_with_only_the_catalog_add_is_refused():
+    found = complete(CATALOG_ADDED, SEMANTIC_REMOVED)
+
+    assert any("retired" in line and "update a Runtime" in line for line in found)
+
+
+def test_retiring_the_target_with_the_runtime_and_a_rule_passes():
+    assert complete(RULE_UPDATED, SEMANTIC_REMOVED, fx.CONCIERGE) == []
+    assert complete(SEMANTIC_REMOVED, fx.CONCIERGE) == []
+
+
+@pytest.mark.parametrize("path", [
+    "MeridianCatalog",
+    "Mcp/GatewayMeridianAuroraJwt/Targets/MeridianCatalog",
+    "Mcp/GatewayMeridianAuroraJwt/Target-MeridianCatalog",
+])
+def test_an_unknown_target_path_shape_is_not_taken_for_the_catalog_add(path):
+    added = f"[+] {TARGET} {path} McpGatewayMeridianAuroraJwtTargetsCatalog9F3A1C2B"
+
+    found = complete(added)
+
+    assert any("expects" in line for line in found)
+
+
+@pytest.mark.parametrize("path", [
+    "SemanticTripSearchLambda",
+    "Mcp/GatewayMeridianAuroraJwt/Targets/SemanticTripSearchLambda",
+])
+def test_an_unknown_target_path_shape_is_not_taken_for_the_retire(path):
+    removed = f"[-] {TARGET} {path} McpGatewayMeridianAuroraJwtSemantic9F3A1C2B"
+
+    found = complete(RULE_UPDATED, removed, fx.CONCIERGE)
+
+    assert any("the plan deletes" in line for line in found)

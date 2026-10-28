@@ -238,7 +238,7 @@ def test_loyalty_tool_uses_authenticated_traveler(monkeypatch) -> None:
         (
             "loyalty_balance",
             {
-                "traveler_id": "trv_authenticated",
+                "travelerId": "trv_authenticated",
                 "program": "United MileagePlus",
             },
         )

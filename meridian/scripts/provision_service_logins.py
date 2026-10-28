@@ -1,7 +1,7 @@
-"""Give the backend, gateway and identity logins passwords that only Secrets Manager knows.
+"""Give the backend, gateway, identity and catalog logins passwords only Secrets Manager knows.
 
-Migration 018 creates meridian_backend, meridian_gateway and meridian_identity with NOLOGIN.
-For each login this script:
+Migration 018 creates meridian_backend, meridian_gateway and meridian_identity, and migration 022
+creates meridian_catalog, with NOLOGIN. For each login this script:
 1. generates a password and sends Postgres only its SCRAM-SHA-256 verifier; the plaintext
    password never reaches the database, its logs or the Data API request;
 2. stores {"username", "password"} in that login's own Secrets Manager secret;
@@ -12,6 +12,17 @@ For each login this script:
 Re-running rotates the password and repairs a half-finished run. During a rotation, between
 ALTER ROLE and put_secret_value, anything holding the old secret fails. Without --apply it
 only reports what it would do. Run from meridian/ with AWS_PROFILE set.
+
+Usage:
+    python scripts/provision_service_logins.py --login catalog
+    python scripts/provision_service_logins.py --login catalog --apply \
+        --i-understand-this-changes-aws --write-env
+
+--login is required and has no default: name one login, or name all to act on every login.
+--apply changes AWS, so it also needs --i-understand-this-changes-aws, and exits without
+touching anything (exit 3, like the other release tools) when that flag is missing. Flags
+may not be abbreviated. --login all --apply rotates every login's
+password and breaks each running workload until it rereads its secret.
 """
 
 import argparse
@@ -35,6 +46,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.db.rds_data_client import RDSDataClient  # noqa: E402
+from scripts.identity_release.usage import UsageParser  # noqa: E402
 from scripts.provision_workflow_login import (  # noqa: E402
     DATA_API_ACTIONS,
     ENV_FILE,
@@ -46,6 +58,7 @@ CLUSTER_ARN_SHAPE = re.compile(r"arn:aws[a-z-]*:rds:[a-z0-9-]+:\d{12}:cluster:[A
 MAX_POLICY_VERSIONS = 5
 VERIFY_ATTEMPTS = 3
 VERIFY_DELAY_SECONDS = 2
+CONFIRM_FLAG = "--i-understand-this-changes-aws"
 
 
 @dataclass(frozen=True)
@@ -54,7 +67,7 @@ class LoginSpec:
 
     Attributes:
         key: The name used on the command line.
-        role: The Postgres role migration 018 created.
+        role: The Postgres role migration 018 or 022 created.
         secret_name: The Secrets Manager secret holding the role's credential.
         policy_name: The managed policy that lets a workload read that secret.
         env_key: The meridian/.env line that records the secret's ARN.
@@ -81,6 +94,9 @@ LOGINS: Dict[str, LoginSpec] = {
         LoginSpec("identity", "meridian_identity", "meridian/aurora/identity-login",
                   "MeridianIdentityAuroraAccess", "AURORA_IDENTITY_SECRET_ARN",
                   "the Cognito pre-token-generation Lambda"),
+        LoginSpec("catalog", "meridian_catalog", "meridian/aurora/catalog-login",
+                  "MeridianCatalogAuroraAccess", "AURORA_CATALOG_SECRET_ARN",
+                  "the meridian-catalog-tools Lambda behind the MeridianCatalog target"),
     )
 }
 
@@ -350,13 +366,18 @@ def _run(args: argparse.Namespace) -> None:
 
 def main(argv: Optional[list] = None) -> None:
     """Parse the CLI, provision the chosen logins and optionally record their secret ARNs."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--login", choices=[*LOGINS, "all"], default="all",
-                        help="which login to provision (default: all three)")
+    parser = UsageParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--login", choices=[*LOGINS, "all"], required=True,
+                        help="which login to provision; name all to act on every login")
     parser.add_argument("--apply", action="store_true", help="make the changes")
+    parser.add_argument(CONFIRM_FLAG, action="store_true", dest="confirmed",
+                        help="required with --apply: acknowledges that it changes AWS")
     parser.add_argument("--write-env", action="store_true",
                         help="write each secret ARN into meridian/.env after a verified run")
     args = parser.parse_args(argv)
+    if args.apply and not args.confirmed:
+        parser.error(f"--apply changes AWS (it rotates the chosen login's password); "
+                     f"add {CONFIRM_FLAG} to run it. Nothing was changed.")
     try:
         _run(args)
     except ClientError as err:

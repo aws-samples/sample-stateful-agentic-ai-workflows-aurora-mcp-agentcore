@@ -18,7 +18,8 @@ pytestmark = pytest.mark.database
 JORDAN = "trv_meridian_demo"
 DECOY = "trv_demo_decoy"
 PLACES_LEFT_SQL = "SELECT package_places_left(%s) AS places"
-CALLERS = ("meridian_app", "meridian_backend", "meridian_gateway", "meridian_workflow")
+CALLERS = ("meridian_app", "meridian_backend", "meridian_gateway", "meridian_workflow",
+           "meridian_catalog")
 
 
 def _later(hours: float) -> str:

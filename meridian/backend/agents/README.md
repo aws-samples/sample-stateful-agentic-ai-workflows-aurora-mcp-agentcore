@@ -49,6 +49,6 @@ these modules.
 | `AGENTCORE_*` / CLI `@aws/agentcore` | Runtime, Gateway, and Memory for Phase 4, Phase 5 holds, and all clicked holds |
 | `AGENTCORE_WORKFLOW_RUNTIME_ARN` | The `MeridianWorkflow` Runtime that runs Phase 5; set by `scripts/sync_agentcore_env.py --write` |
 | `MERIDIAN_AGENTCORE_AUTH` | `iam` (default) signs the Runtime and Gateway calls with AWS credentials; `jwt` sends the signed-in person's Amazon Cognito access token and takes the traveler from its claim |
-| `AURORA_WORKFLOW_SECRET_ARN` | The `meridian_workflow` login the Runtime uses; set by `scripts/provision_workflow_login.py --write-env` |
+| `AURORA_WORKFLOW_SECRET_ARN` | The `meridian_workflow` login the Runtime uses; set by `scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env` |
 
 All SQL, prompts, and tools use the **travel schema** (`trip_packages`, `bookings`, `travelers`, `traveler_preferences`).

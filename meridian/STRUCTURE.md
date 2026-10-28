@@ -111,7 +111,7 @@ uses the governed Gateway path.
 | `scripts/agentcore_caller.py` | Bind a seeded user's real access token for a smoke script in `jwt` mode; does nothing in `iam` mode |
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
 | `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload (`--traveler`, `--apply`), and stage the Runtime's backend copy |
-| `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, their secrets and managed policies |
+| `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway`, `meridian_identity` and `meridian_catalog` logins, their secrets and managed policies |
 | `scripts/seed_cognito_users.py`, `scripts/sync_cognito_env.py`, `scripts/cognito_tokens.py` | Create the two sign-in users and their traveler bindings, copy the identity stack outputs into `.env`, and mint real tokens for tests |
 | `scripts/release_identity.py`, `scripts/identity_release/` | Operate the coordinated identity release: read every hop back (`check`), deploy the Gateway stages, attach the interceptor, move the Lambdas, save a snapshot and roll back; dry run unless given `--apply --i-understand-this-changes-aws` |
 | `scripts/prove_backend_login.py` | Run the real backend on this machine as the `meridian_backend` login and drive it through the phase paths before the cutover |

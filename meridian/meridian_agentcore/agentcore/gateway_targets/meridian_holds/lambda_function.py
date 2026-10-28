@@ -1,4 +1,4 @@
-"""Gateway target: get_package_details, create_courtesy_hold and confirm_booking.
+"""Gateway target: get_package_details, loyalty_balance, create_courtesy_hold and confirm_booking.
 
 The gateway passes tool arguments as the event and the tool name in the client
 context. Before any traveler-scoped write, this function authorizes its own
@@ -8,7 +8,8 @@ inside one Data API transaction. The hold itself is the SQL function
 create_courtesy_hold from migration 008, so a retried tool call replays the
 same booking instead of taking a second one. Confirmation is confirm_booking
 from migration 010: it books catalog inventory in this database, takes no
-payment, and a retry reports the original confirmation.
+payment, and a retry reports the original confirmation. loyalty_balance reads the
+traveler's own saved loyalty programs under the same grant and scope.
 
 Cedar compares the total with the ``budgetCeilingCents`` the caller sent, which a
 caller holding a valid token can set to anything. So a new hold or a confirmation is
@@ -61,6 +62,7 @@ PREFERENCES_SQL = (
     "SELECT preference_key, preference_value FROM traveler_preferences "
     "WHERE traveler_id = :traveler ORDER BY confidence DESC, last_seen_at DESC LIMIT 50"
 )
+LOYALTY_SQL = "SELECT loyalty_programs FROM traveler_profiles WHERE traveler_id = :traveler"
 BOOKED_PARTY_SQL = (
     "SELECT bl.travelers_count, b.status FROM booking_lines bl "
     "JOIN bookings b ON b.booking_id = bl.booking_id "
@@ -186,7 +188,7 @@ def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[d
     response = RDS.execute_statement(**kwargs)
     rows = json.loads(response.get("formattedRecords") or "[]")
     for row in rows:
-        for key in ("durations", "availability", "highlights"):
+        for key in ("durations", "availability", "highlights", "loyalty_programs"):
             if isinstance(row.get(key), str):
                 row[key] = json.loads(row[key])
     return rows
@@ -218,7 +220,7 @@ def get_package_details(args: dict) -> dict:
     package_id = str(args.get("packageId", "")).strip()
     rows = query(PACKAGE_SQL, {"package_id": package_id})
     if not rows:
-        return {"error": f"Unknown package {package_id}"}
+        return {"error": "unknown_package", "package_id": package_id}
     package = rows[0]
     availability = package.get("availability") or {}
     open_slots = ", ".join(f"{k}: {v} places left" for k, v in availability.items())
@@ -628,8 +630,78 @@ def _named_error(error: Exception) -> str:
     return text[:300]
 
 
+def _loyalty_unavailable(traveler_id: str, program: str) -> dict:
+    return {
+        "traveler_id": traveler_id,
+        "program": program,
+        "error": "loyalty_balance_unavailable",
+        "reason": "No recorded balance for this program in the traveler's profile.",
+        "source": "traveler_profiles.loyalty_programs",
+    }
+
+
+def loyalty_from_programs(traveler_id: str, program: str, programs) -> dict:
+    """Pick the requested program from the saved programs. Port of the MCP server's matcher
+    (backend/mcp/concierge_server.py); tests/test_holds_loyalty.py keeps the two in step."""
+    requested = (program or "").strip().lower()
+    if not isinstance(programs, dict):
+        return _loyalty_unavailable(traveler_id, program)
+    for value in programs.values():
+        if not isinstance(value, dict):
+            continue
+        configured = str(value.get("program") or "")
+        if not (requested and configured and value.get("points_balance") is not None):
+            continue
+        if requested in configured.lower() or configured.lower() in requested:
+            return {
+                "traveler_id": traveler_id,
+                "program": configured,
+                "member_id": value.get("member_id"),
+                "points_balance": int(value.get("points_balance") or 0),
+                "tier": value.get("tier") or "Member",
+                "next_tier_threshold": None,
+                "points_to_next_tier": 0,
+                "source": "traveler_profiles.loyalty_programs",
+            }
+    return _loyalty_unavailable(traveler_id, program)
+
+
+def loyalty_balance(args: dict) -> dict:
+    """The authorized traveler's own balance, read under this role's grant and the traveler's RLS.
+
+    A traveler this workload has no grant for is refused with ``_grant_refusal``, which keeps the
+    deny row and names it, as the hold and the booking do.
+    """
+    traveler_id = str(args["travelerId"])
+    program = str(args.get("program", ""))
+    tx = RDS.begin_transaction(
+        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
+    )["transactionId"]
+    try:
+        governance = _authorize(traveler_id, tx)
+        if not governance["allowed"]:
+            _transaction("rollback", tx)
+            return _grant_refusal(governance, traveler_id)
+        _scope(traveler_id, tx)
+        rows = query(LOYALTY_SQL, {"traveler": traveler_id}, tx)
+        _transaction("commit", tx)
+    except Exception as error:  # noqa: BLE001 - named errors come back to the caller
+        _transaction("rollback", tx)
+        return {"error": _named_error(error)}
+    result = loyalty_from_programs(
+        traveler_id, program, (rows[0] if rows else {}).get("loyalty_programs"))
+    result["governance"] = governance
+    result["summary"] = (
+        f"{result['program']}: {result['tier']}, {result['points_balance']} points"
+        if "points_balance" in result
+        else f"No recorded balance for {program or 'that program'}"
+    )
+    return result
+
+
 TOOLS = {
     "get_package_details": get_package_details,
+    "loyalty_balance": loyalty_balance,
     "create_courtesy_hold": create_courtesy_hold,
     "confirm_booking": confirm_booking,
 }

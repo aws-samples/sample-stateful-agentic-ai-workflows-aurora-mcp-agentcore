@@ -17,6 +17,28 @@
     }
   },
   {
+    "name": "loyalty_balance",
+    "description": "Read the authorized traveler's loyalty points balance and tier for one program from the traveler's own saved profile. The platform pins the traveler.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "travelerId": {
+          "type": "string",
+          "description": "Traveler id. The platform pins this to the authorized traveler."
+        },
+        "program": {
+          "type": "string",
+          "description": "Loyalty program name, for example Marriott Bonvoy."
+        }
+      },
+      "required": [
+        "travelerId",
+        "program"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "create_courtesy_hold",
     "description": "Place a courtesy hold on one package duration for the authorized traveler. No payment. Cedar policy decides on the arguments before this runs.",
     "inputSchema": {

@@ -531,7 +531,8 @@ def run(args: argparse.Namespace, deps: Dependencies) -> int:
     secret_arn = (deps.env.get("AURORA_BACKEND_SECRET_ARN") or "").strip()
     if not secret_arn:
         return refuse("AURORA_BACKEND_SECRET_ARN is not set; run "
-                      "scripts/provision_service_logins.py --login backend --apply --write-env")
+                      "scripts/provision_service_logins.py --login backend --apply "
+                      "--i-understand-this-changes-aws --write-env")
     if not args.apply:
         try:
             return dry_run(deps, args.mode)

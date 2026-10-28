@@ -207,12 +207,50 @@ def test_the_wrong_account_stops_main_before_any_write(monkeypatch, tmp_path):
     monkeypatch.setattr(prov, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
-    monkeypatch.setattr("sys.argv", ["prov", "--apply", "--write-env"])
+    monkeypatch.setattr(
+        "sys.argv", ["prov", "--apply", "--i-understand-this-changes-aws", "--write-env"])
     with pytest.raises(SystemExit) as exc:
         prov.main()
     assert "999999999999" not in str(exc.value) and "3333" in str(exc.value)
     assert [c for n in ("secretsmanager", "iam", "rds-data") for c in clients[n].calls] == []
     assert not (tmp_path / ".env").exists()
+
+
+def _main_clients(monkeypatch, tmp_path):
+    clients = {"sts": Recorder(), "secretsmanager": Recorder(), "iam": Recorder(),
+               "rds-data": Recorder()}
+    for client in clients.values():
+        client.answers = {}
+    clients["sts"].answers = {"get_caller_identity": {"Account": "111122223333"}}
+    monkeypatch.setattr(prov.boto3, "client", lambda name, **kw: clients[name])
+    monkeypatch.setattr(prov, "ENV_FILE", tmp_path / ".env")
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
+    monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
+    return clients
+
+
+@pytest.mark.parametrize("argv", [
+    ["--apply"], ["--apply", "--write-env"], ["--apply", "--i"], ["--apply", "--i-understand"],
+])
+def test_apply_without_the_full_confirm_flag_exits_3_and_changes_nothing(
+        monkeypatch, tmp_path, capsys, argv):
+    clients = _main_clients(monkeypatch, tmp_path)
+    monkeypatch.setattr("sys.argv", ["prov", *argv])
+    with pytest.raises(SystemExit) as exc:
+        prov.main()
+    assert exc.value.code == 3
+    assert clients["sts"].calls == []
+    assert [c for n in ("secretsmanager", "iam", "rds-data") for c in clients[n].calls] == []
+    assert not (tmp_path / ".env").exists()
+    assert "--i-understand-this-changes-aws" in capsys.readouterr().err
+
+
+def test_a_dry_run_needs_no_confirm_flag(monkeypatch, tmp_path, capsys):
+    clients = _main_clients(monkeypatch, tmp_path)
+    monkeypatch.setattr("sys.argv", ["prov"])
+    prov.main()
+    assert "dry run" in capsys.readouterr().out
+    assert clients["rds-data"].calls == []
 
 
 class FailingClient:

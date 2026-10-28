@@ -211,7 +211,7 @@ async def test_call_tool_returns_a_structured_result_for_each(monkeypatch):
             return [{**ROW, "price_per_person": Decimal("1949.00"),
                      "highlights": ["Tsukiji", "Ginza", "Senso-ji", "Shibuya"]}]
 
-    monkeypatch.setattr(concierge_server, "_db", lambda: CatalogDb())
+    monkeypatch.setattr(catalog_tools, "get_rds_data_client", lambda: CatalogDb())
 
     converted = await concierge_server.mcp.call_tool(
         "currency_convert", {"amount": 100, "from_ccy": "USD", "to_ccy": "EUR"})

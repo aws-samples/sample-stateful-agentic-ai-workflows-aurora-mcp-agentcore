@@ -52,6 +52,10 @@ def runtime_env(spec: dict, name: str = "MeridianConcierge") -> dict[str, str]:
     return {var["name"]: var["value"] for var in runtime["envVars"]}
 
 
+def target_named(gateway: dict, name: str) -> dict:
+    return next(t for t in gateway["targets"] if t["name"] == name)
+
+
 def test_complete_render_fills_every_account_and_deployment_value() -> None:
     values = {**base_values(), "GATEWAY_ID": GATEWAY_ID, "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
 
@@ -73,10 +77,14 @@ def test_complete_render_fills_every_account_and_deployment_value() -> None:
         "policyEngineName": "MeridianGovernance",
         "mode": "ENFORCE",
     }
-    assert gateway["targets"][0]["lambdaFunctionArn"]["lambdaArn"] == (
+    assert target_named(gateway, "MeridianCatalog")["lambdaFunctionArn"]["lambdaArn"] == (
+        f"arn:aws:lambda:us-west-2:{ACCOUNT}:function:meridian-catalog-tools"
+    )
+    assert target_named(gateway, "SemanticTripSearchLambda")["lambdaFunctionArn"]["lambdaArn"] == (
         f"arn:aws:lambda:us-west-2:{ACCOUNT}:function:meridian-semantic-trip-search"
     )
-    resources = [s["Resource"] for s in gateway["targets"][1]["compute"]["iamPolicy"]["Statement"]]
+    holds = target_named(gateway, "MeridianHolds")
+    resources = [s["Resource"] for s in holds["compute"]["iamPolicy"]["Statement"]]
     assert resources == [
         f"arn:aws:ssm:us-west-2:{ACCOUNT}:parameter/meridian/aurora/*",
         CLUSTER_ARN,
@@ -102,8 +110,17 @@ def test_first_deployment_renders_without_policies_that_name_the_gateway() -> No
     assert runtime_env(spec)["MERIDIAN_POLICY_MODE"] == "ENFORCE"
     assert len(notes) == 4
     assert [t["name"] for t in spec["agentCoreGateways"][0]["targets"]] == [
-        "SemanticTripSearchLambda"]
+        "SemanticTripSearchLambda", "MeridianCatalog"]
     assert any("MeridianHolds" in note for note in notes)
+
+
+def test_the_holds_target_offers_loyalty_balance_after_package_details() -> None:
+    spec, _, _ = render_config.render(*templates(), {**base_values(), "GATEWAY_ID": GATEWAY_ID})
+
+    holds = target_named(spec["agentCoreGateways"][0], "MeridianHolds")
+
+    assert [t["name"] for t in holds["toolDefinitions"]] == [
+        "get_package_details", "loyalty_balance", "create_courtesy_hold", "confirm_booking"]
 
 
 def test_second_deployment_adds_policies_before_the_engine_id_exists() -> None:
@@ -335,6 +352,11 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         render_config.stage_workflow_runtime, "stage", lambda: real_stage(tmp_path / "bundle")
     )
+    real_concierge_stage = render_config.stage_concierge_runtime.stage
+    monkeypatch.setattr(
+        render_config.stage_concierge_runtime, "stage",
+        lambda: real_concierge_stage(tmp_path / "concierge"),
+    )
     return config_dir
 
 
@@ -385,6 +407,33 @@ def test_main_stages_the_workflow_bundle_and_reports_its_modules(
     manifest = tmp_path / "bundle" / "backend" / "BUNDLE_MANIFEST.json"
     modules = json.loads(manifest.read_text(encoding="utf-8"))
     assert f"staged {len(modules)} workflow modules" in capsys.readouterr().out
+
+
+def test_main_stages_the_concierge_definition_and_says_so(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_config.main([]) == 0
+
+    copy = tmp_path / "concierge" / "concierge_definition.py"
+    assert copy.read_bytes() == render_config.stage_concierge_runtime.SOURCE.read_bytes()
+    assert "staged concierge_definition.py into the MeridianConcierge Runtime" in (
+        capsys.readouterr().out)
+
+
+def test_a_failed_concierge_stage_writes_nothing_and_says_how_to_fix_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse() -> Path:
+        raise render_config.stage_concierge_runtime.StageError(
+            "concierge_definition.py imports backend; keep it to the standard library")
+
+    monkeypatch.setattr(render_config.stage_concierge_runtime, "stage", refuse)
+
+    assert render_config.main([]) == 1
+
+    assert "error: concierge_definition.py imports backend" in capsys.readouterr().err
+    assert not (render_config.CONFIG_DIR / render_config.SPEC_OUTPUT).exists()
+    assert not (render_config.CONFIG_DIR / render_config.TARGETS_OUTPUT).exists()
 
 
 def test_main_completes_from_the_deployed_state_and_the_env_file(

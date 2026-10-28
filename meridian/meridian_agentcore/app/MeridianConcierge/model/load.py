@@ -28,6 +28,6 @@ def load_model(model_id: str | None = None, region_name: str | None = None) -> B
         model_id=model_id,
         region_name=region_name or os.getenv("AWS_REGION", "us-east-1"),
         max_tokens=max_tokens,
-        boto_client_config=Config(retries={"mode": "adaptive", "max_attempts": MAX_ATTEMPTS}),
+        boto_client_config=Config(retries={"mode": "adaptive", "total_max_attempts": MAX_ATTEMPTS}),
         **options,
     )

@@ -1,4 +1,4 @@
-"""The backend, gateway and identity logins are provisioned without a password reaching Postgres."""
+"""The service logins are provisioned without a password reaching Postgres."""
 
 import base64
 import hashlib
@@ -60,14 +60,29 @@ def run(spec, aws, **overrides):
     return prov.provision_login(spec, **arguments)
 
 
-def test_there_are_exactly_three_logins_each_with_its_own_names():
-    assert sorted(prov.LOGINS) == ["backend", "gateway", "identity"]
+def test_there_are_exactly_four_logins_each_with_its_own_names():
+    assert sorted(prov.LOGINS) == ["backend", "catalog", "gateway", "identity"]
     specs = list(prov.LOGINS.values())
     for field in ("role", "secret_name", "policy_name", "env_key"):
-        assert len({getattr(s, field) for s in specs}) == 3
-    assert [s.role for s in specs] == ["meridian_backend", "meridian_gateway", "meridian_identity"]
+        assert len({getattr(s, field) for s in specs}) == 4
+    assert [s.role for s in specs] == [
+        "meridian_backend", "meridian_gateway", "meridian_identity", "meridian_catalog"]
     assert [s.env_key for s in specs] == [
-        "AURORA_BACKEND_SECRET_ARN", "AURORA_GATEWAY_SECRET_ARN", "AURORA_IDENTITY_SECRET_ARN"]
+        "AURORA_BACKEND_SECRET_ARN", "AURORA_GATEWAY_SECRET_ARN", "AURORA_IDENTITY_SECRET_ARN",
+        "AURORA_CATALOG_SECRET_ARN"]
+
+
+def test_the_catalog_login_has_its_own_secret_and_a_policy_for_that_secret_alone():
+    spec = prov.LOGINS["catalog"]
+    assert (spec.role, spec.secret_name, spec.policy_name, spec.env_key) == (
+        "meridian_catalog", "meridian/aurora/catalog-login", "MeridianCatalogAuroraAccess",
+        "AURORA_CATALOG_SECRET_ARN")
+    doc = prov.policy_document(spec, CLUSTER, secret_arn(spec))
+    secret_reads = [s for s in doc["Statement"] if "secretsmanager" in str(s["Action"])]
+    assert secret_reads == [{"Sid": "CatalogLoginSecret", "Effect": "Allow",
+                             "Action": "secretsmanager:GetSecretValue",
+                             "Resource": secret_arn(spec)}]
+    assert "gateway-login" not in json.dumps(doc) and "*" not in json.dumps(doc)
 
 
 def test_the_policy_names_one_cluster_and_the_logins_one_secret(spec):
@@ -251,7 +266,7 @@ def test_the_wrong_account_stops_main_before_any_write(monkeypatch, tmp_path):
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply", "--write-env"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws", "--write-env"])
     assert not re.search(r"\d{4}", str(exc.value)) and "<acct>" in str(exc.value)
     assert [c for n in ("secretsmanager", "iam", "rds-data") for c in clients[n].calls] == []
     assert not (tmp_path / ".env").exists()
@@ -270,7 +285,7 @@ def test_main_provisions_one_chosen_login_and_writes_only_its_line(monkeypatch, 
     monkeypatch.setattr(prov, "ENV_FILE", env)
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
-    prov.main(["--login", "gateway", "--apply", "--write-env"])
+    prov.main(["--login", "gateway", "--apply", "--i-understand-this-changes-aws", "--write-env"])
     assert env.read_text() == f"AURORA_GATEWAY_SECRET_ARN={secret_arn(gateway)}\n"
     sql = [kw["sql"] for n, kw in clients["rds-data"].calls if n == "execute_statement"]
     assert len(sql) == 1 and sql[0].startswith("ALTER ROLE meridian_gateway LOGIN")
@@ -323,7 +338,7 @@ class DenyingSecrets:
 def test_an_aws_error_exits_with_the_operation_code_and_no_account_id(monkeypatch, tmp_path):
     _main_env(monkeypatch, tmp_path, _clients(secretsmanager=DenyingSecrets()))
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     text = str(exc.value)
     assert "DescribeSecret" in text and "AccessDeniedException" in text
     assert not re.search(r"\d{12}", text)
@@ -334,7 +349,7 @@ def test_a_missing_environment_variable_is_named_in_the_exit(monkeypatch, tmp_pa
     _main_env(monkeypatch, tmp_path, _clients())
     monkeypatch.delenv(missing)
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     assert missing in str(exc.value)
 
 
@@ -354,7 +369,7 @@ def test_an_unverified_apply_writes_no_env_file(monkeypatch, tmp_path):
     clients["iam"].answers["create_policy"] = {"Policy": {"Arn": policy_arn(gateway)}}
     _main_env(monkeypatch, tmp_path, clients)
     monkeypatch.setattr(prov, "_verify_login", lambda *a, **k: "")
-    prov.main(["--login", "gateway", "--apply", "--write-env"])
+    prov.main(["--login", "gateway", "--apply", "--i-understand-this-changes-aws", "--write-env"])
     assert not (tmp_path / ".env").exists()
 
 
@@ -398,7 +413,7 @@ def test_a_response_missing_a_key_exits_naming_the_key(monkeypatch, tmp_path, mi
     clients = _clients(sts=Recorder({"get_caller_identity": {missing_key: "x"}}))
     _main_env(monkeypatch, tmp_path, clients)
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     assert "Account" in str(exc.value) and not re.search(r"\d{12}", str(exc.value))
     assert exc.value.__suppress_context__ is True
 
@@ -418,7 +433,7 @@ class UnreachableSts:
 def test_a_credentials_failure_exits_with_advice_and_no_account_id(monkeypatch, tmp_path, sts):
     _main_env(monkeypatch, tmp_path, _clients(sts=sts))
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     text = str(exc.value)
     assert "AWS_PROFILE" in text and "expired" in text
     assert not re.search(r"\d{12}", text)
@@ -430,14 +445,14 @@ def test_a_malformed_cluster_arn_names_the_variable(monkeypatch, tmp_path, bad):
     _main_env(monkeypatch, tmp_path, _clients())
     monkeypatch.setenv("AURORA_CLUSTER_ARN", bad)
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     assert "AURORA_CLUSTER_ARN" in str(exc.value)
 
 
 def test_an_aws_error_tells_the_operator_to_re_run_a_partial_apply(monkeypatch, tmp_path):
     _main_env(monkeypatch, tmp_path, _clients(secretsmanager=DenyingSecrets()))
     with pytest.raises(SystemExit) as exc:
-        prov.main(["--apply"])
+        prov.main(["--login", "all", "--apply", "--i-understand-this-changes-aws"])
     assert "re-run it to repair a partial change" in str(exc.value)
 
 
@@ -461,3 +476,73 @@ def test_write_env_updates_the_target_of_a_symlinked_env(tmp_path):
     prov.write_env(link, "AURORA_BACKEND_SECRET_ARN", "arn:new")
     assert link.is_symlink()
     assert real.read_text() == "A=1\nAURORA_BACKEND_SECRET_ARN=arn:new\n"
+
+
+def _spied_main(monkeypatch, tmp_path):
+    """Run main() against recording clients; return them so a test can assert nothing changed."""
+    clients = _clients()
+    _main_env(monkeypatch, tmp_path, clients)
+    monkeypatch.setattr(prov, "_verify_login", lambda *a, **k: "meridian_gateway")
+    return clients
+
+
+def _writes(clients):
+    return [c for n in ("secretsmanager", "iam", "rds-data") for c in clients[n].calls
+            if c[0] not in ("describe_secret", "get_policy")]
+
+
+@pytest.mark.parametrize("login", ["gateway", "all"])
+def test_apply_without_the_confirm_flag_exits_and_changes_nothing(
+        monkeypatch, tmp_path, capsys, login):
+    clients = _spied_main(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--login", login, "--apply", "--write-env"])
+    assert exc.value.code == 3
+    assert "--i-understand-this-changes-aws" in capsys.readouterr().err
+    assert _writes(clients) == [] and clients["sts"].calls == []
+    assert not (tmp_path / ".env").exists()
+
+
+def test_apply_with_the_confirm_flag_proceeds(monkeypatch, tmp_path):
+    clients = _spied_main(monkeypatch, tmp_path)
+    gateway = prov.LOGINS["gateway"]
+    clients["secretsmanager"].answers["create_secret"] = {"ARN": secret_arn(gateway)}
+    clients["iam"].answers["create_policy"] = {"Policy": {"Arn": policy_arn(gateway)}}
+    prov.main(["--login", "gateway", "--apply", "--i-understand-this-changes-aws"])
+    assert [kw["sql"] for n, kw in clients["rds-data"].calls if n == "execute_statement"]
+
+
+def test_login_has_no_default_and_a_run_without_it_exits_before_touching_aws(
+        monkeypatch, tmp_path, capsys):
+    clients = _spied_main(monkeypatch, tmp_path)
+    for argv in ([], ["--apply", "--i-understand-this-changes-aws"]):
+        with pytest.raises(SystemExit) as exc:
+            prov.main(argv)
+        assert exc.value.code == 3
+        assert "--login" in capsys.readouterr().err
+    assert clients["sts"].calls == [] and _writes(clients) == []
+
+
+def test_all_must_be_named_and_a_dry_run_of_it_needs_no_confirm_flag(monkeypatch, tmp_path):
+    clients = _spied_main(monkeypatch, tmp_path)
+    prov.main(["--login", "all"])
+    assert clients["rds-data"].calls == [] and clients["iam"].calls != []
+    assert not any(n.startswith(("create", "put")) for n, _ in
+                   clients["secretsmanager"].calls + clients["iam"].calls)
+
+
+def test_a_single_login_dry_run_needs_only_login(monkeypatch, tmp_path, capsys):
+    _spied_main(monkeypatch, tmp_path)
+    prov.main(["--login", "catalog"])
+    assert "dry run" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("flag", ["--i", "--i-understand", "--i-understand-this-changes"])
+def test_an_abbreviated_confirm_flag_is_refused_before_any_aws_call(
+        monkeypatch, tmp_path, capsys, flag):
+    clients = _spied_main(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--login", "gateway", "--apply", flag])
+    assert exc.value.code == 3
+    assert "unrecognized arguments" in capsys.readouterr().err
+    assert clients["sts"].calls == [] and _writes(clients) == []

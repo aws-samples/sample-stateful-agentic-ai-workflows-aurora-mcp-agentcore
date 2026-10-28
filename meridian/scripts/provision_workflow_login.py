@@ -10,10 +10,11 @@ Migration 015 creates the role with NOLOGIN. This script:
 
 Re-running rotates the password and repairs a half-finished run. During a rotation,
 between ALTER ROLE and put_secret_value, anything holding the old secret fails.
-Without --apply it only reports what it would do. Run from meridian/ with AWS_PROFILE set.
+Without --apply it only reports what it would do. --apply changes AWS (it rotates the password),
+so it also needs --i-understand-this-changes-aws; without that flag the script exits 3 and
+changes nothing. Flags may not be abbreviated. Run from meridian/ with AWS_PROFILE set.
 """
 
-import argparse
 import asyncio
 import base64
 import hashlib
@@ -35,6 +36,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.db.rds_data_client import RDSDataClient  # noqa: E402
+from scripts.identity_release.usage import UsageParser  # noqa: E402
 
 ROLE = "meridian_workflow"
 SECRET_NAME = "meridian/aurora/workflow-login"
@@ -282,11 +284,16 @@ def _mask_id(account: str) -> str:
 
 def main() -> None:
     """Parse the CLI, run ``provision`` and optionally record the secret ARN."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = UsageParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="make the changes")
+    parser.add_argument("--i-understand-this-changes-aws", action="store_true", dest="confirmed",
+                        help="required with --apply: acknowledges that it changes AWS")
     parser.add_argument("--write-env", action="store_true",
                         help=f"write {ENV_KEY} into meridian/.env")
     args = parser.parse_args()
+    if args.apply and not args.confirmed:
+        parser.error("--apply changes AWS (it rotates the meridian_workflow password); add "
+                     "--i-understand-this-changes-aws to run it. Nothing was changed.")
     load_dotenv(ENV_FILE)
     cluster_arn = os.environ["AURORA_CLUSTER_ARN"]
     region = cluster_arn.split(":")[3]

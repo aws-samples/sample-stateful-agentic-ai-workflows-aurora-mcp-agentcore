@@ -155,7 +155,7 @@ function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, s
   if (missing.length) {
     throw new Error(
       `meridian/.env is missing ${missing.join(', ')}; run scripts/sync_cognito_env.py --write and ` +
-        'scripts/provision_service_logins.py --login backend --apply --write-env first',
+        'scripts/provision_service_logins.py --login backend --apply --i-understand-this-changes-aws --write-env first',
     );
   }
   assertCognitoShape(dotenv);

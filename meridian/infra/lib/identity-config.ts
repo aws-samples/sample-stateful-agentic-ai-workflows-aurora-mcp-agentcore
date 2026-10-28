@@ -25,7 +25,7 @@ export function resolveIdentityConfig(
     throw new Error('meridian/.env needs AURORA_CLUSTER_ARN');
   }
   if (!identitySecretArn) {
-    throw new Error('meridian/.env needs AURORA_IDENTITY_SECRET_ARN; run scripts/provision_service_logins.py --login identity --apply --write-env');
+    throw new Error('meridian/.env needs AURORA_IDENTITY_SECRET_ARN; run scripts/provision_service_logins.py --login identity --apply --i-understand-this-changes-aws --write-env');
   }
   const [, , , secretRegion, secretAccount] = arnParts(identitySecretArn);
   if (secretAccount !== account) {

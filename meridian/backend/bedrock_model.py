@@ -31,8 +31,10 @@ DEFAULT_MODEL_ID = BedrockConfig.DEFAULT_MODEL_ID
 # the Runtime's load.py, only to what that smoke accepted.
 REQUEST_FIELDS: Dict[str, Any] = {}
 
-# Throttling and transient errors are retried by botocore with client-side rate limiting. A
-# persistent failure is raised, never answered by a different model.
+# Throttling and transient errors are retried by botocore with client-side rate limiting, up to
+# MAX_ATTEMPTS attempts in all (botocore's total_max_attempts; its max_attempts counts retries
+# only, which would make one more). A persistent failure is raised, never answered by a
+# different model.
 MAX_ATTEMPTS = 5
 
 
@@ -59,6 +61,6 @@ def bedrock_model(model_id: Optional[str] = None, *, max_tokens: int = 16000) ->
         model_id=model_id or config.bedrock.model_id,
         region_name=config.bedrock.region,
         max_tokens=max_tokens,
-        boto_client_config=Config(retries={"mode": "adaptive", "max_attempts": MAX_ATTEMPTS}),
+        boto_client_config=Config(retries={"mode": "adaptive", "total_max_attempts": MAX_ATTEMPTS}),
         **options,
     )

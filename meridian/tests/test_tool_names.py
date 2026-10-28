@@ -2,6 +2,7 @@
 
 import pytest
 
+from backend.agents.concierge_definition import short_name
 from backend.tools.tool_names import bare_tool_name
 
 
@@ -25,3 +26,14 @@ def test_only_the_first_separator_is_a_prefix():
 ])
 def test_a_name_without_a_whole_prefix_is_unchanged(name):
     assert bare_tool_name(name) == name
+
+NAMES = [
+    "MeridianHolds___create_courtesy_hold", "MeridianCatalog___hybrid_trip_search",
+    "MeridianHolds___batch___confirm", "MeridianHolds____leading_underscore",
+    "create_courtesy_hold", "", "___create_courtesy_hold", "MeridianHolds___",
+]
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_the_concierge_definition_reads_a_target_prefix_by_the_same_rule(name):
+    assert short_name(name) == bare_tool_name(name)

@@ -300,6 +300,12 @@ def template_tools() -> dict:
     return tools
 
 
+# Deploy A of Release 2 puts loyalty_balance on the Gateway before Cedar and the interceptor
+# name it, because a rule is validated against the tools that exist. Cedar denies the tool by
+# default until Deploy B. Task 14 deletes this set, and the test then holds for every tool.
+STAGED_UNPINNED = {"MeridianHolds___loyalty_balance"}
+
+
 def test_every_template_tool_that_takes_a_traveler_is_pinned_by_default():
     tools = template_tools()
     assert len(tools) >= 4
@@ -307,7 +313,7 @@ def test_every_template_tool_that_takes_a_traveler_is_pinned_by_default():
         name for name, tool in tools.items() if "travelerId" in tool["inputSchema"]["properties"]
     }
     assert takes_traveler
-    assert takes_traveler <= set(interceptor.DEFAULT_PINNED_TOOLS)
+    assert takes_traveler - STAGED_UNPINNED <= set(interceptor.DEFAULT_PINNED_TOOLS)
     assert set(interceptor.DEFAULT_PINNED_TOOLS) <= set(tools)
 
 

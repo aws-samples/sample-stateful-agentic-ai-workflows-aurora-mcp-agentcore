@@ -250,7 +250,7 @@ code. Having the database verify a signed scope was evaluated and not shipped; s
 ## Production guidance
 
 - Apply the tracked migrations before starting the application, and run
-  `scripts/provision_workflow_login.py --apply` so the Runtime has its own login.
+  `scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws` so the Runtime has its own login.
   Do not use the cluster master role as the workflow's database role.
 - Keep database transactions short. Do not hold an RLS transaction open while
   waiting for model or external service calls.

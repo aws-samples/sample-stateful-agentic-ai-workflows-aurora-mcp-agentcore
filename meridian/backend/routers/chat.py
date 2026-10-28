@@ -624,7 +624,7 @@ async def _call_domain_tool(
         if any(k in q for k in _LOYALTY_KEYWORDS):
             calls.append(await _timed_tool_call(
                 cli, "loyalty_balance",
-                {"traveler_id": traveler_id, "program": _loyalty_program(q)},
+                {"travelerId": traveler_id, "program": _loyalty_program(q)},
             ))
 
         if "price range" in q:

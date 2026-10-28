@@ -19,7 +19,7 @@ AWS docs:
 
 import asyncio
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from backend.activity import ActivityEntry, Product, create_activity
 from backend.catalog_compat import row_to_api_product
@@ -352,12 +352,18 @@ def _candidate_order(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, A
 def _apply_rerank(
     rows: List[Dict[str, Any]], ranked: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """Reorder by the reranker's verdict and carry its score and each row's movement."""
+    """Reorder by the reranker's verdict and carry its score and each row's movement.
+
+    An index outside the candidates, or one already placed, is skipped, so each candidate is
+    listed at most once.
+    """
     ordered: List[Dict[str, Any]] = []
+    placed: Set[int] = set()
     for item in ranked:
         index = item["index"]
-        if not 0 <= index < len(rows):
+        if not 0 <= index < len(rows) or index in placed:
             continue
+        placed.add(index)
         row = dict(rows[index])
         row["similarity"] = float(item.get("score", 0.0))
         row["rank_delta"] = row["pre_rerank_position"] - len(ordered)

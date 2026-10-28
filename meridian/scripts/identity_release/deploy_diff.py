@@ -16,11 +16,13 @@ Gateway. Each stage must add its own resources:
                 exactly one Gateway removed, which must be that Gateway
 ``targets``     a GatewayTarget and a Lambda function
 ``governance``  a PolicyEngine and a Policy
-``complete``    a Runtime updated
+``complete``    a Runtime updated, or the catalog release: the MeridianCatalog target added or a
+                Cedar rule updated. The retired SemanticTripSearchLambda target may be removed
 
 The first stage may remove only what belongs to the replaced Gateway (every resource whose path
 or logical id carries its construct id) and the Cedar engine with its rules, which the first stage
-render leaves out. Every other removal is a finding, and the later stages refuse any removal.
+render leaves out. Every other removal is a finding, and the later stages refuse any removal
+except the retired target at the ``complete`` stage.
 """
 
 from __future__ import annotations
@@ -44,6 +46,9 @@ EXPECTED = {
     stages.GOVERNANCE: ("+", (ENGINE_TYPE, POLICY_TYPE)),
     stages.COMPLETE: ("~", (RUNTIME_TYPE,)),
 }
+CATALOG_TARGET = "MeridianCatalog"
+# A target a release replaced. Its removal is the one removal a complete-stage plan may carry.
+RETIRED_TARGETS = ("SemanticTripSearchLambda",)
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 RESOURCE = re.compile(r"^\s*\[([+~-])\]\s+(AWS::\S+)\s*(.*)$")
 CHILD = re.compile(r"^[\s│├└─|`+-]*\[([+~-])\]\s+(.+?)\s*$")
@@ -170,16 +175,33 @@ def _later_findings(gateways: list[Change]) -> list[str]:
     return []
 
 
+def _names_target(change: Change, name: str) -> bool:
+    """Whether a GatewayTarget change is for exactly the target ``name`` (no longer name)."""
+    return change.type == TARGET_TYPE and re.search(
+        rf"/Target{re.escape(name)}(?![A-Za-z0-9])", change.rest) is not None
+
+
+def _is_catalog_release(changes: list[Change]) -> bool:
+    """A complete-stage plan that adds the catalog target or updates a Cedar rule."""
+    return any(
+        (c.kind == "+" and _names_target(c, CATALOG_TARGET))
+        or (c.kind == "~" and c.type == POLICY_TYPE)
+        for c in changes
+    )
+
+
 def _expected_findings(changes: list[Change], stage: str) -> list[str]:
     kind, wanted = EXPECTED[stage]
     present = {c.type for c in changes if c.kind == kind}
     missing = [resource for resource in wanted if resource not in present]
-    if not missing:
+    if not missing or (stage == stages.COMPLETE and _is_catalog_release(changes)):
         return []
     verb = {"+": "add", "~": "update"}[kind]
-    return [f"the {stage} stage expects the plan to {verb} {' and '.join(wanted)}, and it does "
-            f"not {verb} {' or '.join(missing)}; the render or the deployed state is the wrong "
-            "stage, run the render again"]
+    alternatives = (f", or to add the {CATALOG_TARGET} target, or to update a Cedar rule "
+                    f"({POLICY_TYPE})") if stage == stages.COMPLETE else ""
+    return [f"the {stage} stage expects the plan to {verb} {' and '.join(wanted)}"
+            f"{alternatives}, and it does not {verb} {' or '.join(missing)}; the render or the "
+            "deployed state is the wrong stage, run the render again"]
 
 
 def _belongs_to_replaced(change: Change, replaced: str) -> bool:
@@ -189,15 +211,34 @@ def _belongs_to_replaced(change: Change, replaced: str) -> bool:
     return names_gateway(change, replaced)
 
 
+def _retired_target(change: Change) -> bool:
+    return any(_names_target(change, name) for name in RETIRED_TARGETS)
+
+
 def _removal_findings(changes: list[Change], stage: str, mode: str,
                       replacing: bool) -> list[str]:
     replaced = _other(mode)
     allowed = stage == stages.GATEWAY and replacing
-    return [f"the plan deletes {c.type} ({c.rest}); only the replaced {replaced} Gateway's own "
-            "constructs and the Cedar engine may go in the first stage and nothing may go "
-            "later, so a stale state file or render would do this: run the render again"
-            for c in changes
-            if c.kind == "-" and not (allowed and _belongs_to_replaced(c, replaced))]
+    runtime_updated = any(c.kind == "~" and c.type == RUNTIME_TYPE for c in changes)
+    found = []
+    for c in changes:
+        if c.kind != "-":
+            continue
+        if stage == stages.COMPLETE and _retired_target(c):
+            if not runtime_updated:
+                found.append(
+                    f"the plan removes the retired target ({c.rest}) without updating a Runtime; "
+                    "the deployed Runtime still calls it, so the same plan must update a Runtime "
+                    f"({RUNTIME_TYPE}): deploy the new Runtime with it")
+            continue
+        if allowed and _belongs_to_replaced(c, replaced):
+            continue
+        found.append(
+            f"the plan deletes {c.type} ({c.rest}); only the replaced {replaced} Gateway's own "
+            "constructs and the Cedar engine may go in the first stage, a target a release "
+            "retired may go at the complete stage, and nothing else may go, so a stale state "
+            "file or render would do this: run the render again")
+    return found
 
 
 def plan_findings(code: int, output: str, argv: Sequence[str], *, stage: str, mode: str,

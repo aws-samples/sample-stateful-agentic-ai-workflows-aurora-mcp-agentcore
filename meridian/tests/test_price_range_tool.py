@@ -6,8 +6,8 @@ disclosure in its payload or the rendered chat reply.
 
 import asyncio
 
-from backend.mcp import concierge_server
 from backend.routers.chat import _format_domain_reply, _summarize_domain_result
+from backend.tools import catalog_tools
 
 
 class _CatalogDb:
@@ -28,9 +28,9 @@ def test_price_range_returns_the_real_sql_aggregate_with_no_multiplier(monkeypat
         "sample_size": 4,
     }
     db = _CatalogDb(row)
-    monkeypatch.setattr(concierge_server, "_db", lambda: db)
+    monkeypatch.setattr(catalog_tools, "get_rds_data_client", lambda: db)
 
-    result = asyncio.run(concierge_server.price_range("Tokyo"))
+    result = asyncio.run(catalog_tools.price_range("Tokyo"))
 
     # Every number must equal the SQL aggregate exactly - no seasonal
     # multiplier applied anywhere.
@@ -48,9 +48,9 @@ def test_price_range_returns_the_real_sql_aggregate_with_no_multiplier(monkeypat
 
 def test_price_range_reports_zero_sample_without_inventing_numbers(monkeypatch):
     db = _CatalogDb({"sample_size": 0})
-    monkeypatch.setattr(concierge_server, "_db", lambda: db)
+    monkeypatch.setattr(catalog_tools, "get_rds_data_client", lambda: db)
 
-    result = asyncio.run(concierge_server.price_range("Atlantis"))
+    result = asyncio.run(catalog_tools.price_range("Atlantis"))
 
     assert result == {"destination": "Atlantis", "sample_size": 0}
     assert "low" not in result

@@ -1,0 +1,140 @@
+[
+  {
+    "name": "search_trips",
+    "description": "Search the trip catalog by type, price ceiling and text, cheapest first, ties by package id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "trip_type": {
+          "type": "string",
+          "description": "Exact trip type, for example ``City Breaks``."
+        },
+        "max_price_per_person": {
+          "type": "number",
+          "description": "Highest price per traveler to include."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Number of trips to return, clamped to 1 through 20.",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5
+        },
+        "text": {
+          "type": "string",
+          "description": "Words to look for in a trip's name, description, operator, destination or trip type. The Phase 1 and 2 fallback when no trip type matched."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "compare_packages",
+    "description": "Return aligned comparison rows for up to 4 trip packages.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "package_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "list of package_id strings (e.g. ['CTY-002', 'CTY-019'])."
+        }
+      },
+      "required": [
+        "package_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "price_range",
+    "description": "Return the price range (low / average / high) for a destination.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string",
+          "description": "city or region string (matched ILIKE against the destination or region columns)."
+        }
+      },
+      "required": [
+        "destination"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "region_inventory",
+    "description": "Return how many distinct trip packages we sell in a region, with aggregate availability across all duration options.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "region": {
+          "type": "string",
+          "description": "region name (e.g. 'Europe', 'Asia', 'South America')."
+        },
+        "trip_type": {
+          "type": "string",
+          "description": "optional category filter ('City Breaks', 'Wellness & Luxury' ...)."
+        }
+      },
+      "required": [
+        "region"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "currency_convert",
+    "description": "Convert an amount between supported currencies using indicative rates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "numeric amount in `from_ccy`."
+        },
+        "from_ccy": {
+          "type": "string",
+          "description": "ISO 4217 code (e.g. 'USD', 'EUR')."
+        },
+        "to_ccy": {
+          "type": "string",
+          "description": "ISO 4217 code."
+        }
+      },
+      "required": [
+        "amount",
+        "from_ccy",
+        "to_ccy"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "hybrid_trip_search",
+    "description": "Search trip packages by meaning and by words, then rerank them.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "natural-language trip request. Name the destination and the qualities wanted. A price ceiling in the query (\"under $2,500\") is applied, and sold-out packages are left out."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "maximum packages to return, 1 to 20.",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

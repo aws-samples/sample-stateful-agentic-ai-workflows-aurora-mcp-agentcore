@@ -102,8 +102,10 @@ works you need three things:
 
    ```bash
    python scripts/provision_workflow_login.py            # report only
-   python scripts/provision_workflow_login.py --apply --write-env
+   python scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env
    ```
+
+   `--apply` without `--i-understand-this-changes-aws` exits 3 and changes nothing.
 
    `--write-env` sets `AURORA_WORKFLOW_SECRET_ARN` in `.env`.
 3. The deployed Runtime. Follow the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md) to
@@ -134,7 +136,7 @@ renewing expired AWS credentials, restart the backend.
 
 ### Rotate the workflow login password
 
-Re-run `python scripts/provision_workflow_login.py --apply` with `AWS_PROFILE`
+Re-run `python scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws` with `AWS_PROFILE`
 set. It generates a new password, sends Postgres only its SCRAM-SHA-256
 verifier, stores the new credential in the same secret and checks that the login
 is `meridian_workflow` without BYPASSRLS. Between the `ALTER ROLE` and the secret
@@ -333,13 +335,20 @@ publishing the backend. Removing the setting also removes any old hosted overrid
    and `AURORA_IDENTITY_SECRET_ARN` to `.env`:
 
    ```bash
-   python scripts/provision_service_logins.py
-   python scripts/provision_service_logins.py --apply --write-env
+   for login in backend gateway identity; do
+     python scripts/provision_service_logins.py --login $login
+     python scripts/provision_service_logins.py --login $login --apply \
+       --i-understand-this-changes-aws --write-env
+   done
    ```
 
-   Add `--login backend`, `gateway` or `identity` to act on one login. Running
-   `--apply` again rotates the password. Between the `ALTER ROLE` and the secret
-   update, anything holding the old secret fails.
+   With only migration 018 applied, name the three 018 logins one at a time, as above.
+   `--login all` also provisions `catalog` (role `meridian_catalog`, created by migration 022),
+   so use it only once 022 is applied; before that it rotates the first three passwords and
+   then fails at `ALTER ROLE meridian_catalog`. `--login` is required, and `--apply` also needs
+   `--i-understand-this-changes-aws`: without it the script exits 3 and changes nothing, and so does an
+   abbreviated flag. Running `--apply` again rotates the password. Between the `ALTER ROLE` and
+   the secret update, anything holding the old secret fails.
 
 3. Prove the grants against the live cluster, including what each login must
    not do:

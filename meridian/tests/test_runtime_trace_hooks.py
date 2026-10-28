@@ -498,18 +498,35 @@ def test_the_trace_titles_each_call_from_the_rows_reading(monkeypatch, calls, ex
 AGENTCORE = RUNTIME.parents[1] / "agentcore"
 
 
-def gateway_tools() -> set[str]:
-    """Every tool the Gateway serves the Runtime, from the tracked config and its tool schemas."""
+def gateway_tool_names() -> list[str]:
+    """``Target___tool`` for every tool the Gateway serves the Runtime, from the tracked config
+    and its tool schemas."""
     config = json.loads((AGENTCORE / "agentcore.template.json").read_text())
-    tools = set()
+    names = []
     for gateway in config["agentCoreGateways"]:
         for target in gateway["targets"]:
-            tools |= {tool["name"] for tool in target.get("toolDefinitions", [])}
+            tools = [tool["name"] for tool in target.get("toolDefinitions", [])]
             schema = (target.get("lambdaFunctionArn") or {}).get("toolSchemaFile")
             if schema:
                 path = (AGENTCORE.parent / schema).resolve()
-                tools |= {tool["name"] for tool in json.loads(path.read_text())}
-    return tools
+                tools += [tool["name"] for tool in json.loads(path.read_text())]
+            names += [f"{target['name']}___{tool}" for tool in tools]
+    return names
+
+
+def gateway_tools() -> set[str]:
+    """Every tool the Gateway serves the Runtime, by its contract name."""
+    return {name.split("___", 1)[1] for name in gateway_tool_names()}
+
+
+# Release 2 Deploy A puts these tools on the Gateway before the Runtime can trace them: they have
+# no span and no Cedar policy entry until Task 15. governed_tools() keeps every tool without a
+# span from the model, so in that state they are listed but never called. Task 15 deletes this
+# set, and every Gateway tool then needs a span and a policy.
+WITHHELD_UNTIL_TASK_15 = {
+    "search_trips", "compare_packages", "price_range", "region_inventory", "currency_convert",
+    "hybrid_trip_search", "loyalty_balance",
+}
 
 
 def test_the_config_names_the_gateway_tools():
@@ -519,9 +536,29 @@ def test_the_config_names_the_gateway_tools():
 
 @pytest.mark.parametrize("tool", sorted(gateway_tools()))
 def test_every_gateway_tool_has_a_span_and_a_policy(tool):
-    """A tool without a span would run unseen: missing from tool_calls, a denial read as allowed."""
+    """A tool without a span would run unseen: missing from tool_calls, a denial read as allowed.
+
+    The only exception is a tool the Runtime withholds from the model until Task 15.
+    """
+    if tool in WITHHELD_UNTIL_TASK_15:
+        assert tool not in SPANS and tool not in POLICY_FOR, f"{tool} is traced now"
+        return
     assert tool in SPANS, f"{tool} has no SPANS entry in turn_trace.py"
     assert tool in POLICY_FOR, f"{tool} has no POLICY_FOR entry in turn_trace.py"
+
+
+def test_the_runtime_withholds_every_tool_it_cannot_trace_yet(monkeypatch):
+    runtime = load_runtime_main(monkeypatch, "meridian_runtime_withheld")
+    listed = [SimpleNamespace(tool_name=name) for name in gateway_tool_names()]
+
+    callable_tools, withheld = runtime.governed_tools(listed)
+    span = runtime.tools_span(listed, 1)
+
+    assert {name.split("___", 1)[1] for name in withheld} == WITHHELD_UNTIL_TASK_15
+    offered = {tool.tool_name.split("___", 1)[1] for tool in callable_tools}
+    assert offered == gateway_tools() - WITHHELD_UNTIL_TASK_15
+    fields = {field["label"]: field["value"] for field in span["telemetry"]["fields"]}
+    assert fields["withheld_from_model"].split(", ") == withheld
 
 
 def test_friendly_denial_names_the_policy_or_the_default_deny():

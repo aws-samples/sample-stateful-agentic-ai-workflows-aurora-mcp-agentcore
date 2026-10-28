@@ -13,7 +13,8 @@ def test_the_backend_secret_connects_as_the_login_without_bypassrls():
     secret = os.environ.get("AURORA_BACKEND_SECRET_ARN")
     if not secret:
         pytest.fail("AURORA_BACKEND_SECRET_ARN is not set: run "
-                    "scripts/provision_service_logins.py --login backend --apply --write-env")
+                    "scripts/provision_service_logins.py --login backend --apply "
+                    "--i-understand-this-changes-aws --write-env")
 
     who = proof._identity(secret, dict(os.environ))
 

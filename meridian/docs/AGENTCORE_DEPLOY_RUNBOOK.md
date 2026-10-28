@@ -38,7 +38,7 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   [workflow Runtime steps](#workflow-runtime-steps), then apply 018 and run):
 
   ```bash
-  python meridian/scripts/provision_service_logins.py --login gateway --apply --write-env
+  python meridian/scripts/provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env
   ```
 
   The render refuses to run without it. The `MeridianHolds` policy it writes may
@@ -97,7 +97,7 @@ python meridian/scripts/render_agentcore_config.py
 ```
 
 The render needs `AURORA_GATEWAY_SECRET_ARN`, which
-`provision_service_logins.py --login gateway --apply --write-env` sets and which
+`provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env` sets and which
 requires migration 018 applied first (see Prerequisites).
 
 On a new account the script reports that it left out the gateway ID variables
@@ -188,7 +188,7 @@ In `jwt` mode the deploy runs through `release_identity.py deploy` instead (see
 [Deploy the identity release](#deploy-the-identity-release-jwt)).
 
 Every render needs `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env` (set by
-`provision_service_logins.py --login gateway --apply --write-env`, after migration
+`provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env`, after migration
 018; see Prerequisites).
 
 1. **First pass.** Creates the runtime, memory, gateway and both targets,
@@ -263,7 +263,7 @@ Runtime, so confirm each before you run it.
    `AURORA_WORKFLOW_SECRET_ARN` into `meridian/.env`:
 
    ```bash
-   python meridian/scripts/provision_workflow_login.py --apply --write-env
+   python meridian/scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env
    ```
 
    The script creates the managed policy `MeridianWorkflowAuroraAccess`, which
@@ -277,7 +277,7 @@ Runtime, so confirm each before you run it.
    ```
 
    The render needs `AURORA_GATEWAY_SECRET_ARN` (set by
-   `provision_service_logins.py --login gateway --apply --write-env`, which
+   `provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env`, which
    requires migration 018 applied first).
 
 4. Deploy:

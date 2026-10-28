@@ -69,6 +69,8 @@ holds Lambda. The publisher checks these against the hosted backend before relea
 
 After it writes both files it stages the MeridianWorkflow Runtime's backend
 bundle (scripts/stage_workflow_runtime.py), so a deploy never ships a stale copy.
+It also copies the shared concierge definition into the MeridianConcierge Runtime
+(scripts/stage_concierge_runtime.py).
 
 Usage:
     cd meridian
@@ -92,7 +94,7 @@ sys.path.insert(0, str(MERIDIAN_DIR))
 
 from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
 from backend.agents.budget import DEFAULT_ENV, default_budget_cents  # noqa: E402
-from scripts import stage_workflow_runtime  # noqa: E402
+from scripts import stage_concierge_runtime, stage_workflow_runtime  # noqa: E402
 from scripts.identity_release import settings, stages  # noqa: E402
 
 CONFIG_DIR = MERIDIAN_DIR / "meridian_agentcore" / "agentcore"
@@ -167,7 +169,8 @@ def _gateway_secret_arn(
     if not arn:
         raise ConfigError(
             "AURORA_GATEWAY_SECRET_ARN is not set; run "
-            "scripts/provision_service_logins.py --login gateway --apply --write-env "
+            "scripts/provision_service_logins.py --login gateway --apply "
+            "--i-understand-this-changes-aws --write-env "
             "and keep the secret ARN it prints in meridian/.env"
         )
     match = SECRET_ARN.match(arn)
@@ -563,6 +566,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    try:
+        concierge_copy = stage_concierge_runtime.stage()
+    except stage_concierge_runtime.StageError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
     env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
     spec_template = json.loads((CONFIG_DIR / SPEC_TEMPLATE).read_text(encoding="utf-8"))
     targets_template = json.loads((CONFIG_DIR / TARGETS_TEMPLATE).read_text(encoding="utf-8"))
@@ -583,7 +592,8 @@ def main(argv: list[str] | None = None) -> int:
     write_json(CONFIG_DIR / SPEC_OUTPUT, spec)
     write_json(CONFIG_DIR / TARGETS_OUTPUT, targets)
     staged = json.loads(stage_workflow_runtime.stage().read_text(encoding="utf-8"))
-    print_summary(values, stage, spec, notes, tighten=args.tighten, staged=len(staged))
+    print_summary(values, stage, spec, notes, tighten=args.tighten, staged=len(staged),
+                  concierge_copy=concierge_copy.name)
     return 0
 
 
@@ -608,7 +618,7 @@ def stage_ids(ids: stages.DeployedIds, args: argparse.Namespace, stage: str) -> 
 
 
 def print_summary(values: dict[str, str], stage: str, spec: dict[str, Any], notes: list[str],
-                  *, tighten: bool, staged: int) -> None:
+                  *, tighten: bool, staged: int, concierge_copy: str) -> None:
     """Say what was written, which build stage it is and what comes next."""
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
     print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
@@ -624,6 +634,7 @@ def print_summary(values: dict[str, str], stage: str, spec: dict[str, Any], note
     if tighten:
         print("  Tightened: MeridianHolds may read only the meridian_gateway secret")
     print(f"  staged {staged} workflow modules into the MeridianWorkflow bundle")
+    print(f"  staged {concierge_copy} into the MeridianConcierge Runtime")
     for note in notes:
         print(f"  {note}")
     if stage == stages.COMPLETE:

@@ -229,3 +229,13 @@ def test_the_scan_reads_code_and_not_prose():
 def test_unrelated_calls_naming_a_rejected_word_are_not_flagged():
     code = 'os.getenv("temperature")\nlog("tool_choice")\nconfig.get("note")\n'
     assert rejected_parameters(ast.parse(code)) == []
+
+
+def test_max_attempts_counts_every_attempt_in_the_backend_and_the_runtime():
+    backend_retries = bedrock_model.bedrock_model(SONNET).client.meta.config.retries
+    runtime_retries = loader.load_model(SONNET, "us-east-1").client.meta.config.retries
+
+    assert backend_retries == {
+        "mode": "adaptive", "total_max_attempts": bedrock_model.MAX_ATTEMPTS}
+    assert runtime_retries == backend_retries
+    assert bedrock_model.MAX_ATTEMPTS == loader.MAX_ATTEMPTS == 5

@@ -186,6 +186,14 @@
           }
         },
         {
+          "name": "MeridianCatalog",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools",
+            "toolSchemaFile": "./agentcore/gateway_targets/meridian_catalog/tool-schema.json"
+          }
+        },
+        {
           "name": "MeridianHolds",
           "targetType": "lambda",
           "toolDefinitions": [
@@ -202,6 +210,28 @@
                 },
                 "required": [
                   "packageId"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "loyalty_balance",
+              "description": "Read the authorized traveler's loyalty points balance and tier for one program from the traveler's own saved profile. The platform pins the traveler.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "travelerId": {
+                    "type": "string",
+                    "description": "Traveler id. The platform pins this to the authorized traveler."
+                  },
+                  "program": {
+                    "type": "string",
+                    "description": "Loyalty program name, for example Marriott Bonvoy."
+                  }
+                },
+                "required": [
+                  "travelerId",
+                  "program"
                 ],
                 "additionalProperties": false
               }

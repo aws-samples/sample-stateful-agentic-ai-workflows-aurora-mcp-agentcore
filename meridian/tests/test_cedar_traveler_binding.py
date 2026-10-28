@@ -91,6 +91,44 @@ def test_the_rule_names_exactly_the_tools_the_interceptor_pins():
     assert named == set(interceptor.DEFAULT_PINNED_TOOLS)
 
 
+def gateway_tool_schemas() -> dict[str, dict]:
+    """``Target___tool`` to its definition, for every tool the template's Gateway lists."""
+    config_dir = render_config.CONFIG_DIR
+    spec = json.loads((config_dir / render_config.SPEC_TEMPLATE).read_text())
+    tools = {}
+    for target in spec["agentCoreGateways"][0]["targets"]:
+        definitions = list(target.get("toolDefinitions", []))
+        schema = (target.get("lambdaFunctionArn") or {}).get("toolSchemaFile")
+        if schema:
+            definitions += json.loads((config_dir.parent / schema).read_text())
+        tools.update({f"{target['name']}___{tool['name']}": tool for tool in definitions})
+    return tools
+
+
+def test_a_tool_that_takes_a_traveler_is_pinned_or_has_no_cedar_permit():
+    """A tool with a travelerId argument is either pinned or denied by default.
+
+    The interceptor overwrites travelerId only for its pinned tools. An unpinned traveler tool is
+    safe only while no Cedar permit names its action, because Cedar denies what it does not
+    permit. At Deploy A loyalty_balance passes by the second clause. Task 14 pins it and adds its
+    permit, and from then on it passes by the first clause.
+    """
+    interceptor = load_interceptor()
+    permitted = {
+        part.split('"')[1]
+        for statement in policies("jwt").values()
+        if statement.lstrip().startswith("permit")
+        for part in statement.split("AgentCore::Action::")[1:]
+    }
+    takes_traveler = {
+        name for name, tool in gateway_tool_schemas().items()
+        if "travelerId" in tool["inputSchema"]["properties"]
+    }
+    assert takes_traveler >= set(interceptor.DEFAULT_PINNED_TOOLS)
+    unguarded = (takes_traveler - set(interceptor.DEFAULT_PINNED_TOOLS)) & permitted
+    assert not unguarded, f"permitted but not pinned: {sorted(unguarded)}"
+
+
 def decide(statements, *, tool=HOLD, tag="trv_demo_decoy", arg="trv_demo_decoy", **overrides):
     entity_tags = {"traveler_id": tag} if tag is not None else {}
     entities = [
