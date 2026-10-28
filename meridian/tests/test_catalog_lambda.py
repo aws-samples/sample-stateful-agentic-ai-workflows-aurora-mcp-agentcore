@@ -501,8 +501,11 @@ def test_the_bedrock_client_fails_fast_so_the_fallbacks_fit_in_the_function_time
 
     The function runs 30 s and the Runtime waits 35 s. One search makes EMBEDDING_ATTEMPTS
     embedding calls and one rerank call, each at most (connect + read) seconds, which must
-    leave room for the Data API reads. The retry setting is read off the BUILT client.
+    leave room for the Data API reads. The retry setting is read off the BUILT client. The
+    Lambda runtime always sets the Region; the test sets it too, so it does not depend on a
+    local `.env` or AWS profile.
     """
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setattr(catalog, "CONFIG", ("arn:cluster", "arn:gateway-secret", "meridian"))
     monkeypatch.setattr(catalog, "RDS", object())
     monkeypatch.setattr(catalog, "BEDROCK", None)
