@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { fulfillChat, isChatCall } from './fixtures/chatRoutes';
 import AxeBuilder from '@axe-core/playwright';
 
 const activities = [
@@ -19,12 +20,12 @@ for (const theme of ['light', 'dark']) {
       await page.route(url => url.pathname.startsWith('/api/'), async route => {
         const path = new URL(route.request().url()).pathname;
         if (path.endsWith('/rls-probe')) { probes += 1; return route.fulfill({ status: 503, json: { detail: 'Probe unavailable in this fixture' } }); }
-        if (path === '/api/chat') {
+        if (isChatCall(new URL(route.request().url()))) {
           await gate;
           const failed = route.request().postDataJSON().message.includes('failed');
-          return route.fulfill({ json: { message: failed ? 'The query failed.' : 'Your Tokyo travel brief is ready.', products: [],
+          return fulfillChat(route, { message: failed ? 'The query failed.' : 'Your Tokyo travel brief is ready.', products: [],
             activities: failed ? [{ ...activities[1], telemetry: { ...activities[1].telemetry, status: 'error' } }] : activities,
-            conversation_id: 'activity-test' } });
+            conversation_id: 'activity-test' });
         }
         return route.fulfill({ json: path.endsWith('/health')
           ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture', checkpoint_backend: 'fixture' }
@@ -89,9 +90,9 @@ for (const theme of ['light', 'dark']) {
 test('evidence opens to recorded SQL and disappears when the next turn has none', async ({ page }) => {
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/chat') return route.fulfill({ json: { message: 'The recorded result is ready.', products: [], conversation_id: 'inspector-test',
+    if (isChatCall(new URL(route.request().url()))) return fulfillChat(route, { message: 'The recorded result is ready.', products: [], conversation_id: 'inspector-test',
       activities: [{ ...activities[1], sql_query: route.request().postDataJSON().message.includes('without') ? undefined : 'SELECT package_id FROM trip_packages LIMIT 5' }],
-    } });
+    });
     return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture' } : { products: [] } });
   });
   for (const [width, theme, present] of [[1440, 'light', false], [320, 'dark', false], [1280, 'light', true], [1920, 'dark', true]] as const) {
@@ -129,7 +130,7 @@ test('all five phases animate waiting and replay spinners and respect reduced mo
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/rls-probe')) { await probeGate; return route.fulfill({ status: 503, json: { detail: 'Probe fixture' } }); }
-    if (path === '/api/chat') { await gate; return route.fulfill({ json: { message: 'Search complete.', products: [], activities, conversation_id: 'spinner-test' } }); }
+    if (isChatCall(new URL(route.request().url()))) { await gate; return fulfillChat(route, { message: 'Search complete.', products: [], activities, conversation_id: 'spinner-test' }); }
     return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture' } : { products: [] } });
   });
   for (const phase of [1, 2, 3, 4, 5]) {

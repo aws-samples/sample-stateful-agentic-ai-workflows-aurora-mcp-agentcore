@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { fulfillChat, isChatCall } from './fixtures/chatRoutes';
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
   test(`ladder loading and memory writeback fit at ${viewport.width}px`, async ({ page }) => {
@@ -11,14 +12,14 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     ];
     await page.route(url => url.pathname.startsWith('/api/'), async route => {
       const path = new URL(route.request().url()).pathname;
-      if (path === '/api/chat') {
+      if (isChatCall(new URL(route.request().url()))) {
         await pending;
-        return route.fulfill({ json: {
+        return fulfillChat(route, {
           message: 'Tokyo matches your boutique preference.', conversation_id: 'layout-fixture', memory_facts: facts,
           activities: [{ id: 'writeback-fixture', timestamp: '2026-10-01T12:00:00Z',
             activity_type: 'result', title: 'Strands @tool persist_turn', execution_time_ms: 20,
             telemetry: { category: 'memory_long', component: 'Aurora', status: 'ok' } }],
-        } });
+        });
       }
       return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture' }
         : path.includes('/memory/') ? { traveler_id: 'trv_meridian_demo', profile: { party_size: 2 }, facts }

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { pausedRecovery } from './fixtures/pausedRecovery';
+import { fulfillChat, isChatCall } from './fixtures/chatRoutes';
 
 const views = ['concierge', 'ladder', 'recovery', 'proof', 'briefing'];
 const live = process.env.MERIDIAN_A11Y_LIVE === '1';
@@ -221,9 +222,9 @@ for (const theme of ['dark', 'light']) {
     + ' controls reach 32px';
   test(title, async ({ page }) => {
     await mockLiveCatalog(page);
-    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({
-      json: pausedRecovery(tokyoOptions, route.request().postDataJSON().conversation_id),
-    }));
+    await page.route(isChatCall, route => fulfillChat(
+      route, pausedRecovery(tokyoOptions, route.request().postDataJSON().conversation_id),
+    ));
     for (const [width, height] of [[1920, 1080], [1280, 720]]) {
       await page.setViewportSize({ width, height });
       for (const view of views) {
@@ -284,11 +285,9 @@ for (const theme of ['light', 'dark']) {
   test(`${theme} ladder pills: neutral surfaces, rung accents and memory highlights keep contrast`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockLiveCatalog(page);
-    await page.route('**/api/chat', route => route.fulfill({
-      status: 200, contentType: 'application/json', body: JSON.stringify({
-        message: 'Flying from your home airport, JFK, I found a boutique hotel with a no red-eye return.',
-        conversation_id: 'pill-contrast', memory_facts: [], activities: [],
-      }),
+    await page.route(isChatCall, route => fulfillChat(route, {
+      message: 'Flying from your home airport, JFK, I found a boutique hotel with a no red-eye return.',
+      conversation_id: 'pill-contrast', memory_facts: [], activities: [],
     }));
     await page.goto(`/showcase?view=ladder&theme=${theme}`);
     await page.getByRole('button', { name: /^Phase 4,/ }).click();

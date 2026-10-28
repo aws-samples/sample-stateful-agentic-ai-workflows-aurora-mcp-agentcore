@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { pausedJourneyDocument } from './fixtures/journeyDocument';
 import { pausedRecovery } from './fixtures/pausedRecovery';
+import { failChat, fulfillChat, isChatCall } from './fixtures/chatRoutes';
 
 // Deterministic UI fixture, using real catalog destination and duration
 // strings (including the longest single-word destination, Yellowstone). These
@@ -31,14 +32,14 @@ const products = [
 test.beforeEach(async ({ page }) => {
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/chat') {
-      return route.fulfill({ json: {
+    if (isChatCall(new URL(route.request().url()))) {
+      return fulfillChat(route, {
         message: 'Your Tokyo replacement plan is ready.',
         products,
         activities: [],
         conversation_id: 'i1-recovery-test',
         workflow_status: 'complete',
-      } });
+      });
     }
     const health = { status: 'healthy', bedrock_model_id: 'fixture',
       embedding_model_id: 'fixture', checkpoint_backend: 'fixture' };
@@ -68,9 +69,9 @@ test('recovery alternative cards keep the route on one line at 1440', async ({ p
 for (const motion of ['no-preference', 'reduce'] as const) {
   test(`checkpoint confirmation with ${motion} motion`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: motion });
-    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({
-      json: pausedRecovery(products, route.request().postDataJSON().conversation_id),
-    }));
+    await page.route(isChatCall, route => fulfillChat(
+      route, pausedRecovery(products, route.request().postDataJSON().conversation_id),
+    ));
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/showcase?view=recovery&present=1');
     // The desk is the first view painted here, the case the view swap's
@@ -106,18 +107,18 @@ for (const motion of ['no-preference', 'reduce'] as const) {
 for (const width of [1440, 390]) {
   test(`a shortlisted alternative can be held instead of the top plan at ${width}`, async ({ page }) => {
     const sent: Record<string, unknown>[] = [];
-    await page.route(url => url.pathname === '/api/chat', route => {
+    await page.route(isChatCall, route => {
       const body = route.request().postDataJSON();
       sent.push(body);
       if (!body.selected_package_id) {
-        return route.fulfill({ json: pausedRecovery(products, body.conversation_id) });
+        return fulfillChat(route, pausedRecovery(products, body.conversation_id));
       }
       // The resumed run keeps the ranking and names the package it held.
-      return route.fulfill({ json: {
+      return fulfillChat(route, {
         message: 'Held the chosen package.', products, activities: [],
         conversation_id: body.conversation_id, workflow_status: 'resumed',
         workflow_plan_package_id: body.selected_package_id,
-      } });
+      });
     });
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/showcase?view=recovery');
@@ -173,9 +174,9 @@ async function routeJourney(
 test('a presenter stop while the session waits shows the rail row from Aurora', async ({ page }) => {
   const state = await routeJourney(page, (thread, stopped) =>
     pausedJourneyDocument(thread, { stopped, products }));
-  await page.route(url => url.pathname === '/api/chat', route => {
+  await page.route(isChatCall, route => {
     state.thread = route.request().postDataJSON().conversation_id;
-    return route.fulfill({ json: pausedRecovery(products, state.thread) });
+    return fulfillChat(route, pausedRecovery(products, state.thread));
   });
   await page.route(url => url.pathname === '/api/journeys/jrn_e2e/stop-session', route => {
     state.stopped = true;
@@ -201,10 +202,10 @@ test('a presenter stop mid-run fails the request and the desk offers Resume', as
     : { stopped, status: 'running', products }));
   let releaseChat!: () => void;
   const chatReleased = new Promise<void>(resolve => { releaseChat = resolve; });
-  await page.route(url => url.pathname === '/api/chat', async route => {
+  await page.route(isChatCall, async route => {
     state.thread = route.request().postDataJSON().conversation_id;
     await chatReleased;
-    return route.fulfill({ status: 503, json: { error: 'Recovery was interrupted. The saved steps stay in Aurora.' } });
+    return failChat(route, 503, 'Recovery was interrupted. The saved steps stay in Aurora.');
   });
   await page.route(url => url.pathname === '/api/journeys/jrn_e2e/stop-session', route => {
     state.stopped = true;
