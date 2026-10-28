@@ -49,7 +49,7 @@ function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Chec
   }
   if (decision === 'deny' && span?.status === 'denied') {
     return { ...check, status: 'Cedar denied', tone: 'denied', facts,
-      description: 'The gateway refused this hold call before the target ran. Review the reason before changing the request.' };
+      description: 'The gateway refused this hold call before the target ran. The returned reason names the layer that refused it; change the request before trying again.' };
   }
   if (identityRefused) {
     return { ...check, status: 'Identity check refused', tone: 'denied', facts,

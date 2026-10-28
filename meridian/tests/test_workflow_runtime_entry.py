@@ -10,6 +10,7 @@ import pytest
 from backend.agents.phase_05_workflow import runtime_entry as entry
 from backend.authorization import AuthorizationDecision, TravelerAuthorizationError
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
+from backend.agents.phase_05_workflow.governed_tools import GatewayToolError
 from backend.agents.phase_05_workflow.runner import WorkflowConflictError, WorkflowRequestError
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
@@ -122,6 +123,14 @@ async def test_heartbeats_flow_while_the_run_works():
 async def test_domain_errors_leave_as_codes(error, code):
     out = await events(START, Runner(error=error))
     assert out == [{"type": "error", "code": code, "message": str(error)}]
+
+
+async def test_a_gateway_failure_leaves_with_its_reason_masked_and_cut():
+    reason = "denied for arn:aws:iam::123456789012:role/x " + "y" * 400
+    out = await events(START, Runner(error=GatewayToolError("T___x", reason, refused_by="policy")))
+    assert out[0]["code"] == "gateway_tool"
+    assert "123456789012" not in out[0]["message"] and len(out[0]["message"]) <= 300
+    assert "denied" in out[0]["message"]
 
 
 async def test_an_unexpected_failure_hides_its_detail_behind_a_reference():

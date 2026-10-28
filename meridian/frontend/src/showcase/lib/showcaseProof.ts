@@ -1,5 +1,7 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isDurableField, lastTitlePart, MCP_ARGS_DETAILS } from './spanTitles';
+import {
+  isDurableField, lastTitlePart, MCP_ARGS_DETAILS, SNAPSHOT_STORE_FIELDS, SNAPSHOT_TABLE_FIELDS,
+} from './spanTitles';
 
 export interface McpContract {
   server: string;
@@ -61,7 +63,7 @@ export function hasDurableCheckpoint(traceSpans: ShowcaseTraceSpan[]): boolean {
   const spans = traceSpans.filter(isCheckpointSpan);
   const explicit = spans.flatMap(span => span.fields.filter(field => isDurableField(field.label)));
   if (explicit.length) return explicit[explicit.length - 1].value === 'true';
-  return spans.some(span => /\b(AuroraDataApiSaver|AsyncPostgresSaver|PostgresSaver)\b/i.test(fieldValue(span, 'checkpointer') ?? span.name));
+  return spans.some(span => /\b(AuroraDataApiSaver|AsyncPostgresSaver|PostgresSaver)\b/i.test(firstFieldValue(span, SNAPSHOT_STORE_FIELDS) ?? span.name));
 }
 
 export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowStateProof {
@@ -78,12 +80,12 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
   const checkpointSpans = traceSpans.filter(isCheckpointSpan);
   const checkpoint =
     traceSpans
-      .map((span) => fieldValue(span, 'checkpointer'))
+      .map((span) => firstFieldValue(span, SNAPSHOT_STORE_FIELDS))
       .find(Boolean) ?? 'not observed';
   const durable = hasDurableCheckpoint(traceSpans);
   const table =
     traceSpans
-      .map((span) => fieldValue(span, 'checkpoint_store'))
+      .map((span) => firstFieldValue(span, SNAPSHOT_TABLE_FIELDS))
       .find(Boolean) ??
     (checkpoint.toLowerCase().includes('memorysaver')
       ? 'process memory'
@@ -213,6 +215,15 @@ function workflowNodeFromSpan(span: ShowcaseTraceSpan): string | null {
 function fieldValue(span: ShowcaseTraceSpan, label: string): string | null {
   const found = span.fields.find((f) => f.label.toLowerCase() === label.toLowerCase());
   return found?.value ?? null;
+}
+
+/** The first label that is present; a journey saved earlier carries the older label. */
+function firstFieldValue(span: ShowcaseTraceSpan, labels: readonly string[]): string | null {
+  for (const label of labels) {
+    const value = fieldValue(span, label);
+    if (value) return value;
+  }
+  return null;
 }
 
 function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {

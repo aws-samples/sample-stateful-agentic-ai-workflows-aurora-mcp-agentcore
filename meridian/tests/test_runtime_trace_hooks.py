@@ -26,6 +26,7 @@ from turn_trace import (  # noqa: E402
 
 from backend import audit_vocabulary  # noqa: E402
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter  # noqa: E402
+from backend.agents.concierge_definition import WORKFLOW_ONLY_TOOLS  # noqa: E402
 from backend.agents.phase_04_production.audit_outcome import (  # noqa: E402
     audit_from_decision,
     read_turn,
@@ -529,23 +530,31 @@ def test_the_config_names_the_gateway_tools():
     assert "semantic_trip_search" not in gateway_tools()
 
 
-@pytest.mark.parametrize("tool", sorted(gateway_tools()))
+@pytest.mark.parametrize("tool", sorted(gateway_tools() - set(WORKFLOW_ONLY_TOOLS)))
 def test_every_gateway_tool_has_a_span_and_a_policy(tool):
     """A tool without a span would run unseen: missing from tool_calls, a denial read as allowed."""
     assert tool in SPANS, f"{tool} has no SPANS entry in turn_trace.py"
     assert tool in POLICY_FOR, f"{tool} has no POLICY_FOR entry in turn_trace.py"
 
 
-def test_the_runtime_withholds_no_gateway_tool_from_the_model(monkeypatch):
+def test_a_workflow_only_tool_is_on_the_gateway_and_has_no_span_or_policy_entry():
+    assert set(WORKFLOW_ONLY_TOOLS) <= gateway_tools()
+    for tool in WORKFLOW_ONLY_TOOLS:
+        assert tool not in SPANS and tool not in POLICY_FOR
+
+
+def test_the_runtime_withholds_exactly_the_workflow_only_tools_from_the_model(monkeypatch):
     runtime = load_runtime_main(monkeypatch, "meridian_runtime_withheld")
     listed = [SimpleNamespace(tool_name=name) for name in gateway_tool_names()]
+    only = sorted(name for name in gateway_tool_names()
+                  if name.split("___", 1)[1] in WORKFLOW_ONLY_TOOLS)
 
     callable_tools, withheld = runtime.governed_tools(listed)
     span = runtime.tools_span(listed, 1)
 
-    assert withheld == [] and len(callable_tools) == len(listed)
+    assert sorted(withheld) == only and len(callable_tools) == len(listed) - len(only)
     fields = {field["label"]: field["value"] for field in span["telemetry"]["fields"]}
-    assert fields["withheld_from_model"] == "none"
+    assert fields["withheld_from_model"] == ", ".join(withheld)
 
 
 def test_friendly_denial_names_the_policy_or_the_default_deny():
@@ -832,3 +841,17 @@ def test_the_span_shows_the_pinned_traveler_when_the_trace_hooks_run_first():
     assert shown["travelerId"] == "trv_pinned"
     TravelerPinHook("trv_pinned").before(event)
     assert event.tool_use["input"]["travelerId"] == "trv_pinned"
+
+
+def test_a_workflow_only_tool_stays_withheld_even_when_it_gains_a_span(monkeypatch):
+    runtime = load_runtime_main(monkeypatch, "meridian_runtime_span_added")
+    for tool in WORKFLOW_ONLY_TOOLS:
+        monkeypatch.setitem(runtime.SPANS, tool, runtime.SPANS["get_package_details"])
+    listed = [SimpleNamespace(tool_name=name) for name in gateway_tool_names()]
+    only = sorted(name for name in gateway_tool_names()
+                  if name.split("___", 1)[1] in WORKFLOW_ONLY_TOOLS)
+
+    callable_tools, withheld = runtime.governed_tools(listed)
+
+    assert only and sorted(withheld) == only
+    assert not {t.tool_name for t in callable_tools} & set(only)

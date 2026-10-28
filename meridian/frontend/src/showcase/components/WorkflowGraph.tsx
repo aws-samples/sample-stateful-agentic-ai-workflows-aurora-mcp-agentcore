@@ -9,7 +9,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ServiceMark } from './ServiceMark';
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { workflowPathFor } from '../lib/showcaseProof';
-import { isSavedStepTitle } from '../lib/spanTitles';
+import { isSavedStepTitle, SNAPSHOT_STORE_FIELDS } from '../lib/spanTitles';
 
 type NodeName = 'classify' | 'search' | 'availability' | 'memory_recall' | 'prepare_hold' | 'hold' | 'synthesize';
 type GraphNodeName = 'start' | NodeName | 'end';
@@ -76,7 +76,9 @@ function deriveActivation(
     }
 
     if (isSavedStepTitle(span.name || '')) {
-      const ck = fieldValue(span, 'checkpointer');
+      const ck = SNAPSHOT_STORE_FIELDS
+        .map((label) => fieldValue(span, label))
+        .find(Boolean) ?? null;
       if (ck) checkpointer = ck;
       if (lastNode) checkpointAfter.add(lastNode);
     }

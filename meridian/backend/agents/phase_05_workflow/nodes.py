@@ -10,6 +10,7 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.agentcore.caller_claims import CallerClaimsError
+from backend.agentcore.caller_credential import current_caller_token
 from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
 from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.phase_05_workflow.governed_hold import (
@@ -22,6 +23,7 @@ from backend.agents.phase_05_workflow.governed_hold import (
     hold_arguments,
     place_governed_hold,
 )
+from backend.agents.phase_05_workflow.governed_tools import invoke_gateway_tool, recording
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
 from backend.agents.phase_05_workflow.packages import package_to_dict
 from backend.agents.phase_05_workflow.routing import classify_intent, is_recovery_request
@@ -35,7 +37,7 @@ from backend.agents.phase_05_workflow.state import (
 )
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
 from backend.search_utils import numbered_sql
-from backend.trace_names import AVAILABILITY_CODE, RETRIEVAL_CODE
+from backend.trace_names import AVAILABILITY_CODE
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +84,11 @@ class WorkflowNodes:
         self.search_fn = search_fn
         self.availability_fn = availability_fn
         self.memory_recall_fn = memory_recall_fn
-        self._gateway_call = gateway_call or self._configured_gateway
+        self._gateway_call = recording(gateway_call or self._configured_gateway)
 
     @staticmethod
     def _configured_gateway(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        from backend.agentcore.gateway import get_agentcore_gateway
-
-        return get_agentcore_gateway().call_tool(name, arguments)
+        return invoke_gateway_tool(name, arguments, caller_token=current_caller_token() or "")
 
     @staticmethod
     def _snapshot_activity(node: str) -> Dict[str, Any]:
@@ -118,9 +118,9 @@ class WorkflowNodes:
                 "component": "Aurora workflow_snapshots",
                 "status": "ok",
                 "fields": [
-                    {"label": "checkpointer", "value": SNAPSHOT_STORE},
+                    {"label": "snapshot_store", "value": SNAPSHOT_STORE},
                     {"label": "snapshot_durable", "value": "true"},
-                    {"label": "checkpoint_store", "value": "workflow_snapshots"},
+                    {"label": "snapshot_table", "value": "workflow_snapshots"},
                     {"label": "durability", "value": SNAPSHOT_STORE},
                 ],
             },
@@ -154,17 +154,18 @@ class WorkflowNodes:
                         {"label": "node", "value": "classify"},
                         {"label": "intent", "value": intent},
                         {"label": "recovery", "value": str(recovery).lower()},
-                        {"label": "checkpointer", "value": SNAPSHOT_STORE},
+                        {"label": "snapshot_store", "value": SNAPSHOT_STORE},
                     ],
                 },
             )
         )
+        activities.append(self._snapshot_activity("classify"))
         return {"intent": intent, "activities": activities}
 
     async def search(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Worker node: run trip discovery through the one hybrid search (retrieval/hybrid.py).
+        """Worker node: run trip discovery through the Gateway's ``hybrid_trip_search``.
 
         Checkpoints state to Aurora after returning. On the 'plan' path this is
         step 1 of 2 — the conditional edge then routes to the availability node.
@@ -185,7 +186,7 @@ class WorkflowNodes:
                 execution_time_ms=elapsed,
                 telemetry={
                     "category": "orchestration",
-                    "component": f"Strands Graph → {RETRIEVAL_CODE}",
+                    "component": "Strands Graph → AgentCore Gateway: hybrid_trip_search",
                     "status": "ok",
                     "fields": [
                         {"label": "node", "value": "search"},
@@ -381,6 +382,7 @@ class WorkflowNodes:
                 "fields": [{"label": "node", "value": "prepare_hold"}],
             },
         ))
+        activities.append(self._snapshot_activity("prepare_hold"))
         return {**prepared, "activities": activities}
 
     @staticmethod
@@ -471,9 +473,9 @@ class WorkflowNodes:
 
         if not outcome.placed:
             reason = self._refusal_reason(outcome)
-            logger.warning("courtesy hold not placed: %s", outcome.raw_error or reason)
+            logger.warning("courtesy hold not placed: %s", reason)
             activities.append(
-                self._hold_not_placed(reason, refused_by=outcome.refused_by, raw=outcome.raw_error)
+                self._hold_not_placed(reason, refused_by=outcome.refused_by, raw=outcome.error)
             )
             activities.append(self._snapshot_activity("hold"))
             return {"activities": activities}
@@ -890,6 +892,7 @@ class WorkflowNodes:
                     details="No memory recall function wired",
                 )
             )
+            activities.append(self._snapshot_activity("memory_recall"))
             return {"packages": [], "activities": activities}
         packages, sub_activities = await self.memory_recall_fn(
             state["query"],
@@ -982,6 +985,7 @@ class WorkflowNodes:
                 },
             )
         )
+        activities.append(self._snapshot_activity("synthesize"))
         return {"response": response, "activities": activities}
 
     @staticmethod

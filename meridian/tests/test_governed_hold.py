@@ -7,9 +7,14 @@ import pytest
 
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
+    LEASE_LOST_ERRORS,
+    RELEASE_TOOL,
     hold_arguments,
     place_governed_hold,
+    release_arguments,
+    release_governed_hold,
 )
+from backend.agents.phase_05_workflow.governed_tools import GatewayToolError
 
 INTENT = {
     "hold_request_id": "hrq_abc123",
@@ -87,7 +92,7 @@ def test_a_cedar_denial_is_a_policy_decision_not_an_exception():
     )
     assert not outcome.placed
     assert outcome.policy_decision == "deny"
-    assert "denied by default" in outcome.error
+    assert outcome.error == "the Gateway policy denied the call"
 
 
 def test_a_business_refusal_from_the_lambda_keeps_its_name():
@@ -99,13 +104,13 @@ def test_a_business_refusal_from_the_lambda_keeps_its_name():
     assert outcome.policy_decision == "allow"
 
 
-def test_a_transport_error_is_reported_as_is():
+def test_a_transport_error_is_reported_with_a_fixed_phrase():
     outcome = place_governed_hold(
         lambda *_: _response(error={"code": -32000, "message": "Gateway HTTP 503"}),
         {"packageId": "TKY-003"},
     )
     assert not outcome.placed and outcome.policy_decision is None
-    assert "503" in outcome.error
+    assert outcome.error == "the Gateway answered with an error"
 
 
 @pytest.mark.parametrize("message", [
@@ -168,3 +173,89 @@ def test_an_identity_prefix_outside_the_gateway_envelope_is_not_a_refusal():
         lambda *_: _response(error={"code": -32000, "message": "Identity Check Failed: proxy"}), {}
     )
     assert (outcome.policy_decision, outcome.refused_by) == (None, None)
+
+
+def test_release_arguments_are_the_three_identities_and_the_execution_when_given():
+    assert release_arguments(traveler_id="t", hold_request_id="h", journey_id="j") == {
+        "travelerId": "t", "holdRequestId": "h", "journeyId": "j"}
+    assert release_arguments(
+        traveler_id="t", hold_request_id="h", journey_id="j", execution_id="exe_1"
+    ) == {"travelerId": "t", "holdRequestId": "h", "journeyId": "j", "executionId": "exe_1"}
+
+
+@pytest.mark.parametrize("code", sorted(LEASE_LOST_ERRORS))
+def test_a_lease_lost_answer_is_never_a_release(code):
+    outcome = release_governed_hold(lambda *_: _response({"error": code}), {})
+    assert (outcome.released, outcome.error, outcome.lease_lost) == (False, code, True)
+
+
+def test_other_failures_are_not_a_lost_lease():
+    outcome = release_governed_hold(lambda *_: _response({"error": "release_failed"}), {})
+    assert outcome.released is False and outcome.lease_lost is False
+
+
+@pytest.mark.parametrize(("payload", "replayed"), [
+    ({"release": {"status": "released", "replayed": False}}, False),
+    ({"release": {"status": "released", "replayed": True}}, True),
+])
+def test_a_release_receipt_is_a_release(payload, replayed):
+    calls = []
+
+    def call_tool(name, arguments):
+        calls.append(name)
+        return _response(payload)
+
+    outcome = release_governed_hold(call_tool, {})
+    assert calls == [RELEASE_TOOL]
+    assert (outcome.released, outcome.replayed, outcome.error) == (True, replayed, None)
+
+
+@pytest.mark.parametrize(("reply", "error", "refused_by"), [
+    (_response(text="Tool Execution Denied: no policy", is_error=True),
+     "the Gateway policy denied the call", "policy"),
+    (_response(text="Identity Check Failed: the request carries no bearer token.",
+               is_error=True),
+     "the Gateway identity check refused the call (no_token)", "identity_check"),
+    (_response({"error": "hold_not_found"}), "hold_not_found", None),
+    (_response({"error": "traveler_not_authorized"}), "traveler_not_authorized", None),
+    (_response({"error": "booking_not_held"}), "booking_not_held", None),
+    (_response({"error": "release_failed"}), "the hold target returned an error", None),
+    (_response({"error": "arn:aws:iam::123456789012:role/x"}),
+     "the hold target returned an error", None),
+    (_response(text="not json"), "the Gateway result could not be read", None),
+    (_response(text="[1]"), "the Gateway result could not be read", None),
+    (_response({"release": {"status": "held"}}), "the Gateway returned no release receipt", None),
+    (_response({"release": "released"}), "the Gateway returned no release receipt", None),
+    (_response({}), "the Gateway returned no release receipt", None),
+])
+def test_anything_but_a_release_receipt_is_not_released(reply, error, refused_by):
+    outcome = release_governed_hold(lambda *_: reply, {})
+    assert (outcome.released, outcome.error, outcome.refused_by) == (False, error, refused_by)
+
+
+def test_a_null_error_is_not_an_error():
+    reply = _response({"error": None, "release": {"status": "released", "replayed": False}})
+    assert release_governed_hold(lambda *_: reply, {}).released is True
+
+
+def test_gateway_text_goes_to_a_masked_log_and_not_to_the_outcome(caplog):
+    sent = "Tool Execution Denied: arn:aws:iam::123456789012:role/x Bearer abc.def.ghi"
+    with caplog.at_level("WARNING"):
+        outcome = release_governed_hold(lambda *_: _response(text=sent, is_error=True), {})
+    assert "123456789012" not in str(outcome) and "abc.def.ghi" not in str(outcome)
+    assert "Bearer <token>" in caplog.text and "abc.def.ghi" not in caplog.text
+    assert "123456789012" not in caplog.text
+
+
+def test_a_malformed_envelope_is_not_a_release():
+    outcome = release_governed_hold(lambda *_: "not a response", {})
+    assert not outcome.released and outcome.error == "the Gateway answered with an error"
+
+
+def test_a_transport_failure_propagates_with_its_code():
+    def call_tool(name, arguments):
+        raise GatewayToolError(name, "the Gateway timed out", code="timeout")
+
+    with pytest.raises(GatewayToolError) as raised:
+        release_governed_hold(call_tool, {})
+    assert raised.value.code == "timeout"

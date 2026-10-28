@@ -24,8 +24,9 @@ DETAIL_TOOLS = ("get_package_details",)
 TRAVELER_TOOLS = ("loyalty_balance", "create_courtesy_hold", "confirm_booking", "release_hold")
 PHASE3_TOOLS = CATALOG_TOOLS + DETAIL_TOOLS + ("loyalty_balance",)
 PHASE4_TOOLS = CATALOG_TOOLS + DETAIL_TOOLS + TRAVELER_TOOLS
-# release_hold is a write but is not deployed until Release 3, so the Phase 4 prompt names
-# only the two writes the Gateway lists today.
+# release_hold is a write the Phase 5 workflow calls to give a hold back. The Concierge Runtime
+# withholds it from the model, so the Phase 4 prompt names only the two writes the model uses.
+WORKFLOW_ONLY_TOOLS = ("release_hold",)
 WRITE_TOOLS = ("create_courtesy_hold", "confirm_booking", "release_hold")
 PACKAGE_SEARCH_TOOLS = ("search_trips", "hybrid_trip_search")
 TRAVELER_ARGUMENT = "travelerId"
@@ -50,7 +51,7 @@ TOOL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "confirm_booking": (
         "travelerId", "bookingId", "totalCents", "travelerConfirmed", "budgetCeilingCents",
         "journeyRef"),
-    "release_hold": ("travelerId", "holdRequestId", "journeyId"),
+    "release_hold": ("travelerId", "holdRequestId", "journeyId", "executionId"),
 }
 
 PROMPT_CORE = (

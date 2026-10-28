@@ -119,17 +119,17 @@ describe('WorkflowGraph', () => {
 });
 
 describe.each([
-  ['Snapshot saved: AuroraSnapshotStorage.write'],
-  ['Workflow paused at a saved step'],
-  ['Workflow resumed from a saved step'],
-  ['Checkpoint · AuroraSnapshotStorage.write'],
-  ['Workflow paused at checkpoint'],
-  ['Workflow resumed from checkpoint'],
-])('saved-step span "%s"', (title) => {
+  ['Snapshot saved: AuroraSnapshotStorage.write', 'snapshot_store'],
+  ['Workflow paused at a saved step', 'snapshot_store'],
+  ['Workflow resumed from a saved step', 'snapshot_store'],
+  ['Checkpoint · AuroraSnapshotStorage.write', 'checkpointer'],
+  ['Workflow paused at checkpoint', 'checkpointer'],
+  ['Workflow resumed from checkpoint', 'checkpointer'],
+])('saved-step span "%s" with the %s label', (title, label) => {
   it('badges the last lit node and shows where it was saved', () => {
     render(<WorkflowGraph state={state([
       span({ id: 'classify', fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'plan' }] }),
-      span({ id: 'saved', name: title, fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }] }),
+      span({ id: 'saved', name: title, fields: [{ label, value: 'Aurora workflow_snapshots' }] }),
     ])} />);
 
     expect(screen.getByText('saved')).toBeInTheDocument();

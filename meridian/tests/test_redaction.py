@@ -3,7 +3,12 @@
 import pytest
 from hypothesis import given, strategies as st
 
-from backend.security.redaction import ACCOUNT_ID_PATTERN, mask_account_ids, mask_payload
+from backend.security.redaction import (
+    ACCOUNT_ID_PATTERN,
+    mask_account_ids,
+    mask_payload,
+    mask_secrets,
+)
 
 ACCOUNT = "123456789012"
 OTHER = "111122223333"
@@ -204,3 +209,29 @@ def test_a_cut_never_leaves_half_a_credential():
     text = masked_traceback(_raised("x" * 500 + " password=hunter2"), limit=200)
 
     assert "hunter2" not in text and "hunter" not in text
+
+
+def test_mask_secrets_masks_bearer_credentials_and_account_ids_without_cutting():
+    text = "password=hunter2 arn:aws:iam::123456789012:role/x Bearer abc.def.ghi " + "w " * 300
+    masked = mask_secrets(text)
+    assert masked.startswith(
+        "password=<masked> arn:aws:iam::<acct>:role/x Bearer <token> ")
+    assert "hunter2" not in masked and "abc.def.ghi" not in masked and len(masked) > 400
+    assert mask_secrets(masked) == masked
+
+
+@pytest.mark.parametrize("text", [
+    'refused Bearer "eyJabc.def.ghi" now',
+    "refused Bearer 'abcdefghij' now",
+    "Authorization: Bearer abcdefghij1234",
+    "{'Authorization': 'Bearer abcdefghij1234'}",
+])
+def test_mask_secrets_masks_a_bearer_token_however_it_is_quoted(text):
+    masked = mask_secrets(text)
+    assert "Bearer <token>" in masked
+    assert "abcdefghij" not in masked and "eyJabc" not in masked
+
+
+def test_mask_secrets_leaves_the_fixed_no_bearer_token_text_alone():
+    text = "No signed-in caller: no bearer token was forwarded."
+    assert mask_secrets(text) == text

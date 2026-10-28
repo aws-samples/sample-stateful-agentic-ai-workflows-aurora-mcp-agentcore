@@ -5,6 +5,7 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,7 +16,7 @@ from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.retrieval import availability
 from backend.tools import catalog_tools
 from backend.trace_names import (
-    AVAILABILITY_CODE, MCP_CODE, MEMORY_CODE, PRODUCTION_CODE, RETRIEVAL_CODE, SQL_CODE,
+    AVAILABILITY_CODE, MCP_CODE, MEMORY_CODE, PRODUCTION_CODE, SQL_CODE,
     WORKFLOW_CODE,
 )
 from tests.phase5_support import GatewayFake, fake_availability, fake_search
@@ -110,22 +111,32 @@ def test_the_phase_4_orchestrator_is_labelled_as_code(monkeypatch):
 
 
 async def test_workflow_graph_nodes_are_labelled_as_code():
-    nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=GatewayFake())
-    state = {"query": "Rework my Tokyo trip and check availability.", "activities": []}
-    emitted = []
-    for step in (nodes.classify, nodes.search):
-        out = await step(state)
-        emitted += out["activities"]
-    assert len(emitted) >= 3
-    assert {span["agent_name"] for span in emitted} == {WORKFLOW_CODE}
+    gateway = GatewayFake()
+    nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=gateway)
+    nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+    nodes._committed_hold = gateway.committed_hold
+    nodes._booking_status = AsyncMock(return_value=None)
+    nodes.memory_recall_fn = None
+    config = {"configurable": {"thread_id": "t1", "execution_id": "exe_1",
+                                "traveler_confirmed": True}}
+    state = {"query": "Rework my Tokyo trip and check availability.", "traveler_id": "trv_x",
+             "conversation_id": "t1", "travelers_count": 2, "activities": []}
+    for step in ("classify", "search", "availability", "prepare_hold", "hold", "memory_recall",
+                 "synthesize"):
+        node = getattr(nodes, step)
+        out = await (node(state, config) if step == "hold" else node(state))
+        state = {**state, **out}
+    names = {span["agent_name"] for span in state["activities"]}
+    assert len(state["activities"]) >= 7
+    assert names <= {WORKFLOW_CODE, AVAILABILITY_CODE, MEMORY_CODE}
 
 
-async def test_the_workflow_search_node_names_the_hybrid_retrieval_code_step():
+async def test_the_workflow_search_node_names_the_gateway_search_tool():
     nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=GatewayFake())
     out = await nodes.search({"query": "Rework my Tokyo trip.", "activities": []})
 
     (node,) = [span for span in out["activities"] if span["title"] == "Workflow node: search"]
-    assert node["telemetry"]["component"] == f"Strands Graph → {RETRIEVAL_CODE}"
+    assert node["telemetry"]["component"] == "Strands Graph → AgentCore Gateway: hybrid_trip_search"
 
 
 async def test_the_workflow_availability_nodes_name_the_availability_code_step():
@@ -157,6 +168,7 @@ FORBIDDEN = {
     ),
     "backend/retrieval/availability.py": ("PackageAgent",),
     "backend/agents/phase_05_workflow/nodes.py": ("PackageAgent", "SearchAgent"),
+    "backend/agents/phase_05_workflow/governed_tools.py": ("SearchAgent", "PackageAgent"),
     "backend/agents/phase_05_workflow/memory_recall.py": ("MemoryAgent",),
     "backend/agents/phase_05_workflow/state.py": ("OrchestrationAgent",),
     "backend/agents/phase_04_production/memory_agent.py": ("MemoryAgent",),

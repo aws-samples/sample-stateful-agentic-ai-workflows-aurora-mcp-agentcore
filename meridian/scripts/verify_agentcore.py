@@ -95,7 +95,8 @@ def check_policy_engine(control, gateway_id: str) -> tuple[bool, str, str]:
 EXPECTED_GATEWAY_TOOLS = (
     {f"MeridianCatalog___{name}" for name in CATALOG_TOOLS}
     | {"MeridianHolds___get_package_details", "MeridianHolds___loyalty_balance",
-       "MeridianHolds___create_courtesy_hold", "MeridianHolds___confirm_booking"}
+       "MeridianHolds___create_courtesy_hold", "MeridianHolds___confirm_booking",
+       "MeridianHolds___release_hold"}
 )
 
 

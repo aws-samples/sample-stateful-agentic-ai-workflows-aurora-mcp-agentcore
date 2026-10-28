@@ -28,6 +28,8 @@ from backend.agentcore.errors import CallerTokenExpired
 
 TRAVELER_CLAIM = "traveler_id"
 TRAVELER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
+SUBJECT_CLAIM = "sub"
+SUBJECT_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 EXPIRY_MARGIN_SECONDS = 10
 MAX_TOKEN_CHARS = 8192
 TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
@@ -37,8 +39,8 @@ class CallerClaimsError(ValueError):
     """The forwarded token cannot be what a JWT authorizer passed.
 
     Attributes:
-        reason: A short code that is safe to log: ``malformed``, ``token_use``, ``missing_claim``
-            or ``traveler_claim``.
+        reason: A short code that is safe to log: ``malformed``, ``token_use``, ``missing_claim``,
+            ``traveler_claim`` or ``subject_claim``.
     """
 
     def __init__(self, reason: str) -> None:
@@ -116,3 +118,23 @@ def traveler_from_token(token: str, *, now: Optional[Callable[[], float]] = None
     if not isinstance(traveler_id, str) or not TRAVELER_ID_PATTERN.fullmatch(traveler_id):
         raise CallerClaimsError("traveler_claim")
     return traveler_id
+
+
+def subject_from_token(token: str, *, now: Optional[Callable[[], float]] = None) -> str:
+    """The Amazon Cognito subject a forwarded access token proves.
+
+    Like :func:`traveler_from_token`, this trusts that a JWT authorizer verified the signature.
+
+    Raises:
+        CallerClaimsError: The token is malformed, is not an access token, or carries no usable
+            ``sub`` claim (reason ``subject_claim``).
+        CallerTokenExpired: The token has expired or is about to.
+    """
+    claims = decode_claims(token)
+    if claims.get("token_use") != "access":
+        raise CallerClaimsError("token_use")
+    _check_unexpired(claims, now)
+    subject = claims.get(SUBJECT_CLAIM)
+    if not isinstance(subject, str) or not SUBJECT_PATTERN.fullmatch(subject):
+        raise CallerClaimsError("subject_claim")
+    return subject

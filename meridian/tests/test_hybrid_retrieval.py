@@ -292,10 +292,11 @@ async def test_the_phase_3_tool_runs_the_shared_module_and_forwards_its_spans(mo
     assert {span.agent_name for span in spans} == {RETRIEVAL_CODE}
 
 
-def test_phase_5_and_phase_3_call_the_same_function():
+def test_phase_5_recall_calls_the_hybrid_function_and_its_search_goes_through_the_gateway():
     assert memory_recall.retrieval_search is hybrid.retrieval_search
     source = Path("backend/agents/phase_05_workflow/service.py").read_text()
-    assert "from backend.retrieval.hybrid import retrieval_search" in source
+    assert "from backend.agents.phase_05_workflow.governed_tools import gateway_search" in source
+    assert "from backend.retrieval.hybrid import retrieval_search" not in source
 
 
 MERIDIAN = Path(__file__).resolve().parents[1]

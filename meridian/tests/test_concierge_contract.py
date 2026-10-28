@@ -25,9 +25,10 @@ sys.path.insert(0, str(ROOT / "meridian_agentcore" / "app" / "MeridianConcierge"
 
 import turn_trace  # noqa: E402
 
-# Release 3 adds release_hold to the Gateway. Until then the contract lists it and no surface
-# offers it. Release 3 deletes this set, and every test below then holds for every tool.
-NOT_DEPLOYED_UNTIL_RELEASE_3 = {"release_hold"}
+# release_hold is on the Gateway for the Phase 5 compensation. The Concierge Runtime withholds it
+# from the model: it has no turn_trace.SPANS entry and no prompt rule (owner default, pending
+# confirmation (27 Oct), Q1).
+WORKFLOW_ONLY = set(definition.WORKFLOW_ONLY_TOOLS)
 
 
 def gateway_schemas() -> dict[str, dict]:
@@ -57,8 +58,10 @@ def phase3_arguments() -> dict[str, set[str]]:
     return {**served, **local}
 
 
-def test_release_hold_is_the_only_tool_the_gateway_does_not_offer_yet():
-    assert set(definition.PHASE4_TOOLS) - gateway_names() == NOT_DEPLOYED_UNTIL_RELEASE_3
+def test_release_hold_is_on_the_gateway_and_withheld_from_the_model():
+    assert "release_hold" in gateway_names()
+    assert "release_hold" not in turn_trace.SPANS
+    assert "release_hold" not in definition.system_prompt(4)
 
 
 def test_phase_three_offers_exactly_the_contracts_phase_three_tools():
@@ -67,7 +70,7 @@ def test_phase_three_offers_exactly_the_contracts_phase_three_tools():
 
 
 def test_the_gateway_offers_the_contracts_phase_four_tools():
-    assert gateway_names() == set(definition.PHASE4_TOOLS) - NOT_DEPLOYED_UNTIL_RELEASE_3
+    assert gateway_names() == set(definition.PHASE4_TOOLS)
 
 
 def test_phase_three_is_the_gateway_without_the_write_tools():
@@ -79,7 +82,7 @@ def test_each_tool_lives_on_the_target_the_spec_names():
     for name in definition.CATALOG_TOOLS:
         assert f"MeridianCatalog___{name}" in schemas, name
     for name in definition.DETAIL_TOOLS + ("loyalty_balance", "create_courtesy_hold",
-                                           "confirm_booking"):
+                                           "confirm_booking", "release_hold"):
         assert f"MeridianHolds___{name}" in schemas, name
 
 
@@ -117,14 +120,18 @@ def test_cedar_permits_the_reads_and_binds_the_traveler_tools():
 
     reads = set(gateway_schemas()) - {
         n for n in gateway_schemas() if n.split("___")[-1] in ("create_courtesy_hold",
-                                                                "confirm_booking")}
+                                                                "confirm_booking",
+                                                                "release_hold")}
     assert named(statements["meridian_read_tools"]) == reads
     pinned = set(load_interceptor().DEFAULT_PINNED_TOOLS)
-    assert named(statements["meridian_traveler_binding"]) == pinned
+    # Part I: the interceptor pins release_hold before the Cedar binding rule names it (the
+    # policy deploy, Task 8, restores `== pinned`).
+    bound = named(statements["meridian_traveler_binding"])
+    assert bound | {"MeridianHolds___release_hold"} == pinned
 
 
 def test_the_runtime_traces_and_polices_exactly_the_deployed_tools():
-    deployed = set(definition.PHASE4_TOOLS) - NOT_DEPLOYED_UNTIL_RELEASE_3
+    deployed = set(definition.PHASE4_TOOLS) - WORKFLOW_ONLY
     assert set(turn_trace.SPANS) == set(turn_trace.POLICY_FOR) == deployed
 
 
@@ -136,7 +143,7 @@ def test_the_runtimes_copy_of_the_definition_is_the_source():
 def test_each_prompt_names_every_tool_its_phase_offers(phase):
     text = definition.system_prompt(phase)
     offered = definition.PHASE3_TOOLS if phase == 3 else (
-        set(definition.PHASE4_TOOLS) - NOT_DEPLOYED_UNTIL_RELEASE_3)
+        set(definition.PHASE4_TOOLS) - WORKFLOW_ONLY)
     for name in offered:
         assert name in text, (phase, name)
 

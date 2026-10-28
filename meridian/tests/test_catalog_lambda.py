@@ -12,7 +12,7 @@ import pytest
 from botocore.exceptions import EndpointConnectionError
 
 from tests.lambda_targets_support import TARGETS, load_target
-from tests.test_catalog_tools import _names_the_data_api_binds
+from tests.data_api_support import names_the_data_api_binds
 
 TARGET = TARGETS / "meridian_catalog"
 catalog = load_target("meridian_catalog", "meridian_catalog_lambda")
@@ -335,7 +335,7 @@ def test_every_statement_the_lambda_sends_binds_every_parameter(world):
     call("region_inventory", {"region": "Asia", "trip_type": "City Breaks"})
     for request in api.requests:
         named = [p["name"] for p in request.get("parameters", [])]
-        assert named and _names_the_data_api_binds(request["sql"]) == named, request["sql"]
+        assert named and names_the_data_api_binds(request["sql"]) == named, request["sql"]
 
 
 WRITE_VERBS = r"(?:insert|update|delete|merge|drop|alter|create|grant|revoke|truncate|copy|call)"

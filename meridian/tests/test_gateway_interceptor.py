@@ -385,3 +385,16 @@ def test_a_pinned_call_does_not_share_its_arguments_with_the_input():
     assert body["params"]["arguments"] is not event["mcp"]["gatewayRequest"]["body"]["params"][
         "arguments"
     ]
+
+
+RELEASE = "MeridianHolds___release_hold"
+
+
+def test_a_release_names_the_tokens_traveler_whatever_the_caller_sent():
+    event = load("documented_tools_call_hold")
+    params = event["mcp"]["gatewayRequest"]["body"]["params"]
+    params["name"] = RELEASE
+    params["arguments"] = {"travelerId": JORDAN, "holdRequestId": "hrq_1", "journeyId": "jrn_1"}
+    body = rewritten_body(interceptor.lambda_handler(event, None))
+    assert body["params"]["arguments"] == {
+        "travelerId": DECOY, "holdRequestId": "hrq_1", "journeyId": "jrn_1"}

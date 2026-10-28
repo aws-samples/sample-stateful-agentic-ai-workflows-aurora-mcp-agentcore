@@ -27,7 +27,6 @@ so it is never ``allow``. ``turn_error`` stays NULL only for a turn that complet
 failed after its row was committed (the memory step and the trace entries that follow it).
 """
 
-import re
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
@@ -35,6 +34,7 @@ from backend.agentcore.runtime import RuntimeDecision, RuntimeTurnError
 from backend.audit_vocabulary import (
     ALLOWED,
     BUSINESS_RULE,
+    CLASS_NAME_LIMIT,
     CODE_CLASSES,
     DATABASE_GUARD,
     ERROR,
@@ -47,9 +47,11 @@ from backend.audit_vocabulary import (
     WORKLOAD_GRANT_REFUSAL,
     ToolCall,
     authorization_decision,
+    format_turn_error,
     identity_refusal_code,
+    storable_text,
 )
-from backend.security.redaction import mask_account_ids
+from backend.audit_vocabulary import turn_error_of as vocabulary_turn_error_of
 from backend.tools.tool_names import bare_tool_name
 
 # The labels only a tool call's spans carry; the Runtime's start, tool list and memory spans
@@ -58,7 +60,6 @@ CALL_LABELS = ("call_id", "tool", "cedar_decision")
 # The labels whose text a row stores in ``tool_calls``. Text jsonb cannot store in one of them
 # makes the calls unknown, because replacing a character would invent a tool name or an id.
 STORED_LABELS = ("tool", "refusal_code", "access_audit_id")
-LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 # The trace's status for a call a layer other than Cedar refused. A Cedar denial keeps the
 # Runtime's own ``denied``.
 REFUSED_STATUS = "refused"
@@ -69,14 +70,6 @@ Verdict = Tuple[str, Optional[str], Optional[str], Optional[str]]
 Span = Tuple[int, Optional[str], Dict[str, str]]
 # One call and the position of the span that settled it, None when no span did.
 Settled = Tuple[ToolCall, Optional[int]]
-# The longest message a turn_error keeps after its class name, and how a cut message ends.
-TURN_ERROR_MESSAGE_LIMIT = 300
-CUT_MARK = "..."
-# The longest class name a turn_error keeps, as for a class the Runtime names
-# (``backend.agentcore.runtime.ERROR_TYPE``).
-CLASS_NAME_LIMIT = 64
-# The text up to the last word that ends before a space.
-LAST_WHOLE_WORD = re.compile(r"(.*\S)\s", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -200,7 +193,9 @@ def _call(spans: List[Span]) -> Optional[Settled]:
 
 def _stores_as_json(fields: Dict[str, str]) -> bool:
     """Whether the labels a row stores hold text that PostgreSQL ``jsonb`` can store."""
-    return all(_storable(fields.get(label, "")) == fields.get(label, "") for label in STORED_LABELS)
+    return all(
+        storable_text(fields.get(label, "")) == fields.get(label, "") for label in STORED_LABELS
+    )
 
 
 def _settled_calls(spans: List[Dict[str, Any]]) -> Optional[List[Settled]]:
@@ -286,27 +281,6 @@ def audit_of_failed_turn(reported: Optional[RuntimeDecision], turn_error: str) -
     return replace(read_turn(reported).audit, turn_error=turn_error)
 
 
-def _cut(message: str) -> str:
-    """The message, or its whole words that fit in 300 characters with "..." after them.
-
-    A first word longer than that has no boundary to cut at, so it is cut where the room ends.
-    """
-    if len(message) <= TURN_ERROR_MESSAGE_LIMIT:
-        return message
-    room = TURN_ERROR_MESSAGE_LIMIT - len(CUT_MARK)
-    whole = LAST_WHOLE_WORD.match(message, 0, room + 1)
-    return (whole.group(1) if whole else message[:room]) + CUT_MARK
-
-
-def _storable(text: str) -> str:
-    """The text as PostgreSQL text can store it: valid UTF-8, without NUL characters.
-
-    UTF-8 cannot encode a lone surrogate, which JSON can carry as an escape; each one becomes
-    one U+FFFD, the character Unicode designates for text that could not be represented.
-    """
-    return LONE_SURROGATE.sub("\ufffd", text).replace("\x00", "")
-
-
 def turn_error_class(error: BaseException) -> str:
     """The class a ``turn_error`` names for ``error``, at most its first 64 characters.
 
@@ -340,10 +314,9 @@ def turn_error_of(error: BaseException) -> str:
         Exception: Whatever the error's own ``__str__`` raises. A writer then names the error
             by ``turn_error_class`` alone.
     """
-    message = error.event_message if isinstance(error, RuntimeTurnError) else str(error)
-    message = _cut(mask_account_ids(_storable(message).strip()))
-    name = turn_error_class(error)
-    return f"{name}: {message}" if message else name
+    if isinstance(error, RuntimeTurnError):
+        return format_turn_error(turn_error_class(error), error.event_message)
+    return vocabulary_turn_error_of(error)
 
 
 def layer_words(layer: str) -> str:

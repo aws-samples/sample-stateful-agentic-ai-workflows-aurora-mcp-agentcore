@@ -4,6 +4,10 @@ export const PAUSED_TITLE = 'Workflow paused at a saved step';
 export const RESUMED_TITLE = 'Workflow resumed from a saved step';
 export const DURABLE_FIELD = 'snapshot_durable';
 
+/** The fields that name the store and the table a snapshot went to, newest label first. */
+export const SNAPSHOT_STORE_FIELDS = ['snapshot_store', 'checkpointer'] as const;
+export const SNAPSHOT_TABLE_FIELDS = ['snapshot_table', 'checkpoint_store'] as const;
+
 /** The wording from before the Strands Graph. A journey saved earlier replays its spans from
  *  the stored snapshot, so the old titles and field name still reach every parser here. */
 export const LEGACY_TITLES = {
@@ -11,6 +15,8 @@ export const LEGACY_TITLES = {
   paused: 'Workflow paused at checkpoint',
   resumed: 'Workflow resumed from checkpoint',
   durableField: 'checkpoint_durable',
+  storeField: 'checkpointer',
+  tableField: 'checkpoint_store',
 } as const;
 
 /** Phases 3 and 4 and journeys saved earlier still carry a middle dot between the parts of a

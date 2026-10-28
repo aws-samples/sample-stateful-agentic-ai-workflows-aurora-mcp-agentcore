@@ -319,7 +319,7 @@ async def test_snapshot_spans_carry_the_measured_write_time():
     runner._storage_for = storage_for
     result = await runner.run(command())
     checkpoint_spans = [a for a in result["activities"] if a["title"].startswith("Snapshot saved: ")]
-    assert [span["execution_time_ms"] for span in checkpoint_spans] == [222]
+    assert [span["execution_time_ms"] for span in checkpoint_spans] == [111, 222]
 
 
 @pytest.mark.parametrize("count", [0, 21, True, 1.5])
@@ -619,3 +619,78 @@ async def test_a_resume_decides_from_the_snapshot_saved_after_its_claim():
     released = world.released_statuses("t-race")
     assert len(released) == statuses_before + 1
     assert released[-1] == "failed"
+
+
+LEAK = "arn:aws:iam::123456789012:role/x Bearer abc.def.ghi"
+
+
+def _failing_gateway(monkeypatch, kind):
+    from backend.agentcore import gateway as gateway_module
+
+    class Gateway:
+        def call_tool(self, tool, arguments):
+            if kind == "transport":
+                raise RuntimeError(f"Gateway HTTP 403: denied for {LEAK}")
+            return {"result": {"isError": True, "content": [
+                {"type": "text", "text": f"Tool Execution Denied: {LEAK}"}]}}
+
+    monkeypatch.setattr(gateway_module, "get_agentcore_gateway", lambda: Gateway())
+
+
+def _gateway_search_runner(world):
+    from backend.agents.phase_05_workflow.governed_tools import gateway_search
+
+    nodes = WorkflowNodes(gateway_search, fake_availability, gateway_call=world.gateway)
+    nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+    return WorkflowRunner(
+        nodes, storage_for=world.storage_for, lease=world.lease, worker_id="worker-a",
+        heartbeat_seconds=1,
+    )
+
+
+@pytest.mark.parametrize("kind", ["transport", "envelope"])
+async def test_a_gateway_failure_survives_the_graph_with_its_code_and_leaks_no_text(
+    monkeypatch, kind
+):
+    from backend.agents.phase_05_workflow import runtime_entry as entry
+    from backend.agents.phase_05_workflow.governed_tools import GatewayToolError
+
+    _failing_gateway(monkeypatch, kind)
+    world = World()
+    with pytest.raises(GatewayToolError) as raised:
+        await _gateway_search_runner(world).run(command(RECOVERY, thread="leak"))
+    assert raised.value.tool == "MeridianCatalog___hybrid_trip_search"
+
+    payload = {"event": "workflow_turn", "mode": "start", "thread_id": "leak2",
+               "traveler_id": "trv_x", "query": RECOVERY, "travelers_count": 2}
+    events = [e async for e in entry.workflow_turn(
+        payload, session_id="s", runner_factory=lambda wid: _gateway_search_runner(world))]
+    assert events[-1]["code"] == "gateway_tool"
+
+    stored = ""
+    for thread, storage in world.storages.items():
+        stored += json.dumps(await storage.read(snapshot_key(thread)), default=repr)
+    assert stored, "the failed node should have been snapshotted"
+    for text in (stored, json.dumps(events), repr(raised.value)):
+        assert "123456789012" not in text and "abc.def.ghi" not in text
+
+
+async def test_a_cedar_denial_envelope_reaches_no_snapshot_event_or_response():
+    from backend.agents.phase_05_workflow import runtime_entry as entry
+
+    denial = {"result": {"isError": True, "content": [{"type": "text", "text": (
+        f"AuthorizeActionException - Tool Execution Denied: role {LEAK} account 123456789012")}]}}
+    world = World()
+    await world.pause_at_review("deny")
+    runner = world.runner(gateway=lambda name, arguments: denial)
+    events = [e async for e in entry.workflow_turn(
+        {"event": "workflow_turn", "mode": "resume", "thread_id": "deny", "traveler_id": "trv_x",
+         "query": RECOVERY, "travelers_count": 2},
+        session_id="s", runner_factory=lambda wid: runner)]
+    assert events[-1]["type"] == "result"
+    assert any(s["title"] == "Workflow node: hold not placed"
+               for s in events[-1]["state"]["activities"])
+    stored = json.dumps(await world.snapshot("deny"), default=repr)
+    for text in (stored, json.dumps(events)):
+        assert "123456789012" not in text and "arn:aws" not in text
+        assert "abc.def.ghi" not in text

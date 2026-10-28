@@ -32,14 +32,22 @@ from backend.agents.phase_05_workflow.graph import (
     run_task,
     snapshot_key,
 )
+from backend.agents.phase_05_workflow.governed_tools import tool_log_scope
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.agents.phase_05_workflow.packages import review_shortlist
+from backend.agents.phase_05_workflow.run_audit import (
+    RunAuditor,
+    RunAuditRecord,
+    finish_write,
+    turn_error_for,
+)
 from backend.agents.phase_05_workflow.state import (
     SNAPSHOT_STORE,
     WorkflowAuthorizationError,
     activity,
     hold_key,
 )
+from backend.audit_vocabulary import ToolCall
 from backend.db.journey_store import ExecutionClaim, ExecutionLeaseLostError
 
 logger = logging.getLogger(__name__)
@@ -47,6 +55,9 @@ logger = logging.getLogger(__name__)
 LEASE_SECONDS = 60
 HEARTBEAT_SECONDS = 10
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
+# The longest the run waits for its audit row. The Data API client allows 60 s per attempt and
+# retries, so a stalled write would otherwise hold the run's exit.
+AUDIT_WRITE_SECONDS = 10
 SNAPSHOT_PREFIX = "Snapshot saved: "
 CONSENT_INTERRUPTS = frozenset({REVIEW_INTERRUPT, CONFIRM_INTERRUPT})
 
@@ -76,6 +87,8 @@ class WorkflowCommand:
         selected_package_id: The reviewed alternative the traveler chose, sent with the
             resume that answers the review. None keeps the saved choice, or the
             top-ranked package when nothing was chosen.
+        caller_subject: The verified Amazon Cognito subject of the signed-in caller, recorded in
+            the run's audit row. None when no person signed in.
     """
 
     query: str
@@ -85,6 +98,7 @@ class WorkflowCommand:
     travelers_count: int = 1
     review_only: bool = False
     selected_package_id: Optional[str] = None
+    caller_subject: Optional[str] = None
 
 
 class LeaseStore(Protocol):
@@ -257,10 +271,17 @@ def _answered_review(prior: Dict[str, Any]) -> bool:
 def _timed(
     graph_state: Any, completed_before: Set[str], write_ms: List[int]
 ) -> List[Dict[str, Any]]:
-    """Every span, with this invocation's measured snapshot writes attached in node order."""
-    timings = iter(write_ms)
+    """Every span, with this invocation's measured snapshot writes attached in node order.
+
+    One write follows each node that ran in this invocation, and Strands adds one more when
+    the invocation ends. Fewer writes than nodes means a write cannot be matched to its node,
+    so no time is shown rather than the wrong one.
+    """
+    per_node = node_spans(graph_state)
+    fresh = [node_id for node_id, _ in per_node if node_id not in completed_before]
+    timings = iter(write_ms if len(write_ms) >= len(fresh) else [])
     activities: List[Dict[str, Any]] = []
-    for node_id, spans in node_spans(graph_state):
+    for node_id, spans in per_node:
         took = next(timings, None) if node_id not in completed_before else None
         for span in spans:
             if (
@@ -287,7 +308,7 @@ def _status_span(
             "fields": [
                 {"label": "snapshot_durable", "value": "true"},
                 *fields,
-                {"label": "checkpointer", "value": SNAPSHOT_STORE},
+                {"label": "snapshot_store", "value": SNAPSHOT_STORE},
                 {"label": "durability", "value": "Aurora"},
             ],
         },
@@ -306,6 +327,7 @@ class WorkflowRunner:
         heartbeat_seconds: How often the lease is renewed while the graph runs.
         pause_after: Stop after this node, before the next one starts. The scripted
             proofs set it; no request can.
+        auditor: Writes one audit row per run. None writes none.
 
     Raises:
         ValueError: If ``pause_after`` names no node that another node follows.
@@ -321,7 +343,9 @@ class WorkflowRunner:
         lease_seconds: int = LEASE_SECONDS,
         heartbeat_seconds: int = HEARTBEAT_SECONDS,
         pause_after: Optional[str] = None,
+        auditor: Optional[RunAuditor] = None,
     ) -> None:
+        self._auditor = auditor
         self._nodes = nodes
         self._storage_for = storage_for
         self._lease = lease
@@ -333,7 +357,29 @@ class WorkflowRunner:
     async def run(
         self, command: WorkflowCommand, *, after_pause: Optional[AfterPause] = None
     ) -> Dict[str, Any]:
-        """Run a fresh request or resume the saved one.
+        """Run a fresh request or resume the saved one, and audit the run.
+
+        One audit row is written unless the request was unusable or the thread is busy:
+        nothing ran for that caller. A failed run, a refusal of another traveler's thread and a
+        cancellation write their row too, with the error in ``turn_error``. See :meth:`_run`
+        for the errors it raises.
+        """
+        with tool_log_scope() as calls:
+            try:
+                result = await self._run(command, after_pause)
+            except (WorkflowRequestError, WorkflowConflictError):
+                raise
+            except (Exception, asyncio.CancelledError) as exc:
+                await finish_write(self._audit(command, calls, rows=0, error=exc))
+                raise
+            rows = len(result.get("packages") or [])
+            await finish_write(self._audit(command, calls, rows=rows, error=None))
+            return result
+
+    async def _run(
+        self, command: WorkflowCommand, after_pause: Optional[AfterPause]
+    ) -> Dict[str, Any]:
+        """Validate, authorize, claim the lease, then run or resume the saved request.
 
         Raises:
             WorkflowRequestError: Invalid party size, or a thread id Strands cannot use.
@@ -406,6 +452,26 @@ class WorkflowRunner:
                 claim.execution_id, command.thread_id, terminal,
             )
 
+    async def _audit(
+        self, command: WorkflowCommand, calls: List[ToolCall], *, rows: int,
+        error: Optional[BaseException],
+    ) -> None:
+        """Write the run's audit row; a failure is logged and never replaces the run's result."""
+        if self._auditor is None:
+            return
+        try:
+            record = RunAuditRecord(
+                traveler_id=command.traveler_id, subject=command.caller_subject,
+                tool_calls=tuple(calls), turn_error=turn_error_for(error), rows_returned=rows,
+            )
+            async with asyncio.timeout(AUDIT_WRITE_SECONDS):
+                await self._auditor.record(record)
+        except Exception:
+            logger.exception(
+                "thread_id=<%s> | audit row could not be written; the run's own result stands",
+                command.thread_id,
+            )
+
     async def _heartbeat(self, command: WorkflowCommand, claim: ExecutionClaim) -> None:
         while True:
             await asyncio.sleep(self._heartbeat_seconds)
@@ -434,6 +500,9 @@ class WorkflowRunner:
             )
         )
         prior = await self._record_choice(storage, command, prior)
+        # The choice is saved through this storage too, but it is not a node's snapshot.
+        # Keeping its time would shift every later node onto its predecessor's write.
+        write_ms.clear()
         session = SnapshotSessionManager(
             command.thread_id, storage=storage, multi_agent_save_latest_on="node"
         )

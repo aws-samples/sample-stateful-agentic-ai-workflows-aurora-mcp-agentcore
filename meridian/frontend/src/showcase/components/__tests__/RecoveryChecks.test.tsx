@@ -40,12 +40,20 @@ describe('RecoveryChecks evidence boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open System evidence' }));
     expect(onOpenProof).toHaveBeenCalledOnce();
   });
+  it('shows the fixed reason the backend returns for a Cedar denial', () => {
+    const denied = span('deny', 'denied');
+    denied.fields.push({ label: 'gateway_error', value: 'the Gateway policy denied the call' });
+    render(<RecoveryChecks state={state({ traceSpans: [denied] })} onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    expect(screen.getByText('the Gateway policy denied the call')).toBeVisible();
+    expect(screen.getByText(/The returned reason names the layer that refused it/)).toBeVisible();
+  });
   it('reports an identity-check refusal as such, never as a Cedar decision', () => {
     const refused: ShowcaseTraceSpan = {
       id: 'identity', name: 'Workflow node: hold not placed', type: 'security', category: 'security',
       status: 'denied', latencyMs: null, component: 'AgentCore Gateway request interceptor', fields: [
         { label: 'gateway_tool', value: 'MeridianHolds___create_courtesy_hold' },
-        { label: 'gateway_error', value: 'Identity Check Failed: the request carries no bearer token.' },
+        { label: 'gateway_error', value: 'the Gateway identity check refused the call (no_token)' },
         { label: 'refused_by', value: 'identity_check' },
       ],
     };
@@ -54,6 +62,7 @@ describe('RecoveryChecks evidence boundaries', () => {
     expect(screen.getByText('Identity check refused')).toBeVisible();
     expect(screen.queryByText('Cedar denied')).not.toBeInTheDocument();
     expect(screen.getByText(/before Cedar or the hold target ran/)).toBeVisible();
+    expect(screen.getByText('the Gateway identity check refused the call (no_token)')).toBeVisible();
     expect(screen.queryByText('meridian_hold_governance')).not.toBeInTheDocument();
   });
   it('says a resumed step found its earlier hold instead of reporting a missing decision', () => {

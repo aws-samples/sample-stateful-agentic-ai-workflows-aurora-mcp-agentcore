@@ -349,6 +349,37 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            {
+              "name": "release_hold",
+              "description": "Release the traveler's own courtesy hold so its places return to the catalog. Releases only a held booking that belongs to the authorized traveler. Cedar policy decides on the arguments before this runs.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "travelerId": {
+                    "type": "string",
+                    "description": "Traveler id. The platform pins this to the authorized traveler."
+                  },
+                  "holdRequestId": {
+                    "type": "string",
+                    "description": "The hold request id the hold was placed under."
+                  },
+                  "journeyId": {
+                    "type": "string",
+                    "description": "The journey id from the hold receipt."
+                  },
+                  "executionId": {
+                    "type": "string",
+                    "description": "Optional. A workflow worker's execution id; the hold is released only while that worker still holds its lease."
+                  }
+                },
+                "required": [
+                  "travelerId",
+                  "holdRequestId",
+                  "journeyId"
+                ],
+                "additionalProperties": false
+              }
             }
           ],
           "compute": {

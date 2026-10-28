@@ -13,6 +13,7 @@ from tests.test_workflow_runner import World, command
 TITLE = re.compile(
     r"^(Workflow node: [^·]+"
     r"|Snapshot saved: [^·]+"
+    r"|Gateway tool: [A-Za-z]+___[a-z_]+"
     r"|Workflow paused at a saved step"
     r"|Workflow resumed from a saved step)$"
 )
@@ -49,7 +50,8 @@ async def test_snapshot_spans_use_the_prefix_and_the_snapshot_fields():
         fields = {f["label"]: f["value"] for f in span["telemetry"]["fields"]}
         assert fields["snapshot_durable"] == "true"
         assert "checkpoint_durable" not in fields
-        assert fields["checkpointer"] == SNAPSHOT_STORE
+        assert fields["snapshot_store"] == SNAPSHOT_STORE
+        assert "checkpointer" not in fields
 
 
 async def test_status_spans_carry_the_snapshot_durable_field():

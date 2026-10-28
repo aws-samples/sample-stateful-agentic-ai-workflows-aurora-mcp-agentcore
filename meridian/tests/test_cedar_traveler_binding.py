@@ -20,6 +20,9 @@ CATALOG_TOOLS = ("search_trips", "compare_packages", "price_range", "region_inve
 SEARCH = "MeridianCatalog___hybrid_trip_search"
 LOYALTY = "MeridianHolds___loyalty_balance"
 BINDING = "meridian_traveler_binding"
+RELEASE = "MeridianHolds___release_hold"
+# Pinned by the interceptor, but named by the Cedar binding rule only in the policy deploy.
+DEFERRED_BINDING = {RELEASE}
 
 
 def values(mode: str | None) -> dict[str, str]:
@@ -91,7 +94,7 @@ def test_the_rule_names_exactly_the_tools_the_interceptor_pins():
     interceptor = load_interceptor()
     statement = policies("jwt")[BINDING]
     named = {part.split('"')[1] for part in statement.split("AgentCore::Action::")[1:]}
-    assert named == set(interceptor.DEFAULT_PINNED_TOOLS)
+    assert named | DEFERRED_BINDING == set(interceptor.DEFAULT_PINNED_TOOLS)
 
 
 def gateway_tool_schemas() -> dict[str, dict]:

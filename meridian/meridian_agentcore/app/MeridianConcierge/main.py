@@ -38,7 +38,7 @@ from opentelemetry import trace
 from strands.tools.mcp import MCPClient
 
 from caller_identity import CallerRefused, auth_mode, caller_from_request
-from concierge_definition import TravelerPinHook, build_agent
+from concierge_definition import WORKFLOW_ONLY_TOOLS, TravelerPinHook, build_agent
 from gateway_auth import gateway_client_arguments, gateway_url, recording_arguments
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
@@ -302,10 +302,16 @@ def governed_tools(tools: list) -> tuple[list, list[str]]:
     TraceHooks records a call only for a tool in ``SPANS``, and each of those has a Cedar policy
     in ``POLICY_FOR``. The Gateway can list more, such as the search tool it provisions itself
     when semantic search is on. A call to one of those would leave no span and no entry in the
-    audit row, so the model never receives it.
+    audit row, so the model never receives it. A tool in ``WORKFLOW_ONLY_TOOLS`` is withheld
+    by name, even if it later gains a span, because only the Phase 5 workflow may call it.
     """
-    callable_tools = [tool for tool in tools if short(tool.tool_name) in SPANS]
-    withheld = [tool.tool_name for tool in tools if short(tool.tool_name) not in SPANS]
+
+    def offered(tool) -> bool:
+        name = short(tool.tool_name)
+        return name in SPANS and name not in WORKFLOW_ONLY_TOOLS
+
+    callable_tools = [tool for tool in tools if offered(tool)]
+    withheld = [tool.tool_name for tool in tools if not offered(tool)]
     return callable_tools, withheld
 
 

@@ -10,7 +10,8 @@ def test_the_expected_tools_are_the_catalog_target_and_the_holds_target():
     assert verify_agentcore.EXPECTED_GATEWAY_TOOLS == (
         {f"MeridianCatalog___{name}" for name in CATALOG_TOOLS}
         | {"MeridianHolds___get_package_details", "MeridianHolds___loyalty_balance",
-           "MeridianHolds___create_courtesy_hold", "MeridianHolds___confirm_booking"})
+           "MeridianHolds___create_courtesy_hold", "MeridianHolds___confirm_booking",
+           "MeridianHolds___release_hold"})
     assert not any("Semantic" in name for name in verify_agentcore.EXPECTED_GATEWAY_TOOLS)
 
 
@@ -29,7 +30,7 @@ def _check(monkeypatch, offered):
 
 def test_a_gateway_with_every_expected_tool_passes(monkeypatch):
     ok, _, summary = _check(monkeypatch, sorted(verify_agentcore.EXPECTED_GATEWAY_TOOLS))
-    assert ok and summary == "10 tools"
+    assert ok and summary == "11 tools"
 
 
 def test_a_gateway_missing_one_expected_tool_fails(monkeypatch):

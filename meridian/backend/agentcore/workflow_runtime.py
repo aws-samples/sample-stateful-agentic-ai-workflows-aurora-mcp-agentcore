@@ -43,6 +43,12 @@ logger = logging.getLogger(__name__)
 
 WORKFLOW_EVENT = "workflow_turn"
 CONFLICT_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0)
+
+
+class WorkflowGatewayError(RuntimeError):
+    """The Workflow Runtime reported that a Gateway tool refused or failed its call."""
+
+
 ERRORS = {
     "request": WorkflowRequestError,
     "authorization": WorkflowAuthorizationError,
@@ -50,6 +56,7 @@ ERRORS = {
     "lease_lost": ExecutionLeaseLostError,
     "hold_unknown": HoldOutcomeUnknown,
     "token_expired": CallerTokenExpired,
+    "gateway_tool": WorkflowGatewayError,
 }
 
 

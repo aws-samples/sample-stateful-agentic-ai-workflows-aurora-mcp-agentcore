@@ -156,6 +156,17 @@ async def test_listing_treats_percent_and_underscore_literally_and_stays_in_its_
     ]
 
 
+async def test_listing_treats_a_backslash_literally(threads):
+    client, made = threads
+    mine, _execution_id, storage = await writer(client, made)
+    await storage.write(f"session/{mine}/scopes/a\\b/1", EXECUTING)
+    await storage.write(f"session/{mine}/scopes/ab/1", EXECUTING)
+
+    assert await storage.list(f"session/{mine}/scopes/a\\b/") == [
+        f"session/{mine}/scopes/a\\b/1"
+    ]
+
+
 async def test_keys_outside_the_session_are_refused(threads):
     client, made = threads
     thread_id, _execution_id, storage = await writer(client, made)

@@ -169,7 +169,7 @@ it('does not treat a failed checkpoint operation as a durable save', () => {
 it('reads a new-title snapshot as a durable save and counts it', () => {
   const trace = [span({
     name: 'Snapshot saved: AuroraSnapshotStorage.write',
-    fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }, { label: 'snapshot_durable', value: 'true' }],
+    fields: [{ label: 'snapshot_store', value: 'Aurora workflow_snapshots' }, { label: 'snapshot_durable', value: 'true' }],
   })];
   expect(hasDurableCheckpoint(trace)).toBe(true);
   const workflow = deriveWorkflowState(trace);

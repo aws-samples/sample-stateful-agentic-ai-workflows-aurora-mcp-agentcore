@@ -49,6 +49,7 @@ MAX_TOKEN_CHARS = 8192
 TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 BEARER_VALUE = re.compile(r"bearer +(\S+)", re.IGNORECASE)
 DEFAULT_PINNED_TOOLS = (
+    "MeridianHolds___release_hold",
     "MeridianHolds___create_courtesy_hold",
     "MeridianHolds___confirm_booking",
     "MeridianHolds___loyalty_balance",

@@ -26,9 +26,9 @@ const current: ShowcaseTraceSpan[] = [
     component: 'Aurora workflow_snapshots', latencyMs: 458,
     sql: 'INSERT INTO workflow_snapshots (storage_key) VALUES ($1);',
     fields: [
-      { label: 'checkpointer', value: 'Aurora workflow_snapshots' },
+      { label: 'snapshot_store', value: 'Aurora workflow_snapshots' },
       { label: 'snapshot_durable', value: 'true' },
-      { label: 'checkpoint_store', value: 'workflow_snapshots' },
+      { label: 'snapshot_table', value: 'workflow_snapshots' },
     ],
   }),
   span('Workflow paused at a saved step', {
@@ -80,6 +80,12 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
     expect(state.status).toBe('checkpointed');
     expect(state.checkpointCount).toBe(1);
     expect(state.durable).toBe(true);
+  });
+
+  it('reads the store and the table under either label', () => {
+    const workflow = deriveWorkflowState(spans);
+    expect(workflow.checkpoint).toBe('Aurora workflow_snapshots');
+    expect(workflow.table).toBe('workflow_snapshots');
   });
 
   it('refuses a snapshot that reports itself non-durable', () => {

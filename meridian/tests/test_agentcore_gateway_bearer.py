@@ -140,7 +140,7 @@ def test_an_interceptor_refusal_is_a_refusal_not_an_unknown_outcome():
     outcome = place_governed_hold(lambda *_: refusal, {"packageId": "TKY-003"})
     assert not outcome.placed and outcome.refused_by == "identity_check"
     assert outcome.policy_decision is None, "the interceptor refused; Cedar never decided"
-    assert outcome.error.startswith("Identity Check Failed:")
+    assert outcome.error.startswith("the Gateway identity check refused the call")
 
 
 def test_a_401_for_a_token_that_expired_in_flight_by_the_real_clock_is_a_coded_expiry(

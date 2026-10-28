@@ -15,10 +15,15 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Dict, Mapping, Optional, Tuple
 
 from backend.agentcore.auth_mode import jwt_mode
-from backend.agentcore.caller_claims import CallerClaimsError, traveler_from_token
+from backend.agentcore.caller_claims import (
+    CallerClaimsError,
+    subject_from_token,
+    traveler_from_token,
+)
 from backend.agentcore.caller_credential import bearer_from_headers, bind_caller_token
 from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
+from backend.agents.phase_05_workflow.governed_tools import GatewayToolError
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
     WorkflowConflictError,
@@ -27,6 +32,7 @@ from backend.agents.phase_05_workflow.runner import (
 )
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
+from backend.security.redaction import mask_account_ids
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,7 @@ RESULT_KEYS = (
     "resumed_after_restart", "resumed_from_checkpoint", "execution_id", "worker_instance_id",
     "plan_package_id",
 )
+GATEWAY_MESSAGE_LIMIT = 300
 ERROR_CODES: Tuple[Tuple[type, str], ...] = (
     (CallerTokenExpired, "token_expired"),
     (CallerTokenMissing, "authorization"),
@@ -53,6 +60,7 @@ ERROR_CODES: Tuple[Tuple[type, str], ...] = (
     (WorkflowConflictError, "conflict"),
     (ExecutionLeaseLostError, "lease_lost"),
     (HoldOutcomeUnknown, "hold_unknown"),
+    (GatewayToolError, "gateway_tool"),
 )
 
 RunnerFactory = Callable[[str], WorkflowRunner]
@@ -64,9 +72,11 @@ class TravelerContext:
 
     Attributes:
         traveler_id: The traveler whose journey the turn reads and writes.
+        subject: The verified Cognito subject in jwt mode, else None.
     """
 
     traveler_id: str
+    subject: Optional[str] = None
 
 
 def resolve_traveler(
@@ -99,6 +109,7 @@ def resolve_traveler(
         )
     try:
         verified = traveler_from_token(token)
+        subject = subject_from_token(token)
     except CallerClaimsError as exc:
         raise WorkflowAuthorizationError(str(exc)) from exc
     named = payload.get("traveler_id")
@@ -106,7 +117,7 @@ def resolve_traveler(
         raise WorkflowAuthorizationError(
             "The request names a different traveler than the signed-in caller."
         )
-    return TravelerContext(traveler_id=verified)
+    return TravelerContext(traveler_id=verified, subject=subject)
 
 
 def _text(payload: Dict[str, Any], key: str) -> str:
@@ -150,9 +161,12 @@ def parse_turn(
         raise WorkflowRequestError(
             f"selected_package_id must be a package id of at most {MAX_PACKAGE_ID} characters"
         )
+    query = _text(payload, "query")
+    caller = resolve_traveler(payload, session_id, headers)
     return WorkflowCommand(
-        query=_text(payload, "query"),
-        traveler_id=resolve_traveler(payload, session_id, headers).traveler_id,
+        query=query,
+        traveler_id=caller.traveler_id,
+        caller_subject=caller.subject,
         thread_id=_text(payload, "thread_id"),
         resume=mode == "resume",
         travelers_count=payload.get("travelers_count", 1),
@@ -164,7 +178,10 @@ def parse_turn(
 def _error(exc: BaseException) -> Dict[str, Any]:
     for kind, code in ERROR_CODES:
         if isinstance(exc, kind):
-            return {"type": "error", "code": code, "message": str(exc)}
+            message = str(exc)
+            if code == "gateway_tool":
+                message = mask_account_ids(message)[:GATEWAY_MESSAGE_LIMIT]
+            return {"type": "error", "code": code, "message": message}
     reference = uuid.uuid4().hex[:8]
     logger.error("reference=<%s> | workflow turn failed", reference, exc_info=exc)
     return {"type": "error", "code": "internal",
@@ -173,9 +190,10 @@ def _error(exc: BaseException) -> Dict[str, Any]:
 
 def default_runner(worker_id: str) -> WorkflowRunner:
     """The production runner, recording ``worker_id`` on its lease and snapshots."""
+    from backend.agents.phase_05_workflow.run_audit import AuroraRunAuditor
     from backend.agents.phase_05_workflow.service import build_workflow_runner
 
-    return build_workflow_runner(worker_id=worker_id)
+    return build_workflow_runner(worker_id=worker_id, auditor=AuroraRunAuditor())
 
 
 async def _collect(run: Optional["asyncio.Future[Any]"]) -> None:

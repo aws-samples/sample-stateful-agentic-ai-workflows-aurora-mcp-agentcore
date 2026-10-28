@@ -28,6 +28,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
 
+from backend.security.redaction import mask_secrets
+
 ALLOWED = "allowed"
 REFUSED = "refused"
 ERROR = "error"
@@ -48,6 +50,15 @@ DENYING_LAYERS = frozenset({IDENTITY_CHECK, POLICY, WORKLOAD_GRANT, DATABASE_GUA
 WORKLOAD_GRANT_REFUSAL = "traveler_not_authorized"
 # The longest turn_error a row stores; migration 021 checks the same limit.
 TURN_ERROR_LIMIT = 400
+# The longest message a turn_error keeps after its class name, and how a cut message ends.
+TURN_ERROR_MESSAGE_LIMIT = 300
+CUT_MARK = "..."
+# The longest class name a turn_error keeps, as for a class the Runtime names
+# (``backend.agentcore.runtime.ERROR_TYPE``).
+CLASS_NAME_LIMIT = 64
+# The text up to the last word that ends before a space.
+LAST_WHOLE_WORD = re.compile(r"(.*\S)\s", re.DOTALL)
+LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 # The Runtime's code for a second governed write it declined to send on the same turn. It says
 # attempted, not decided: a first attempt that failed in transport may have reached no decision.
 WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
@@ -67,6 +78,7 @@ CODE_CLASSES = {
     "invalid_hold_quantity": BUSINESS_RULE,
     "hold_request_parameter_mismatch": DATABASE_GUARD,
     "booking_not_found": DATABASE_GUARD,
+    "hold_not_found": DATABASE_GUARD,
     "booking_amount_mismatch": DATABASE_GUARD,
     "booking_not_held": BUSINESS_RULE,
     "hold_expired": BUSINESS_RULE,
@@ -161,6 +173,47 @@ def turn_error_problem(turn_error: Any, decision: Optional[str]) -> Optional[str
     if decision == "allow":
         return "a row with a turn_error cannot have authorization_decision 'allow'"
     return None
+
+
+def storable_text(text: str) -> str:
+    """The text as PostgreSQL text can store it: valid UTF-8, without NUL characters.
+
+    UTF-8 cannot encode a lone surrogate, which JSON can carry as an escape; each one becomes
+    one U+FFFD, the character Unicode designates for text that could not be represented.
+    """
+    return LONE_SURROGATE.sub("\ufffd", text).replace("\x00", "")
+
+
+def _cut(message: str) -> str:
+    """The message, or its whole words that fit in 300 characters with "..." after them.
+
+    A first word longer than that has no boundary to cut at, so it is cut where the room ends.
+    """
+    if len(message) <= TURN_ERROR_MESSAGE_LIMIT:
+        return message
+    room = TURN_ERROR_MESSAGE_LIMIT - len(CUT_MARK)
+    whole = LAST_WHOLE_WORD.match(message, 0, room + 1)
+    return (whole.group(1) if whole else message[:room]) + CUT_MARK
+
+
+def format_turn_error(class_name: str, message: str) -> str:
+    """``class_name``, then ": " and the message as a row stores it; the class alone when empty.
+
+    The message is made storable, masked of account ids, then cut at a word boundary to at most
+    300 characters ending with "...". Every result passes :func:`turn_error_problem`.
+    """
+    message = _cut(mask_secrets(storable_text(message).strip()))
+    return f"{class_name}: {message}" if message else class_name
+
+
+def turn_error_of(error: BaseException) -> str:
+    """The ``turn_error`` of a run that ``error`` ended: its class (at most 64 characters) and text.
+
+    Raises:
+        Exception: Whatever the error's own ``__str__`` raises. A writer then names the error by
+            its class alone.
+    """
+    return format_turn_error(type(error).__name__[:CLASS_NAME_LIMIT], str(error))
 
 
 def identity_refusal_code(text: str) -> Optional[str]:

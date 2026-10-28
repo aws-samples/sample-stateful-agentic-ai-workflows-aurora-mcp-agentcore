@@ -310,6 +310,7 @@ def _leaking(marker):
      {**CATALOG_PRICE, **SAVED_BUDGET, "FROM journey_threads": [{"journey_id": "jrn_1"}]}),
     ("confirm_booking", "FROM confirm_booking", lambda: _booking_args(), "booking_failed",
      {**BOOKED_PARTY, **SAVED_BUDGET}),
+    ("release_hold", "FOR UPDATE OF b", lambda: _release_args(), "release_failed", {}),
 ])
 def test_a_failed_write_returns_a_fixed_code_and_none_of_the_exception_text(
     config, monkeypatch, capsys, tool, marker, args, code, extra
@@ -882,3 +883,187 @@ def test_a_new_request_at_a_stale_price_is_still_refused(config, monkeypatch):
     args = {**_hold_args(), "holdRequestId": "hrq_fresh", "bookingId": "HLD-FRESH"}
     result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
     assert result == {"error": "hold_price_mismatch"}
+
+
+RELEASE = "MeridianHolds___release_hold"
+
+
+def _release_args(**overrides):
+    return {
+        "travelerId": "trv_meridian_demo", "holdRequestId": "hrq_abc", "journeyId": "jrn_1",
+        **overrides,
+    }
+
+
+def _release_api(status="held", owned=True, updated=True):
+    return FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FOR UPDATE OF b": [{"booking_id": "HLD-1", "status": status}] if owned else [],
+        "SET status = 'released'": [{"booking_id": "HLD-1"}] if updated else [],
+    })
+
+
+def _release(api, monkeypatch, args=None):
+    monkeypatch.setattr(holds, "RDS", api)
+    return holds.lambda_handler(args or _release_args(), _context(RELEASE))
+
+
+def _executed(api, marker):
+    return [
+        (sql, params)
+        for sql, params in zip(api.statements, api.parameters, strict=True)
+        if marker in sql
+    ]
+
+
+def test_release_hold_gives_back_the_travelers_own_held_booking(config, monkeypatch):
+    api = _release_api()
+    result = _release(api, monkeypatch)
+    assert result["release"] == {
+        "bookingId": "HLD-1", "status": "released", "replayed": False,
+        "holdRequestId": "hrq_abc", "journeyId": "jrn_1",
+    }
+    assert result["governance"]["decision"] == "allow"
+    assert api.tx == ["begin", "commit"]
+    order = [
+        next(i for i, sql in enumerate(api.statements) if marker in sql)
+        for marker in (
+            "traveler_identity_bindings", "SET LOCAL ROLE meridian_app",
+            "FOR UPDATE OF b", "SET status = 'released'",
+        )
+    ]
+    assert order == sorted(order), "grant check, step-down, ownership read, then the update"
+    [(owned_sql, owned_params)] = _executed(api, "FOR UPDATE OF b")
+    assert "b.traveler_id = :traveler" in owned_sql
+    assert owned_params == {
+        "journey": "jrn_1", "request_id": "hrq_abc", "traveler": "trv_meridian_demo"
+    }
+    [(update_sql, update_params)] = _executed(api, "SET status = 'released'")
+    assert "traveler_id = :traveler" in update_sql and "status = 'held'" in update_sql
+    assert update_params == {"booking_id": "HLD-1", "traveler": "trv_meridian_demo"}
+
+
+def test_release_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
+    api = FakeDataApi({"FROM traveler_identity_bindings": []})
+    result = _release(api, monkeypatch)
+    assert result["error"] == "traveler_not_authorized"
+    assert result["governance"]["decision"] == "deny"
+    assert result["governance"]["access_audit_id"].startswith("authz_")
+    assert any("traveler_access_audit" in sql for sql in api.statements)
+    assert api.tx == ["begin", "rollback"]
+    assert not any("bookings" in sql for sql in api.statements)
+
+
+def test_release_hold_reports_a_hold_the_traveler_does_not_have(config, monkeypatch):
+    api = _release_api(owned=False)
+    assert _release(api, monkeypatch) == {"error": "hold_not_found"}
+    assert api.tx == ["begin", "rollback"]
+    assert _executed(api, "SET status = 'released'") == []
+
+
+def test_release_hold_replays_an_already_released_booking_without_writing(config, monkeypatch):
+    api = _release_api(status="released")
+    result = _release(api, monkeypatch)
+    assert result["release"]["replayed"] is True
+    assert _executed(api, "SET status = 'released'") == []
+
+
+@pytest.mark.parametrize("status", ["confirmed", "expired", "pending"])
+def test_release_hold_never_releases_a_booking_that_is_not_held(config, monkeypatch, status):
+    api = _release_api(status=status)
+    assert _release(api, monkeypatch) == {"error": "booking_not_held"}
+    assert api.tx == ["begin", "rollback"]
+    assert _executed(api, "SET status = 'released'") == []
+
+
+def test_release_hold_reports_a_booking_that_stopped_being_held_before_the_update(
+    config, monkeypatch
+):
+    api = _release_api(updated=False)
+    assert _release(api, monkeypatch) == {"error": "booking_not_held"}
+    assert api.tx == ["begin", "rollback"]
+
+
+def test_the_release_tool_takes_exactly_the_traveler_and_the_hold_identity():
+    tools = json.loads((TARGET / "tool-schema.json").read_text(encoding="utf-8"))
+    schema = next(t for t in tools if t["name"] == "release_hold")["inputSchema"]
+    assert set(schema["properties"]) == {
+        "travelerId", "holdRequestId", "journeyId", "executionId"}
+    assert schema["required"] == ["travelerId", "holdRequestId", "journeyId"]
+    assert schema["additionalProperties"] is False
+
+
+def test_release_hold_reads_and_writes_only_after_the_travelers_scope_is_set(config, monkeypatch):
+    api = _release_api()
+    _release(api, monkeypatch)
+    statements = list(zip(api.statements, api.parameters, strict=True))
+    position = {
+        marker: next(i for i, (sql, _) in enumerate(statements) if marker in sql)
+        for marker in ("set_config('app.current_traveler_id'", "set_config('app.agent_type'",
+                       "SET LOCAL ROLE", "FOR UPDATE OF b", "SET status = 'released'")
+    }
+    scoped = position["set_config('app.current_traveler_id'"]
+    assert statements[scoped][1] == {"traveler": "trv_meridian_demo"}
+    assert scoped < position["SET LOCAL ROLE"] < position["FOR UPDATE OF b"]
+    assert position["set_config('app.agent_type'"] < position["FOR UPDATE OF b"]
+    assert position["FOR UPDATE OF b"] < position["SET status = 'released'"]
+
+
+def _fenced_release_api(lease=True, journey="jrn_1", **kwargs):
+    api = _release_api(**kwargs)
+    api.rows_by_marker["FROM journey_executions"] = (
+        [{"execution_id": "exe_1", "journey_id": journey}] if lease else [])
+    return api
+
+
+def test_release_hold_with_a_valid_lease_claims_it_before_reading_or_writing(config, monkeypatch):
+    api = _fenced_release_api()
+    result = _release(api, monkeypatch, _release_args(executionId="exe_1"))
+    assert result["release"]["status"] == "released"
+    assert api.tx == ["begin", "commit"]
+    [(claim_sql, claim_params)] = _executed(api, "FROM journey_executions")
+    assert "lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE" in claim_sql
+    assert claim_params == {"e": "exe_1"}
+    order = ("FROM journey_executions", "FOR UPDATE OF b", "SET status = 'released'")
+    marks = [next(i for i, sql in enumerate(api.statements) if marker in sql) for marker in order]
+    assert marks == sorted(marks), "the lease is claimed before the ownership read and the update"
+    assert any(p == {"e": "exe_1"} and "app.execution_id" in s
+               for s, p in zip(api.statements, api.parameters, strict=True))
+
+
+def test_release_hold_refuses_a_lapsed_or_foreign_lease_and_updates_nothing(
+    config, monkeypatch, capsys
+):
+    api = _fenced_release_api(lease=False)
+    result = _release(api, monkeypatch, _release_args(executionId="exe_gone"))
+    assert result == {"error": "execution_lease_lost"}
+    assert api.tx == ["begin", "rollback"]
+    assert _executed(api, "FOR UPDATE OF b") == []
+    assert _executed(api, "SET status = 'released'") == []
+    assert not any("error_type" in line for line in capsys.readouterr().out.splitlines())
+
+
+def test_release_hold_without_an_execution_id_never_touches_the_lease(config, monkeypatch):
+    api = _fenced_release_api()
+    result = _release(api, monkeypatch)
+    assert result["release"]["status"] == "released"
+    assert _executed(api, "FROM journey_executions") == []
+    assert not any("app.execution_id" in sql for sql in api.statements)
+
+
+def test_the_release_tool_offers_an_optional_execution_id():
+    tools = json.loads((TARGET / "tool-schema.json").read_text(encoding="utf-8"))
+    schema = next(t for t in tools if t["name"] == "release_hold")["inputSchema"]
+    assert schema["properties"]["executionId"]["type"] == "string"
+    assert "executionId" not in schema["required"]
+
+
+def test_release_hold_refuses_a_live_lease_on_another_journey_and_updates_nothing(
+    config, monkeypatch
+):
+    api = _fenced_release_api(journey="jrn_other")
+    result = _release(api, monkeypatch, _release_args(executionId="exe_1"))
+    assert result == {"error": "journey_not_owned"}
+    assert api.tx == ["begin", "rollback"]
+    assert _executed(api, "FOR UPDATE OF b") == []
+    assert _executed(api, "SET status = 'released'") == []

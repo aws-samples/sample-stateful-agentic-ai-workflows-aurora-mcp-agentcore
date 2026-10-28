@@ -42,7 +42,28 @@ const resumed: ShowcaseTraceSpan[] = [
   }),
 ];
 
+// What a paused recovery records since the search runs behind the Gateway: one tool span.
+const pausedViaGateway: ShowcaseTraceSpan[] = [
+  span('Workflow node: classify → plan', { component: 'Strands Graph', latencyMs: 0 }),
+  span('Workflow node: search', {
+    component: 'Strands Graph → AgentCore Gateway: hybrid_trip_search', latencyMs: 956,
+  }),
+  span('Gateway tool: MeridianCatalog___hybrid_trip_search', {
+    category: 'gateway', component: 'AgentCore Gateway, MeridianCatalog Lambda, Aurora',
+    latencyMs: 640,
+  }),
+  span('Snapshot saved: AuroraSnapshotStorage.write', {
+    component: SNAPSHOT_TABLE, latencyMs: 106, fields: durable,
+  }),
+  span('Workflow paused at a saved step', { component: 'Strands Graph', status: 'held' }),
+];
+
 describe('deriveRecoverySteps', () => {
+  it('credits the search step to the Gateway when the search ran as a Gateway tool', () => {
+    const steps = deriveRecoverySteps(pausedViaGateway, 'checkpointed', checkpointed);
+    expect(steps[1].source).toBe(nb('AgentCore Gateway, 956 ms'));
+  });
+
   it('names each step\'s service and measured time once the backend confirms it', () => {
     const steps = deriveRecoverySteps(paused, 'checkpointed', checkpointed);
     expect(steps.map(step => step.state))

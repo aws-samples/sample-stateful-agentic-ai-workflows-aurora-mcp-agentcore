@@ -1,4 +1,5 @@
-"""Gateway target: get_package_details, loyalty_balance, create_courtesy_hold and confirm_booking.
+"""Gateway target: get_package_details, loyalty_balance, create_courtesy_hold, confirm_booking
+and release_hold.
 
 The gateway passes tool arguments as the event and the tool name in the client
 context. Before any traveler-scoped write, this function authorizes its own
@@ -104,6 +105,17 @@ BOOKING_RECEIPT_SQL = (
     "FROM bookings b LEFT JOIN booking_lines bl ON bl.booking_id = b.booking_id "
     "WHERE b.booking_id = :b AND b.traveler_id = :t"
 )
+OWNED_HOLD_SQL = (
+    "SELECT hr.booking_id, b.status FROM hold_requests hr "
+    "JOIN bookings b ON b.booking_id = hr.booking_id "
+    "WHERE hr.journey_id = :journey AND hr.hold_request_id = :request_id "
+    "AND b.traveler_id = :traveler FOR UPDATE OF b"
+)
+RELEASE_SQL = (
+    "UPDATE bookings SET status = 'released' "
+    "WHERE booking_id = :booking_id AND traveler_id = :traveler AND status = 'held' "
+    "RETURNING booking_id"
+)
 BUSINESS_ERRORS = (
     "execution_lease_lost",
     "insufficient_inventory",
@@ -120,6 +132,7 @@ BUSINESS_ERRORS = (
     "hold_price_mismatch",
     "hold_total_mismatch",
     "budget_ceiling_exceeded",
+    "hold_not_found",
 )
 
 
@@ -374,16 +387,22 @@ def _is_replay(journey_id: str, hold: dict, tx: str) -> bool:
     return bool(rows) and rows[0]["fingerprint"] == hold["fingerprint"]
 
 
-def _claim_execution(execution_id: str, tx: str) -> None:
-    """A workflow worker must still own its lease when the hold is written."""
+def _claim_execution(execution_id: str, tx: str, journey_id: str | None = None) -> None:
+    """A workflow worker must still own its lease when the hold is written.
+
+    When the call names a journey, the execution must belong to that journey too; a live lease
+    on another journey is refused as ``journey_not_owned``.
+    """
     rows = query(
-        "SELECT execution_id FROM journey_executions WHERE execution_id = :e "
+        "SELECT execution_id, journey_id FROM journey_executions WHERE execution_id = :e "
         "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE",
         {"e": execution_id},
         tx,
     )
     if not rows:
         raise RuntimeError("execution_lease_lost")
+    if journey_id is not None and rows[0].get("journey_id") != journey_id:
+        raise RuntimeError("journey_not_owned")
     query("SELECT set_config('app.execution_id', :e, true)", {"e": execution_id}, tx)
 
 
@@ -590,6 +609,68 @@ def confirm_booking(args: dict) -> dict:
     }
 
 
+def _release_row(args: dict, tx: str) -> dict:
+    """Inside the authorized transaction: find the traveler's own hold and release it.
+
+    A workflow worker passes its ``executionId``; the lease is then locked and checked in this
+    transaction, so a worker whose lease lapsed cannot release a hold another worker took over.
+    The ownership read runs under the traveler's row security scope and also names the
+    traveler, so another traveler's hold is invisible and reads as ``hold_not_found``. Cedar
+    sees only the arguments; this is the check that the hold exists and belongs to the pinned
+    traveler.
+    """
+    traveler_id = str(args["travelerId"])
+    _scope(traveler_id, tx)
+    if args.get("executionId"):
+        _claim_execution(str(args["executionId"]), tx, str(args["journeyId"]))
+    rows = query(OWNED_HOLD_SQL, {
+        "journey": str(args["journeyId"]),
+        "request_id": str(args["holdRequestId"]),
+        "traveler": traveler_id,
+    }, tx)
+    if not rows:
+        raise RuntimeError("hold_not_found")
+    booking_id, status = str(rows[0]["booking_id"]), str(rows[0]["status"])
+    if status == "released":
+        return {"booking_id": booking_id, "replayed": True}
+    if status != "held":
+        raise RuntimeError("booking_not_held")
+    if not query(RELEASE_SQL, {"booking_id": booking_id, "traveler": traveler_id}, tx):
+        raise RuntimeError("booking_not_held")
+    return {"booking_id": booking_id, "replayed": False}
+
+
+def release_hold(args: dict) -> dict:
+    """Give back one hold of the pinned traveler. Cedar decided on the arguments already."""
+    traveler_id = str(args["travelerId"])
+    tx = RDS.begin_transaction(
+        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
+    )["transactionId"]
+    try:
+        governance = _authorize(traveler_id, tx)
+        if not governance["allowed"]:
+            _transaction("rollback", tx)
+            return _grant_refusal(governance, traveler_id)
+        released = _release_row(args, tx)
+        _transaction("commit", tx)
+    except Exception as error:  # noqa: BLE001 - the SQL and the checks raise named errors
+        _transaction("rollback", tx)
+        return _failure("release_hold", error, "release_failed")
+    result = {
+        "bookingId": released["booking_id"],
+        "status": "released",
+        "replayed": released["replayed"],
+        "holdRequestId": str(args["holdRequestId"]),
+        "journeyId": str(args["journeyId"]),
+    }
+    verb = "Already released" if result["replayed"] else "Released"
+    return {
+        "release": result,
+        "governance": governance,
+        "summary": f"{verb} hold {result['bookingId']}",
+    }
+
+
 def _record_denied_audit(traveler_id: str) -> str:
     """A DENY is evidence: keep the audit row even though the hold transaction rolled back.
 
@@ -737,6 +818,7 @@ TOOLS = {
     "loyalty_balance": loyalty_balance,
     "create_courtesy_hold": create_courtesy_hold,
     "confirm_booking": confirm_booking,
+    "release_hold": release_hold,
 }
 
 

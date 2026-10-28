@@ -40,6 +40,12 @@ _UUID_PREFIX = r"(?<![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}
 ACCOUNT_ID_PATTERN = re.compile(rf"{_BOUNDARY_BEFORE}{_UUID_PREFIX}\d{{12}}(?![0-9A-Za-z])")
 PLACEHOLDER = "<acct>"
 CREDENTIAL_PATTERN = re.compile(r"(password|secret|token|key)=\S+", re.IGNORECASE)
+# A token of at least 8 characters, optionally quoted. The 8-character floor keeps the fixed
+# text "no bearer token was forwarded" readable; a real token (a JWT, an opaque key) is longer.
+# Prose such as "bearer authentication failed" is masked too, because exempting words would let
+# an alphabetic token through.
+BEARER_PATTERN = re.compile(r"""Bearer\s+['"]?[A-Za-z0-9._~+/=-]{8,}""", re.IGNORECASE)
+BEARER_PLACEHOLDER = "Bearer <token>"
 MAX_TRACEBACK_CHARS = 4000
 _CUT = "\n...\n"
 
@@ -74,6 +80,16 @@ def mask_credentials(text: str) -> str:
         kept, case included. Masking a masked string changes nothing.
     """
     return CREDENTIAL_PATTERN.sub(r"\1=<masked>", text)
+
+
+def mask_secrets(text: str) -> str:
+    """``text`` with bearer tokens, credential assignments and account ids masked, uncut.
+
+    Stored text (an audit row's ``turn_error``) and operator logs use this one function. An ARN
+    keeps its partition, service and resource name, as the backend log keeps them; only the
+    account id in it is masked. Each caller applies its own length limit.
+    """
+    return mask_account_ids(mask_credentials(BEARER_PATTERN.sub(BEARER_PLACEHOLDER, text)))
 
 
 def mask_log_text(text: str) -> str:

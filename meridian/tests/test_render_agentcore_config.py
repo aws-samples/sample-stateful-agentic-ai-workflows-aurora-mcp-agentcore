@@ -117,7 +117,8 @@ def test_the_holds_target_offers_loyalty_balance_after_package_details() -> None
     holds = target_named(spec["agentCoreGateways"][0], "MeridianHolds")
 
     assert [t["name"] for t in holds["toolDefinitions"]] == [
-        "get_package_details", "loyalty_balance", "create_courtesy_hold", "confirm_booking"]
+        "get_package_details", "loyalty_balance", "create_courtesy_hold", "confirm_booking",
+        "release_hold"]
 
 
 def test_second_deployment_adds_policies_before_the_engine_id_exists() -> None:

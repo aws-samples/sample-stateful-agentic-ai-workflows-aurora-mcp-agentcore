@@ -9,6 +9,7 @@ import pytest
 from botocore.exceptions import ClientError, ReadTimeoutError
 
 from backend.agentcore import workflow_runtime as wr
+from backend.agentcore.workflow_runtime import WorkflowGatewayError
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter
 from backend.agents.phase_05_workflow import runtime_entry
 from backend.authorization import AuthorizationDecision, TravelerAuthorizationError
@@ -76,7 +77,8 @@ def test_session_ids_are_stable_long_enough_and_distinct_from_the_concierge():
 @pytest.mark.parametrize(("code", "error"), [
     ("request", WorkflowRequestError), ("authorization", WorkflowAuthorizationError),
     ("conflict", WorkflowConflictError), ("lease_lost", ExecutionLeaseLostError),
-    ("hold_unknown", HoldOutcomeUnknown), ("internal", RuntimeError),
+    ("hold_unknown", HoldOutcomeUnknown), ("gateway_tool", WorkflowGatewayError),
+    ("internal", RuntimeError),
 ])
 async def test_error_codes_become_the_domain_errors(code, error):
     client = client_with(frames({"type": "error", "code": code, "message": "m"}))

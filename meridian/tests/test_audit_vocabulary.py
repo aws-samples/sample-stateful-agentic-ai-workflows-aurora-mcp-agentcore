@@ -1,7 +1,10 @@
 """One vocabulary for audit rows: results, refusing layers, the decision rule and the checks."""
 
+import asyncio
+
 import pytest
 
+from backend import audit_vocabulary as vocab
 from backend.audit_vocabulary import (
     CODE_CLASSES,
     IDENTITY_REFUSAL,
@@ -148,6 +151,7 @@ EXPECTED_CLASSES = {
     "invalid_hold_quantity": "business_rule",
     "hold_request_parameter_mismatch": "database_guard",
     "booking_not_found": "database_guard",
+    "hold_not_found": "database_guard",
     "booking_amount_mismatch": "database_guard",
     "booking_not_held": "business_rule",
     "hold_expired": "business_rule",
@@ -179,3 +183,27 @@ def test_the_interceptor_reasons_map_back_to_its_own_keys():
 ])
 def test_an_identity_refusal_stores_the_interceptors_reason_key_or_nothing(text, code):
     assert identity_refusal_code(text) == code
+
+
+def test_turn_error_of_names_the_class_and_masks_account_ids():
+    assert vocab.turn_error_of(RuntimeError("denied for 123456789012")) == (
+        "RuntimeError: denied for <acct>")
+
+
+def test_turn_error_of_an_error_with_no_message_is_its_class_alone():
+    assert vocab.turn_error_of(asyncio.CancelledError()) == "CancelledError"
+
+
+def test_turn_error_of_a_long_message_fits_the_stored_limit_and_the_row_accepts_it():
+    text = vocab.turn_error_of(ValueError("word " * 200))
+    assert len(text) <= vocab.TURN_ERROR_LIMIT and text.endswith("...")
+    assert vocab.turn_error_problem(text, "error") is None
+
+
+def test_turn_error_of_stores_no_credential_token_or_account_id():
+    leak = ("conn failed password=hunter2 arn:aws:iam::123456789012:role/x "
+            "Bearer abc.def.ghi key=AKIAEXAMPLE")
+    text = vocab.turn_error_of(RuntimeError(leak))
+    for secret in ("hunter2", "abc.def.ghi", "123456789012", "AKIAEXAMPLE"):
+        assert secret not in text
+    assert text.startswith("RuntimeError: ") and vocab.turn_error_problem(text, "error") is None

@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Optional
 
 from backend.agents.phase_05_workflow.lease import AuroraLeaseStore
 from backend.agents.phase_05_workflow.nodes import GatewayCall, WorkflowNodes
+from backend.agents.phase_05_workflow.run_audit import RunAuditor
 from backend.agents.phase_05_workflow.runner import (
     HEARTBEAT_SECONDS,
     LEASE_SECONDS,
@@ -48,16 +49,17 @@ def build_workflow_runner(
     memory_recall_fn: Any = None,
     worker_id: str = WORKER_ID,
     pause_after: Optional[str] = None,
+    auditor: Optional[RunAuditor] = None,
 ) -> WorkflowRunner:
     """The production runner: real retrieval, the configured gateway, Aurora state."""
+    from backend.agents.phase_05_workflow.governed_tools import gateway_search
     from backend.agents.phase_05_workflow.memory_recall import workflow_memory_recall
     from backend.db.rds_data_client import get_rds_data_client
     from backend.retrieval.availability import retrieval_availability_search
-    from backend.retrieval.hybrid import retrieval_search
 
     client = client or get_rds_data_client()
     nodes = WorkflowNodes(
-        search_fn or retrieval_search,
+        search_fn or gateway_search,
         availability_fn or retrieval_availability_search,
         memory_recall_fn or workflow_memory_recall,
         gateway_call=gateway_call,
@@ -70,6 +72,7 @@ def build_workflow_runner(
         heartbeat_seconds=heartbeat_seconds,
         worker_id=worker_id,
         pause_after=pause_after,
+        auditor=auditor,
     )
 
 

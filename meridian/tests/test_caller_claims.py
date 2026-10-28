@@ -184,3 +184,15 @@ def test_lenient_base64_and_shapes_are_malformed(name):
 def test_an_empty_signature_is_accepted_as_the_interceptor_accepts_it():
     header, payload = segments()
     assert traveler_from_token(f"{header}.{payload}.", now=lambda: NOW) == "trv_meridian_demo"
+
+
+def test_the_subject_is_the_verified_sub_claim():
+    assert caller_claims.subject_from_token(token_with(good()), now=lambda: NOW) == "sub-j"
+
+
+@pytest.mark.parametrize("claims", [
+    {"sub": None}, {"sub": ""}, {"sub": "a b"}, {"sub": 7}, {"token_use": "id"},
+])
+def test_a_token_without_a_usable_subject_is_refused(claims):
+    with pytest.raises(CallerClaimsError):
+        caller_claims.subject_from_token(token_with(good(**claims)), now=lambda: NOW)

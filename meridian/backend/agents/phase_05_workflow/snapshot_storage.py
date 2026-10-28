@@ -50,7 +50,7 @@ SELECT snapshot::TEXT AS snapshot FROM workflow_snapshots
 """
 LIST_SQL = """
 SELECT DISTINCT storage_key FROM workflow_snapshots
- WHERE session_id = %s AND storage_key LIKE %s ESCAPE '\\'
+ WHERE session_id = %s AND storage_key LIKE %s
  ORDER BY storage_key
 """
 

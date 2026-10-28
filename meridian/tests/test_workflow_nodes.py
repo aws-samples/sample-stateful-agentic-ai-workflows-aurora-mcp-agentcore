@@ -7,6 +7,7 @@ import pytest
 
 from backend.agents.phase_05_workflow.governed_hold import HOLD_TOOL, HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
+from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 from backend.db.journey_store import ExecutionLeaseLostError
 from tests.phase5_support import GatewayFake, fake_availability, fake_search
 
@@ -30,7 +31,7 @@ def nodes(gateway):
 async def test_classify_records_the_intent_with_the_strands_component(nodes):
     out = await nodes.classify({"query": PLAN, "activities": []})
     assert out["intent"] == "plan"
-    span = out["activities"][-1]
+    span = out["activities"][0]
     assert span["title"] == "Workflow node: classify → plan"
     assert span["telemetry"]["component"] == "Strands Graph"
 
@@ -43,7 +44,9 @@ async def test_search_saves_packages_as_plain_dicts_and_announces_the_snapshot(n
     assert titles[-1].startswith("Snapshot saved: ")
     fields = {f["label"]: f["value"] for f in out["activities"][-1]["telemetry"]["fields"]}
     assert fields["snapshot_durable"] == "true"
-    assert fields["checkpoint_store"] == "workflow_snapshots"
+    assert fields["snapshot_table"] == "workflow_snapshots"
+    assert fields["snapshot_store"] == SNAPSHOT_STORE
+    assert not {"checkpointer", "checkpoint_store"} & set(fields)
 
 
 async def test_memory_recall_returns_json_ready_packages(nodes):
@@ -157,7 +160,7 @@ async def test_no_hold_is_requested_when_no_duration_seats_the_party(nodes, gate
     state = {**_hold_state(), "packages": [{**PACKAGE, "availability": {"3 nights": 1}}]}
     prepared = await nodes.prepare_hold(state)
     assert "hold_intent" not in prepared
-    assert "places left for 2 travelers" in prepared["activities"][-1]["details"]
+    assert "places left for 2 travelers" in prepared["activities"][0]["details"]
     out = await nodes.hold({**state, **prepared}, HOLD_CONFIG)
     assert out["activities"][-2]["title"] == "Workflow node: hold skipped"
     assert "places left for 2 travelers" in out["activities"][-2]["details"]
@@ -332,3 +335,57 @@ async def test_release_hold_declines_without_touching_aurora(monkeypatch, nodes,
 
     monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", forbidden)
     assert await nodes.release_hold(state, expected_hold_id=expected) is False
+
+
+async def _recall_with_a_function(query, *args, **kwargs):
+    return [], []
+
+
+def _snapshot_spans(out, prior):
+    return [a for a in out["activities"][len(prior):] if a["title"].startswith("Snapshot saved: ")]
+
+
+@pytest.mark.parametrize("node, recall_wired", [
+    ("classify", False), ("prepare_hold", False), ("synthesize", False),
+    ("memory_recall", False), ("memory_recall", True),
+])
+async def test_every_node_ends_with_one_snapshot_span_naming_itself(nodes, node, recall_wired):
+    state = {**_hold_state(), "query": PLAN, "intent": "plan", "packages": [dict(PACKAGE)]}
+    nodes.memory_recall_fn = _recall_with_a_function if recall_wired else None
+    out = await getattr(nodes, node)(state)
+    last = out["activities"][-1]
+    assert last["title"].startswith("Snapshot saved: ")
+    assert last["details"] == f"Workflow snapshot appended after the {node} node"
+    assert len(_snapshot_spans(out, state["activities"])) == 1
+
+
+HOLD_LEAK = "role arn:aws:iam::123456789012:role/x in account 123456789012"
+REFUSALS = [
+    ("cedar", _envelope(text=f"AuthorizeActionException - Tool Execution Denied: {HOLD_LEAK}",
+                        is_error=True)),
+    ("identity", _envelope(text=f"Identity Check Failed: {HOLD_LEAK}", is_error=True)),
+    ("unknown_code", _envelope({"error": f"boom {HOLD_LEAK}"})),
+]
+
+
+@pytest.mark.parametrize(("kind", "reply"), REFUSALS, ids=[k for k, _ in REFUSALS])
+async def test_a_refused_hold_puts_no_gateway_text_in_the_span_or_the_log(
+    nodes, caplog, kind, reply
+):
+    nodes._gateway_call = lambda *_: reply
+    with caplog.at_level("DEBUG"):
+        out = await nodes.hold(_hold_state(), HOLD_CONFIG)
+    span = _refusal_span(out)
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    for text in (json.dumps(out, default=repr), logged):
+        assert "123456789012" not in text, kind
+    assert "arn:aws" not in json.dumps(out, default=repr)
+    assert _fields(span)["gateway_error"]
+
+
+async def test_an_rpc_error_leaves_an_unknown_outcome_with_no_gateway_text(nodes, caplog):
+    nodes._gateway_call = lambda *_: {"error": {"code": -32000, "message": HOLD_LEAK}}
+    with caplog.at_level("DEBUG"), pytest.raises(HoldOutcomeUnknown) as raised:
+        await nodes.hold(_hold_state(), HOLD_CONFIG)
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "123456789012" not in str(raised.value) + logged
