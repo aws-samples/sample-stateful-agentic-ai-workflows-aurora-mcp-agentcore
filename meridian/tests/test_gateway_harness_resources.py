@@ -74,7 +74,7 @@ def test_the_binding_rule_is_the_templates_with_the_echo_tool_and_the_gateway_su
 
 def test_a_template_rule_that_changed_shape_stops_the_harness():
     config = res.HarnessConfig(NAME, ACCOUNT, REGION, "u", "c", BINDING_TEMPLATE)
-    with pytest.raises(HarnessRefusal, match="no longer lists the two production actions"):
+    with pytest.raises(HarnessRefusal, match="no longer lists the three production actions"):
         res.harness_binding_statement("forbid(principal, action, resource);", config, GATEWAY_ID)
 
 

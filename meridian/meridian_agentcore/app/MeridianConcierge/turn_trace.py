@@ -18,6 +18,16 @@ from datetime import datetime, timezone
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider
 
+from concierge_definition import (
+    CATALOG_TOOLS,
+    DETAIL_TOOLS,
+    PACKAGE_SEARCH_TOOLS,
+    TRAVELER_TOOLS,
+    pin_traveler_argument,
+    short_name,
+)
+from tool_errors import mask_account_ids
+
 AGENT_FILE = "meridian_agentcore/app/MeridianConcierge/main.py"
 POLICY_REASONS = {
     "meridian_hold_governance": (
@@ -34,8 +44,7 @@ HOLD_LIMITS = {"holdMinutes": 720, "travelers": 6}
 # per action, so a call that ran was permitted by this policy and a denied call
 # found no permit in it. The gateway reports the decision, not the policy name.
 POLICY_FOR = {
-    "semantic_trip_search": "meridian_read_tools",
-    "get_package_details": "meridian_read_tools",
+    **{name: "meridian_read_tools" for name in CATALOG_TOOLS + DETAIL_TOOLS + ("loyalty_balance",)},
     "create_courtesy_hold": "meridian_hold_governance",
     "confirm_booking": "meridian_booking_governance",
 }
@@ -47,15 +56,45 @@ GOVERNED = {"create_courtesy_hold": "hold", "confirm_booking": "booking"}
 RUNTIME_GUARD = "runtime_guard"
 WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
 SPANS = {
-    "semantic_trip_search": (
+    "search_trips": (
         "search",
-        "AgentCore Gateway: tools/call → semantic_trip_search",
-        "Aurora pgvector search through the managed MCP tool",
+        "AgentCore Gateway: tools/call → search_trips",
+        "Catalog filter with every value bound as a parameter, through the managed MCP tool",
+    ),
+    "compare_packages": (
+        "tool_call",
+        "AgentCore Gateway: tools/call → compare_packages",
+        "Side-by-side rows for the named packages",
+    ),
+    "price_range": (
+        "tool_call",
+        "AgentCore Gateway: tools/call → price_range",
+        "Low, average and high price for a destination",
+    ),
+    "region_inventory": (
+        "inventory",
+        "AgentCore Gateway: tools/call → region_inventory",
+        "Package count and departure places for a region",
+    ),
+    "currency_convert": (
+        "tool_call",
+        "AgentCore Gateway: tools/call → currency_convert",
+        "Indicative currency conversion, not for settlement",
+    ),
+    "hybrid_trip_search": (
+        "search",
+        "AgentCore Gateway: tools/call → hybrid_trip_search",
+        "Cohere Embed v4, Aurora pgvector and full-text candidates, Cohere Rerank 3.5",
     ),
     "get_package_details": (
         "inventory",
         "AgentCore Gateway: tools/call → get_package_details",
         "Live durations, availability and highlights for one package",
+    ),
+    "loyalty_balance": (
+        "tool_call",
+        "AgentCore Gateway: tools/call → loyalty_balance",
+        "The traveler's own saved balance, read under the workload grant and row-level security",
     ),
     "create_courtesy_hold": (
         "order",
@@ -68,6 +107,20 @@ SPANS = {
         "Cedar decides on the arguments, then the held booking becomes confirmed in Aurora",
     ),
 }
+# The tools' factual "no" answers, each with the tools that send it. Each is a fact about the
+# request, not a failed call, so the trace shows a result and the Phase 4 audit records the call
+# as allowed (owner decision 14). The same code from any other tool is a failed call.
+BUSINESS_ANSWERS = {
+    "loyalty_balance_unavailable": ("loyalty_balance",),
+    "unsupported_currency": ("currency_convert",),
+    "unknown_package": ("get_package_details",),
+}
+
+
+def is_business_answer(name: str, payload: dict) -> bool:
+    """True when ``payload`` is a factual "no" that the tool ``name`` is known to send."""
+    code = payload.get("error")
+    return isinstance(code, str) and name in BUSINESS_ANSWERS.get(code, ())
 # Strands reports an MCP tool exception as "Tool execution failed: <message>",
 # so the gateway's denial arrives behind that prefix. Without allowing for it
 # a Cedar refusal is rendered as a generic tool failure with no decision.
@@ -97,8 +150,7 @@ class TurnContext:
         return self.booking_confirmed if kind == "booking" else self.hold_confirmed
 
 
-def short(tool_name: str) -> str:
-    return tool_name.split("___")[-1]
+short = short_name
 
 
 def now() -> str:
@@ -168,11 +220,12 @@ def parse_result(result: dict) -> dict | None:
 
 
 def _error_text(result: dict, payload: dict | None) -> str:
+    """The failure's text with account ids masked, then cut: a cut first could leave digits."""
     if payload is not None and "error" in payload:
-        return str(payload["error"])
-    return " ".join(
+        return mask_account_ids(str(payload["error"]))
+    return mask_account_ids(" ".join(
         block.get("text", "") for block in result.get("content", []) if isinstance(block, dict)
-    )[:600]
+    ))[:600]
 
 
 def _call_id(tool_use: dict) -> dict:
@@ -194,6 +247,14 @@ def _grant_fields(governance) -> list[dict]:
             {"label": "access_audit_id", "value": str(governance["access_audit_id"]), "mono": True}
         )
     return fields
+
+
+def _summary(name: str, payload: dict) -> str:
+    if name in PACKAGE_SEARCH_TOOLS:
+        return f"{len(payload.get('packages') or [])} packages"
+    if is_business_answer(name, payload):
+        return f"{name} answered {payload['error']}"
+    return f"{name} returned"
 
 
 class TraceHooks(HookProvider):
@@ -228,6 +289,10 @@ class TraceHooks(HookProvider):
         if name not in SPANS:
             return
         args = event.tool_use.setdefault("input", {})
+        if name in TRAVELER_TOOLS:
+            # TravelerPinHook pins it too; pinned here as well so this span always shows
+            # the traveler the call carries, whatever order a caller gives the hooks.
+            pin_traveler_argument(args, self.turn.traveler_id)
         kind = GOVERNED.get(name)
         if kind:
             if self._is_settled(kind):
@@ -260,7 +325,7 @@ class TraceHooks(HookProvider):
         self.started[event.tool_use["toolUseId"]] = time.monotonic()
 
     def _pin_arguments(self, kind: str, args: dict) -> None:
-        args["travelerId"] = self.turn.traveler_id
+        pin_traveler_argument(args, self.turn.traveler_id)
         args["travelerConfirmed"] = self.turn.confirmed(kind)
         args["budgetCeilingCents"] = self.turn.budget_ceiling_cents
         args["journeyRef"] = f"concierge:{self.turn.conversation_id}"
@@ -300,7 +365,9 @@ class TraceHooks(HookProvider):
         elapsed = round((time.monotonic() - self.started.pop(tool_id)) * 1000)
         result = event.result or {}
         payload = parse_result(result) if result.get("status") == "success" else None
-        if payload is not None and "error" not in payload:
+        if payload is not None and (
+            "error" not in payload or is_business_answer(name, payload)
+        ):
             self._success(name, payload, elapsed, event.tool_use)
             return
         text = _error_text(result, payload)
@@ -314,14 +381,14 @@ class TraceHooks(HookProvider):
         event.result = {**result, "status": "error", "content": [{"text": summary}]}
 
     def _success(self, name: str, payload: dict, elapsed: int, tool_use: dict) -> None:
-        if name == "semantic_trip_search":
+        if name in PACKAGE_SEARCH_TOOLS:
             self.packages = payload.get("packages") or []
             self.emit("packages", self.packages)
         kind = GOVERNED.get(name)
         if kind:
             self._settle(kind, payload.get(kind))
             self.emit(kind, {kind: payload.get(kind), "policyDecision": "allow"})
-        summary = payload.get("summary") or f"{name} returned"
+        summary = payload.get("summary") or _summary(name, payload)
         fields = [
             _call_id(tool_use),
             {"label": "result", "value": summary},
@@ -336,7 +403,7 @@ class TraceHooks(HookProvider):
             )
             fields.append({"label": "traveler_grant", "value": governance.get("decision", "")})
         self.emit("activity", activity(
-            "search" if name == "semantic_trip_search" else "result",
+            "search" if name in PACKAGE_SEARCH_TOOLS else "result",
             f"{name}: result",
             summary,
             {

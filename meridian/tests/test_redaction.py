@@ -121,3 +121,86 @@ def test_an_encoded_separator_does_not_free_an_id_a_letter_or_digit_touches(text
 def test_a_uuid_in_a_percent_encoded_path_is_unchanged():
     path = "%2Fspans%2Ff29c6d37-e9b9-4e77-bba8-890123456789%2F"
     assert mask_account_ids(path) == path
+
+
+def _raised(message):
+    def innermost():
+        raise RuntimeError(message)
+
+    try:
+        innermost()
+    except RuntimeError as error:
+        return error
+
+
+def test_a_traceback_keeps_its_frames_and_loses_the_account_id():
+    from backend.security.redaction import masked_traceback
+
+    text = masked_traceback(_raised(f"role arn:aws:iam::{ACCOUNT}:role/x denied"))
+
+    assert "Traceback" in text and "in innermost" in text and "RuntimeError" in text
+    assert ACCOUNT not in text and "arn:aws:iam::<acct>:role/x denied" in text
+
+
+def test_a_long_traceback_keeps_its_start_and_its_end_within_the_limit():
+    from backend.security.redaction import masked_traceback
+
+    text = masked_traceback(_raised("x" * 500 + f" {ACCOUNT} tail"), limit=200)
+
+    assert len(text) == 200 and text.startswith("Traceback") and "\n...\n" in text
+    assert text.endswith("<acct> tail\n")
+
+
+@pytest.mark.parametrize("text, masked", [
+    ("password=hunter2", "password=<masked>"),
+    ("login failed token=abc for x", "login failed token=<masked> for x"),
+    ("SECRET=x", "SECRET=<masked>"),
+    ("api_key=y", "api_key=<masked>"),
+])
+def test_a_credential_assignment_is_masked(text, masked):
+    from backend.security.redaction import mask_credentials
+
+    assert mask_credentials(text) == masked
+
+
+def test_text_without_an_assignment_is_left_alone_and_masking_twice_changes_nothing():
+    from backend.security.redaction import mask_credentials
+
+    assert mask_credentials("the password was wrong") == "the password was wrong"
+    once = mask_credentials("token=abc and key=def")
+    assert mask_credentials(once) == once
+
+
+def _outer_error():
+    raise ValueError("outer")
+
+
+def _chained(message, link):
+    try:
+        try:
+            raise RuntimeError(message)
+        except RuntimeError as inner:
+            if link == "cause":
+                raise ValueError("outer") from inner
+            _outer_error()
+    except ValueError as error:
+        return error
+
+
+@pytest.mark.parametrize("link", ["cause", "context"])
+def test_a_chained_exception_is_masked_like_the_outer_one(link):
+    from backend.security.redaction import masked_traceback
+
+    text = masked_traceback(_chained(f"password=hunter2 for {ACCOUNT}", link))
+
+    assert "RuntimeError" in text and "ValueError" in text
+    assert "hunter2" not in text and ACCOUNT not in text
+    assert "password=<masked>" in text and "<acct>" in text
+
+
+def test_a_cut_never_leaves_half_a_credential():
+    from backend.security.redaction import masked_traceback
+
+    text = masked_traceback(_raised("x" * 500 + " password=hunter2"), limit=200)
+
+    assert "hunter2" not in text and "hunter" not in text

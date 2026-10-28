@@ -14,6 +14,12 @@ load_dotenv()
 
 import boto3
 
+# The Runtime tests import the Runtime's own modules, and those import the generated copy of
+# the shared concierge definition. Stage it before any test module is collected.
+from scripts import stage_concierge_runtime  # noqa: E402
+
+stage_concierge_runtime.stage()
+
 
 @pytest.fixture(autouse=True)
 def isolated_unit_environment(request, monkeypatch):

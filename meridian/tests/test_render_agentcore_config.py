@@ -80,9 +80,6 @@ def test_complete_render_fills_every_account_and_deployment_value() -> None:
     assert target_named(gateway, "MeridianCatalog")["lambdaFunctionArn"]["lambdaArn"] == (
         f"arn:aws:lambda:us-west-2:{ACCOUNT}:function:meridian-catalog-tools"
     )
-    assert target_named(gateway, "SemanticTripSearchLambda")["lambdaFunctionArn"]["lambdaArn"] == (
-        f"arn:aws:lambda:us-west-2:{ACCOUNT}:function:meridian-semantic-trip-search"
-    )
     holds = target_named(gateway, "MeridianHolds")
     resources = [s["Resource"] for s in holds["compute"]["iamPolicy"]["Statement"]]
     assert resources == [
@@ -110,7 +107,7 @@ def test_first_deployment_renders_without_policies_that_name_the_gateway() -> No
     assert runtime_env(spec)["MERIDIAN_POLICY_MODE"] == "ENFORCE"
     assert len(notes) == 4
     assert [t["name"] for t in spec["agentCoreGateways"][0]["targets"]] == [
-        "SemanticTripSearchLambda", "MeridianCatalog"]
+        "MeridianCatalog"]
     assert any("MeridianHolds" in note for note in notes)
 
 

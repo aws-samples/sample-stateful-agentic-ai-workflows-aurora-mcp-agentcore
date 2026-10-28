@@ -6,10 +6,10 @@ both Runtime roles when ``agentcore deploy -y`` runs it, and the ``UpdateAgentRu
 cannot put it back: only an IAM render deployed with ``agentcore deploy -y`` does. A finding here
 is how ``check``, the snapshot and the rollback notice the difference.
 
-A grant counts by the same rules as ``lambda_release``: an Allow statement whose action matches
-(wildcards included) and whose resource matches the Gateway's ARN, in the role's inline or
-attached policies. Conditions and Deny statements are not evaluated, so the answer errs toward
-"can still call".
+A grant counts by the same rules as ``lambda_release.surely_uses``: an Allow statement without a
+``Condition`` whose action matches (wildcards included) and whose resource matches the Gateway's
+ARN, in the role's inline or attached policies, and no Deny statement, conditional or not, that
+covers it. The call is required, so a conditional Allow or any Deny is a finding.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def findings(iam: Any, runtimes: Mapping[str, Any], gateway: str) -> list[str]:
             found.append(f"{subject}: has no role to read, so InvokeGateway cannot be checked")
             continue
         grants = lambda_release.secret_grants(iam, role.rsplit("/", 1)[-1], ACTION)
-        if not any(grant.covers(gateway) for grant in grants):
+        if not lambda_release.surely_uses(grants, gateway):
             found.append(f"{subject}: its role cannot call bedrock-agentcore:InvokeGateway on "
                          f"the Gateway, so it cannot reach its tools with AWS credentials; {FIX}")
     return found

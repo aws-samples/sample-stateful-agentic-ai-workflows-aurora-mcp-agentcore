@@ -50,6 +50,7 @@ from rich.table import Table
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agentcore.cli_config import resolve_agentcore_config  # noqa: E402
+from backend.agents.concierge_definition import CATALOG_TOOLS  # noqa: E402
 from scripts.agentcore_caller import caller_scope  # noqa: E402
 
 load_dotenv()
@@ -91,8 +92,15 @@ def check_policy_engine(control, gateway_id: str) -> tuple[bool, str, str]:
     return ok, engine_id, f"{engine.get('status', 'UNKNOWN')} · {mode}"
 
 
+EXPECTED_GATEWAY_TOOLS = (
+    {f"MeridianCatalog___{name}" for name in CATALOG_TOOLS}
+    | {"MeridianHolds___get_package_details", "MeridianHolds___loyalty_balance",
+       "MeridianHolds___create_courtesy_hold", "MeridianHolds___confirm_booking"}
+)
+
+
 def check_gateway_tools(cfg) -> tuple[bool, str, str]:
-    """List the gateway's MCP tools from this laptop.
+    """List the gateway's MCP tools from this laptop and require exactly the expected set.
 
     The request is SigV4-signed in iam mode; in jwt mode it carries the seeded user's access token.
     """
@@ -102,14 +110,14 @@ def check_gateway_tools(cfg) -> tuple[bool, str, str]:
         tools, _ = AgentCoreGatewayAdapter(
             gateway_url=cfg.gateway_url, region=cfg.region).list_tools()
     names = sorted(tool["name"] for tool in tools)
-    expected = {
-        "SemanticTripSearchLambda___semantic_trip_search",
-        "MeridianHolds___get_package_details",
-        "MeridianHolds___create_courtesy_hold",
-        "MeridianHolds___confirm_booking",
-    }
-    ok = expected.issubset(names)
-    return ok, ", ".join(names) or "none", f"{len(names)} tools"
+    missing = sorted(EXPECTED_GATEWAY_TOOLS - set(names))
+    unexpected = sorted(set(names) - EXPECTED_GATEWAY_TOOLS)
+    summary = f"{len(names)} tools"
+    if missing:
+        summary += "; missing " + ", ".join(missing)
+    if unexpected:
+        summary += "; unexpected " + ", ".join(unexpected)
+    return not (missing or unexpected), ", ".join(names) or "none", summary
 
 
 def check_observability(control, runtime_id: str) -> tuple[bool, str, str]:

@@ -30,10 +30,11 @@ CLUSTER = f"arn:aws:rds:{rs.REGION}:{rs.ACCOUNT}:cluster:meridian"
 SERVICE_ARN = rs.SERVICE_ARN
 API_SECRET = f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:meridian/web/api-token-AbC123"
 GATEWAY_SECRET = f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:gateway-QrS456"
+CATALOG_SECRET = f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:catalog-CtL789"
 HOLDS_ARN = (f"arn:aws:lambda:{rs.REGION}:{rs.ACCOUNT}:function:"
              "AgentCore-meridianv2-MeridianHoldsAbc12")
-SEMANTIC_ARN = (f"arn:aws:lambda:{rs.REGION}:{rs.ACCOUNT}:function:"
-                f"{lambda_release.SEMANTIC_FUNCTION}")
+CATALOG_ARN = (f"arn:aws:lambda:{rs.REGION}:{rs.ACCOUNT}:function:"
+                f"{lambda_release.CATALOG_FUNCTION}")
 DISTRIBUTION = "E2EXAMPLE12345"
 VIEWER_ARN = f"arn:aws:cloudfront::{rs.ACCOUNT}:function/{snapshot.EDGE_FUNCTION}"
 STORE_ARN = f"arn:aws:cloudfront::{rs.ACCOUNT}:key-value-store/11111111-2222-3333-4444-555555555555"
@@ -319,8 +320,8 @@ class SnapWorld:
         self.lambdas = {
             HOLDS_ARN: lambda_config(HOLDS_ARN, {"AURORA_SECRET_ARN": rs.MASTER_SECRET,
                                                  "POOL_SIZE": "4"}),
-            lambda_release.SEMANTIC_FUNCTION: lambda_config(
-                lambda_release.SEMANTIC_FUNCTION, {"AURORA_SECRET_ARN": rs.MASTER_SECRET})}
+            lambda_release.CATALOG_FUNCTION: lambda_config(
+                lambda_release.CATALOG_FUNCTION, {"AURORA_SECRET_ARN": CATALOG_SECRET})}
         self.policies = {name: "ACTIVE" for name in rs.BASE_POLICIES}
         if mode == "jwt":
             self.policies[rs.BINDING_POLICY] = "ACTIVE"
@@ -530,7 +531,8 @@ def clients_of(world: SnapWorld) -> snapshot.Clients:
 
 ENV = {
     "AURORA_CLUSTER_ARN": CLUSTER, **rs.COGNITO_ENV, "AURORA_SECRET_ARN": rs.MASTER_SECRET,
-    "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET,
+    "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET, "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET,
+    "AURORA_CATALOG_SECRET_ARN": CATALOG_SECRET,
 }
 
 

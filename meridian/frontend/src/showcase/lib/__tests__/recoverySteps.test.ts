@@ -34,9 +34,9 @@ const paused: ShowcaseTraceSpan[] = [
 const resumed: ShowcaseTraceSpan[] = [
   ...paused.slice(0, 7),
   span('Workflow node: availability fan-out', {
-    component: 'Strands Graph → PackageAgent fan-out', latencyMs: 54,
+    component: 'Strands Graph → Availability check (code) fan-out', latencyMs: 54,
   }),
-  span('PackageAgent: Finding package', { agent: 'PackageAgent', latencyMs: 40 }),
+  span('Availability: Finding package', { agent: 'Availability check (code)', latencyMs: 40 }),
   span('Snapshot saved: AuroraSnapshotStorage.write#2', {
     component: SNAPSHOT_TABLE, latencyMs: 88, fields: durable,
   }),

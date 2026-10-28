@@ -125,7 +125,7 @@ def test_kyoto_extension_still_bridges_to_workflow() -> None:
     assert _needs_checkpointed_workflow(query)
 
 
-def test_simple_availability_query_stays_on_package_agent_path() -> None:
+def test_simple_availability_query_does_not_bridge_to_the_workflow() -> None:
     assert not _needs_checkpointed_workflow("What dates are available for Tokyo?")
 
 
@@ -146,11 +146,6 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch, message
         "backend.routers.chat.production_search",
         unexpected_production_search,
     )
-
-    monkeypatch.setattr(
-        "backend.routers.chat.retrieval_availability_search", unexpected_production_search
-    )
-    monkeypatch.setattr("backend.routers.chat._polish_and_record", unexpected_production_search)
     response = asyncio.run(
         chat(
             ChatRequest(
@@ -203,16 +198,9 @@ def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
             [],
         )
 
-    async def unexpected_polish(*args, **kwargs):
-        raise AssertionError("Production must not rewrite the managed Runtime decision")
-
     monkeypatch.setattr(
         "backend.routers.chat.production_search",
         fake_production_search,
-    )
-    monkeypatch.setattr(
-        "backend.routers.chat._polish_phase_reply",
-        unexpected_polish,
     )
 
     response = asyncio.run(
@@ -238,9 +226,6 @@ def test_workflow_receipt_is_not_rewritten_by_a_prose_model(monkeypatch):
     monkeypatch.setattr(
         "backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[])
     )
-    polish = AsyncMock(side_effect=AssertionError("A receipt must not be rewritten"))
-    monkeypatch.setattr("backend.routers.chat._polish_and_record", polish)
     response = asyncio.run(chat(ChatRequest(phase=5, message="Resume workflow from checkpoint",
                                              conversation_id="saved-thread"), PRINCIPAL))
     assert response.message == saved
-    polish.assert_not_awaited()

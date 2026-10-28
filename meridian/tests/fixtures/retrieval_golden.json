@@ -12,30 +12,30 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "availability",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
         "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
-        "title": "PackageAgent: Checking duration inventory"
+        "title": "Availability: Checking duration inventory"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Duration inventory verified"
+        "title": "Availability: Duration inventory verified"
       },
       {
         "activity_type": "result",
@@ -44,7 +44,7 @@
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -98,30 +98,30 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "availability",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
         "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
-        "title": "PackageAgent: Checking duration inventory"
+        "title": "Availability: Checking duration inventory"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Duration inventory verified"
+        "title": "Availability: Duration inventory verified"
       },
       {
         "activity_type": "result",
@@ -130,7 +130,7 @@
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -189,30 +189,30 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "availability",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
         "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
-        "title": "PackageAgent: Checking duration inventory"
+        "title": "Availability: Checking duration inventory"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Duration inventory verified"
+        "title": "Availability: Duration inventory verified"
       },
       {
         "activity_type": "result",
@@ -221,7 +221,7 @@
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -272,21 +272,21 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Package not found"
+        "title": "Availability: Package not found"
       },
       {
         "activity_type": "result",
@@ -295,7 +295,7 @@
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [],
@@ -315,21 +315,21 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Loading ranked package MISSING",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Package not found"
+        "title": "Availability: Package not found"
       },
       {
         "activity_type": "result",
@@ -338,7 +338,7 @@
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -365,21 +365,21 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Package not found"
+        "title": "Availability: Package not found"
       },
       {
         "activity_type": "result",
@@ -388,7 +388,7 @@
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -418,30 +418,30 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "availability",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
         "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
-        "title": "PackageAgent: Checking duration inventory"
+        "title": "Availability: Checking duration inventory"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Total: 7 places left across durations",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Duration inventory verified"
+        "title": "Availability: Duration inventory verified"
       },
       {
         "activity_type": "result",
@@ -450,7 +450,7 @@
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [
@@ -500,30 +500,30 @@
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Finding package"
+        "title": "Availability: Finding package"
       },
       {
         "activity_type": "availability",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
         "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
-        "title": "PackageAgent: Checking duration inventory"
+        "title": "Availability: Checking duration inventory"
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_file": "retrieval/availability.py",
         "agent_name": "Availability check (code)",
         "details": "Total: 0 places left across durations",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: Duration inventory verified"
+        "title": "Availability: Duration inventory verified"
       },
       {
         "activity_type": "result",
@@ -532,7 +532,7 @@
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent: availability check complete"
+        "title": "Availability: check complete"
       }
     ],
     "calls": [

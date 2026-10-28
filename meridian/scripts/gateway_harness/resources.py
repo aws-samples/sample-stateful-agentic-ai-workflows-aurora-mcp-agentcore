@@ -33,6 +33,7 @@ TOOL_NAME = "echo"
 ACTION = f"{TARGET_NAME}___{TOOL_NAME}"
 BINDING_POLICY = "meridian_traveler_binding"
 TEMPLATE_ACTIONS = (
+    'AgentCore::Action::"MeridianHolds___loyalty_balance", '
     'AgentCore::Action::"MeridianHolds___create_courtesy_hold", '
     'AgentCore::Action::"MeridianHolds___confirm_booking"'
 )
@@ -142,12 +143,12 @@ def harness_binding_statement(template_statement: str, config: HarnessConfig,
     """The production deny rule with the throwaway gateway and its echo tool substituted.
 
     Raises:
-        HarnessRefusal: The template rule no longer names the two production actions, so the
+        HarnessRefusal: The template rule no longer names the three production actions, so the
             substitution would silently test a different rule.
     """
     if TEMPLATE_ACTIONS not in template_statement:
         raise HarnessRefusal(
-            "the template's meridian_traveler_binding rule no longer lists the two production "
+            "the template's meridian_traveler_binding rule no longer lists the three production "
             "actions; update scripts/gateway_harness/resources.py to match before running."
         )
     statement = template_statement.replace(TEMPLATE_ACTIONS, f'AgentCore::Action::"{ACTION}"')

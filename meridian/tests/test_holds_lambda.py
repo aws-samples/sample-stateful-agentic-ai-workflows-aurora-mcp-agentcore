@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError
 
 TARGET = (
     Path(__file__).resolve().parents[1]
@@ -139,6 +140,8 @@ def test_a_grant_refusal_names_the_deny_row_it_kept(config, monkeypatch, tool, a
         if "traveler_access_audit" in s and p["decision"] == "deny"
     ][-1]
     assert result["error"] == "traveler_not_authorized"
+    assert result["final"] is True
+    assert "Asking again will not change the answer" in result["message"]
     assert result["governance"]["decision"] == "deny"
     assert result["governance"]["access_audit_id"] == kept["audit_id"]
     assert kept["audit_id"].startswith("authz_")
@@ -283,6 +286,65 @@ def test_hold_reports_inventory_errors_by_name(config, monkeypatch):
     result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
     assert result["error"] == "insufficient_inventory"
     assert api.tx == ["begin", "rollback"]
+
+
+LEAK = (
+    "User: arn:aws:sts::123456789012:assumed-role/MeridianHoldsRole/session is not authorized "
+    "to perform rds-data:ExecuteStatement; SELECT * FROM bookings"
+)
+
+
+def _leaking(marker):
+    class Leaking(FakeDataApi):
+        def execute_statement(self, **kwargs):
+            if marker in kwargs["sql"]:
+                raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": LEAK}},
+                                  "ExecuteStatement")
+            return super().execute_statement(**kwargs)
+
+    return Leaking
+
+
+@pytest.mark.parametrize(("tool", "marker", "args", "code", "extra"), [
+    ("create_courtesy_hold", "FROM create_courtesy_hold", lambda: _hold_args(), "hold_failed",
+     {**CATALOG_PRICE, **SAVED_BUDGET, "FROM journey_threads": [{"journey_id": "jrn_1"}]}),
+    ("confirm_booking", "FROM confirm_booking", lambda: _booking_args(), "booking_failed",
+     {**BOOKED_PARTY, **SAVED_BUDGET}),
+])
+def test_a_failed_write_returns_a_fixed_code_and_none_of_the_exception_text(
+    config, monkeypatch, capsys, tool, marker, args, code, extra
+):
+    api = _leaking(marker)({"FROM traveler_identity_bindings": [{"binding_id": "b"}], **extra})
+    monkeypatch.setattr(holds, "RDS", api)
+
+    result = holds.lambda_handler(args(), _context(f"MeridianHolds___{tool}"))
+
+    assert result == {"error": code}
+    assert api.tx == ["begin", "rollback"]
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    failure = next(r for r in records if r.get("error_type"))
+    assert failure["meridian_tool"] == tool and failure["error_type"] == "ClientError"
+    assert "123456789012" not in failure["detail"] and "arn:aws" not in failure["detail"]
+
+
+def test_a_business_refusal_logs_no_exception_text(config, monkeypatch, capsys):
+    class Refusing(FakeDataApi):
+        def execute_statement(self, **kwargs):
+            if "FROM confirm_booking" in kwargs["sql"]:
+                raise RuntimeError("ERROR: hold_expired; SELECT secret_column FROM role_x")
+            return super().execute_statement(**kwargs)
+
+    api = Refusing({
+        "FROM traveler_identity_bindings": [{"binding_id": "b"}], **BOOKED_PARTY, **SAVED_BUDGET,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+
+    assert result == {"error": "hold_expired"}
+    out = capsys.readouterr().out
+    assert "secret_column" not in out and "role_x" not in out
+    assert not any("error_type" in json.loads(line) for line in out.splitlines())
 
 
 def test_unknown_tool_is_refused(config, monkeypatch):

@@ -1,8 +1,8 @@
 """Build Gateway tool schemas from the signatures and docstrings of the catalog tools.
 
 The Gateway accepts only a small schema vocabulary (type, properties, required, items,
-description, minimum, maximum, default, additionalProperties), so Pydantic's output (titles,
-anyOf for Optional) is not published as is. tests/test_catalog_tool_schema.py compares the
+description, minimum, maximum, maxLength, default, additionalProperties), so Pydantic's output
+(titles, anyOf for Optional) is not published as is. tests/test_catalog_tool_schema.py compares the
 result with what FastMCP serves over stdio, argument by argument.
 """
 
@@ -57,13 +57,16 @@ def _split_docstring(doc: Optional[str]) -> Tuple[str, Dict[str, str]]:
 
 
 def tool_schema(
-    function: Callable, bounds: Optional[Dict[str, Tuple[int, int]]] = None
+    function: Callable,
+    bounds: Optional[Dict[str, Tuple[int, int]]] = None,
+    max_lengths: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """The Gateway tool definition for one function.
 
     Args:
         function: the tool function; its name, annotations, defaults and docstring are read.
         bounds: optional ``{argument: (minimum, maximum)}`` for integer arguments.
+        max_lengths: optional ``{argument: longest text}`` for string arguments.
 
     Raises:
         ValueError: An annotation cannot be published.
@@ -79,6 +82,8 @@ def tool_schema(
             prop["description"] = documented[name]
         if name in (bounds or {}):
             prop["minimum"], prop["maximum"] = bounds[name]
+        if name in (max_lengths or {}):
+            prop["maxLength"] = max_lengths[name]
         if parameter.default is inspect.Parameter.empty:
             required.append(name)
         elif parameter.default is not None:
@@ -98,6 +103,10 @@ def catalog_schema() -> List[Dict[str, Any]]:
     return [
         tool_schema(function, {
             argument: bound for (tool, argument), bound in catalog_tools.ARGUMENT_BOUNDS.items()
+            if tool == name
+        }, {
+            argument: length
+            for (tool, argument), length in catalog_tools.ARGUMENT_MAX_LENGTHS.items()
             if tool == name
         })
         for name, function in catalog_tools.CATALOG_FUNCTIONS.items()

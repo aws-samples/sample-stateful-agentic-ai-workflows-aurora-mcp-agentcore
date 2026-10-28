@@ -10,6 +10,11 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from backend.security.redaction import install_record_factory
+
+# Before any other import can log: every record is masked when it is created.
+install_record_factory()
+
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware

@@ -1,5 +1,8 @@
 """Tests for backend.agent_catalog."""
 
+import re
+
+from backend.agents.concierge_definition import TOOL_ARGUMENTS
 from backend.agent_catalog import PHASE_CATALOG, get_phase_spec, format_skills_summary
 from backend.trace_names import (
     AVAILABILITY_CODE, MCP_CODE, MEMORY_CODE, PRODUCTION_CODE, RETRIEVAL_CODE, SQL_CODE,
@@ -10,16 +13,17 @@ def test_all_five_phases_defined() -> None:
     assert set(PHASE_CATALOG) == {1, 2, 3, 4, 5}
 
 
-def test_phase3_has_retrieval_specialists_and_skills() -> None:
+def test_phase3_is_one_agent_with_the_cumulative_tools() -> None:
     spec = get_phase_spec(3)
     assert spec is not None
     assert spec.primary_agent == "RetrievalAgent"
-    assert "SearchAgent" in spec.specialists
-    assert "PackageAgent" in spec.specialists
-    assert "BookingAgent" in spec.specialists
-    summary = format_skills_summary(3)
-    assert "_hybrid_search_tool" in summary
-    assert "SearchAgent" in summary
+    assert spec.specialists == ()
+    assert spec.agent_file == "agents/phase_03_retrieval/agent.py"
+    names = {s.name for s in spec.skills}
+    assert names == {"hybrid_trip_search", "get_package_details", "search_trips",
+                     "compare_packages", "price_range", "region_inventory",
+                     "currency_convert", "loyalty_balance"}
+    assert "hybrid_trip_search" in format_skills_summary(3)
 
 
 def test_phase4_memory_agent_catalog() -> None:
@@ -47,3 +51,21 @@ def test_phase_4_and_5_use_the_names_the_trace_prints():
     assert four.primary_agent == PRODUCTION_CODE
     assert MEMORY_CODE in four.specialists
     assert five.specialists == (RETRIEVAL_CODE, AVAILABILITY_CODE)
+
+
+def _argument_names(signature: str) -> tuple[str, ...]:
+    inside = re.match(r"\w+\((.*?)\)", signature).group(1)
+    return tuple(part.split("=")[0].strip() for part in inside.split(",") if part.strip())
+
+
+def test_every_catalog_signature_names_the_arguments_the_tools_take():
+    checked = []
+    for phase, spec in PHASE_CATALOG.items():
+        for skill in spec.skills:
+            if skill.name not in TOOL_ARGUMENTS or "..." in skill.signature:
+                continue
+            bare = skill.signature.split("___")[-1]
+            assert _argument_names(bare) == TOOL_ARGUMENTS[skill.name], (phase, skill.name)
+            checked.append((phase, skill.name))
+    assert (2, "loyalty_balance") in checked and (4, "loyalty_balance") in checked
+    assert len(checked) >= 15

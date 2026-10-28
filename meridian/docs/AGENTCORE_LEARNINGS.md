@@ -7,13 +7,17 @@ deployment steps. Each note names the code or step it explains.
 
 - **A gateway needs targets.** Creating a gateway is not enough: `tools/call` fails until at least one target is attached.
 - **Targets must be reachable from AWS.** The gateway runs in AWS, so a `localhost` endpoint cannot be a target; use Lambda, API Gateway or a public MCP server.
-- **Tool names carry the target name.** Once a target is attached, a tool is called as `<TargetName>___<toolName>`, for example `SemanticTripSearchLambda___semantic_trip_search`.
+- **Tool names carry the target name.** Once a target is attached, a tool is called as `<TargetName>___<toolName>`, for example `MeridianCatalog___hybrid_trip_search`.
 - **Runtime session IDs have a minimum length.** `runtimeSessionId` must be at least 33 characters; `_build_runtime_session_id` in `backend/agentcore/runtime.py` builds one from the conversation ID.
 - **Embedding dimensions must match the database.** Cohere Embed v4 can return 1536 dimensions unless `output_dimension=1024` is set, which the pgvector columns require.
 - **Keep the resources in one Region.** The runtime, gateway and Lambda targets are deployed in the Aurora cluster's Region.
 - **The runtime owns the tool loop.** In Strands, `MCPClient(url=..., auth_provider=GatewaySigV4(...))` signs MCP requests with the runtime's execution role. In `jwt` mode the client sends the caller's access token as `Authorization: Bearer` instead (`gateway_client_arguments` in `gateway_auth.py`). The CDK app sets `AGENTCORE_GATEWAY_<NAME>_URL` and `MEMORY_<NAME>_ID` on the runtime and grants `bedrock-agentcore:InvokeGateway` and the memory permissions.
 - **Observability needs two settings.** The CLI wraps the entrypoint with `opentelemetry-instrument`; `AGENT_OBSERVABILITY_ENABLED=true`, `OTEL_PYTHON_DISTRO=aws_distro` and `OTEL_PYTHON_CONFIGURATOR=aws_configurator` send spans and logs, with the trace ID, to the runtime's log group (`spans` and `otel-rt-logs` streams).
 - **`GetGateway` returns the policy engine under `policyEngineConfiguration.arn`**, not `policyEngineArn`.
+- **A renamed target is a replacement.** Create the new target, then delete the old.
+- **A Cedar rule is validated against the tools that exist,** so a release that renames a target deploys the new target first and the rules second.
+- **Cedar sees arguments, not rows.** `loyalty_balance` is bound to the token's traveler by the argument, and the holds Lambda checks the grant and reads under RLS.
+- **`agentcore deploy` of an existing Gateway cannot change its authorizer type.**
 - **Run the globally installed `agentcore`, not `npx agentcore`.** `npx` can resolve an older cached CLI whose bundled CDK toolkit cannot read the cloud assembly schema the project's `aws-cdk-lib` emits.
 
 ## Cedar policies

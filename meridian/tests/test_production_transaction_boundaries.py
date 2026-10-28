@@ -178,7 +178,7 @@ def runtime_decision(**overrides):
         recommended_package_ids=["pkg-1"],
         follow_ups=[],
         activities=[{"id": "rt-1", "timestamp": "t", "activity_type": "search",
-                     "title": "AgentCore Gateway: tools/call → semantic_trip_search"}],
+                     "title": "AgentCore Gateway: tools/call → hybrid_trip_search"}],
         packages=[{"package_id": "pkg-1", "name": "Tokyo Replan", "similarity": 0.9}],
         trace_id="abc123",
         usage={"inputTokens": 10, "outputTokens": 5},
@@ -220,7 +220,7 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     assert events.index("aurora:budget-facts") < events.index("tx-1:commit")
     assert "hold_confirmed" not in kwargs
     titles = [entry.title for entry in activities]
-    assert "AgentCore Gateway: tools/call → semantic_trip_search" in titles
+    assert "AgentCore Gateway: tools/call → hybrid_trip_search" in titles
     assert "AgentCore Runtime: turn complete" in titles
     runtime_span = next(a for a in activities if a.title == "AgentCore Runtime: turn complete")
     labels = {f["label"]: f["value"] for f in runtime_span.telemetry["fields"]}
@@ -276,7 +276,7 @@ def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeyp
 
 
 @pytest.mark.parametrize(("message", "activities"), [
-    ("No new matches for Tokyo Indie Walk.", [{"title": "AgentCore Gateway: tools/call → semantic_trip_search"}]),
+    ("No new matches for Tokyo Indie Walk.", [{"title": "AgentCore Gateway: tools/call → hybrid_trip_search"}]),
     ("What else would you like to plan?", []),
 ])
 def test_recalled_cards_do_not_fill_an_empty_search_or_unrelated_reply(message, activities):
@@ -327,3 +327,12 @@ def test_runtime_budget_narration_matches_enforced_ceiling(
     assert "never multiply by nights" in context
     assert kwargs["budget_ceiling_cents"] == ceiling
     assert kwargs["travelers_count"] == travelers
+
+
+def test_a_parameterized_catalog_filter_counts_as_a_search_for_the_cards():
+    decision = runtime_decision(
+        message="Two options.", packages=[{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}],
+        activities=[{"title": "AgentCore Gateway: tools/call → search_trips"}])
+    shown = concierge_mod.response_packages(
+        decision, [{"package_id": "TKY-009", "name": "Other"}])
+    assert [p["package_id"] for p in shown] == ["TKY-001"]

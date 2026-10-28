@@ -92,7 +92,7 @@ def test_every_release_document_says_the_jwt_gateway_is_a_new_resource():
 
 
 COMMAND = re.compile(r"release_identity\.py\s+((?:check|interceptor-delete|interceptor|lambdas|"
-                     r"semantic-lambda|gateway|deploy|holds-logs|snapshot|rollback)\b[^`\n]*)")
+                     r"gateway|deploy|holds-logs|snapshot|rollback)\b[^`\n]*)")
 
 
 def documented_commands() -> list[list[str]]:
@@ -227,3 +227,13 @@ def test_the_documented_log_group_name_is_the_one_the_code_derives():
     from scripts.identity_release import holds_logs
 
     assert holds_logs.log_group_name() == LOG_GROUP
+
+
+def test_the_documents_say_deploy_refuses_a_stale_staged_copy_first_with_exit_two():
+    row = flat(next(line for line in README.splitlines() if line.startswith("| **04e")))
+    paragraph = flat(OPERATIONS[OPERATIONS.index("**The four stages.**"):].split("\n\n", 1)[0])
+
+    for text in (row, paragraph):
+        assert "missing or stale" in text and "Concierge copy" in text
+        assert "Workflow bundle" in text and "exit 2" in text
+        assert "before the confirmation check" in text

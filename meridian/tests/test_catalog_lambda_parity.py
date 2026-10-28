@@ -346,3 +346,92 @@ def test_one_transient_embedding_failure_still_searches_both_arms(monkeypatch):
 def test_the_published_tool_names_are_the_lambdas_and_the_contracts():
     published = [t["name"] for t in json.loads((TARGET / "tool-schema.json").read_text())]
     assert published == list(catalog.TOOLS) == list(catalog_tools.CATALOG_FUNCTIONS)
+
+
+def test_the_query_cap_is_the_modules():
+    assert catalog.MAX_QUERY_CHARS == catalog_tools.MAX_QUERY_CHARS == 500
+
+
+@pytest.mark.parametrize(("tool", "argument", "message"), [
+    ("price_range", "destination", "destination is required"),
+    ("region_inventory", "region", "region is required"),
+])
+@pytest.mark.parametrize("value", ["", "   ", "\t\n"])
+def test_a_blank_place_is_refused_the_same_way_through_both_paths(
+        monkeypatch, tool, argument, message, value):
+    world = _both(monkeypatch, {"MIN(price_per_person)": [], "WHERE region ILIKE": []})
+
+    via_module = asyncio.run(getattr(catalog_tools, tool)(value))
+
+    assert via_module == {"error": message}
+    assert call(tool, {argument: value}) == via_module
+    assert world.lambda_api.requests == [] and world.module_api.requests == []
+
+
+@pytest.mark.parametrize("wire", [
+    [{"min_price": 1199.0, "avg_price": 1949.555, "max_price": 3299.0, "sample_size": 4}], [],
+], ids=["rows", "no row"])
+def test_a_padded_destination_is_stripped_the_same_way_through_both_paths(monkeypatch, wire):
+    world = _both(monkeypatch, {"MIN(price_per_person)": wire})
+
+    via_module = asyncio.run(catalog_tools.price_range("  Tokyo \n"))
+
+    assert via_module.get("destination") == "Tokyo"
+    assert call("price_range", {"destination": "  Tokyo \n"}) == via_module
+    assert _asked(world.lambda_api) == _asked(world.module_api)
+    assert world.module_api.parameters()["p0"] == {"stringValue": "%Tokyo%"}
+
+
+@pytest.mark.parametrize("wire", [REGION_ROWS, []], ids=["rows", "none"])
+def test_a_padded_region_is_stripped_the_same_way_through_both_paths(monkeypatch, wire):
+    world = _both(monkeypatch, {"WHERE region ILIKE": wire})
+
+    via_module = asyncio.run(catalog_tools.region_inventory(" Asia ", "City Breaks"))
+
+    assert via_module["region"] == "Asia"
+    assert call("region_inventory", {"region": " Asia ", "trip_type": "City Breaks"}) == via_module
+    assert _asked(world.lambda_api) == _asked(world.module_api)
+
+
+@pytest.mark.parametrize(("query", "message"), [
+    ("", "query is required"),
+    ("   ", "query is required"),
+    ("x" * 501, "query is longer than 500 characters"),
+    (" " + "x" * 500, "query is longer than 500 characters"),
+])
+def test_a_blank_or_over_long_query_is_refused_the_same_way_through_both_paths(
+        monkeypatch, query, message):
+    world = _both(monkeypatch, HYBRID_ROWS, rerank_order=[0])
+
+    via_module = asyncio.run(catalog_tools.hybrid_trip_search(query))
+    spans = asyncio.run(catalog_tools.hybrid_trip_search_with_spans(query))[1]
+
+    assert via_module == {"error": message} and spans == []
+    assert call("hybrid_trip_search", {"query": query}) == via_module
+    for side in (world.lambda_api, world.module_api, world.lambda_bedrock,
+                 world.module_bedrock):
+        assert side.requests == []
+
+
+def test_a_query_of_exactly_the_cap_and_a_padded_query_are_searched_the_same_way(monkeypatch):
+    for query in ("x" * 500, "  Japan under $2,500  "):
+        world = _both(monkeypatch, HYBRID_ROWS, rerank_order=[1, 0])
+
+        via_module = asyncio.run(catalog_tools.hybrid_trip_search(query))
+
+        assert "error" not in via_module
+        assert call("hybrid_trip_search", {"query": query}) == via_module
+        assert _asked(world.lambda_api) == _asked(world.module_api)
+        assert world.lambda_bedrock.requests == world.module_bedrock.requests
+
+
+def test_the_modules_bedrock_client_fails_fast_exactly_as_the_lambdas_does():
+    """Either side drifting from connect 2 s, read 5 s and one attempt in all fails here."""
+    service = EmbeddingService(region="us-east-1")
+    module = service.bedrock_client.meta.config
+    lambda_config = catalog.BEDROCK_CONFIG
+
+    assert (module.connect_timeout, module.read_timeout) == (
+        lambda_config.connect_timeout, lambda_config.read_timeout) == (2, 5)
+    assert module.retries["total_max_attempts"] == lambda_config.retries["total_max_attempts"] == 1
+    assert catalog.EMBEDDING_ATTEMPTS == EmbeddingService.EMBEDDING_ATTEMPTS

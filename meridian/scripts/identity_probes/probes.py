@@ -31,6 +31,8 @@ THREAD_PREFIX = "phase5-proof-idp"
 PACKAGE_ID = "CTY-002"
 DETAILS_TOOL = "MeridianHolds___get_package_details"
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
+LOYALTY_TOOL = "MeridianHolds___loyalty_balance"
+LOYALTY_PROGRAM = "Marriott Bonvoy"
 WORKFLOW, CONCIERGE = "workflow", "concierge"
 QUERY = "My JFK-to-Tokyo flight was canceled. Rework the trip."
 HOLD_MINUTES = 15
@@ -345,6 +347,22 @@ def _jordan_places_hold(ports: Ports, ctx: Context):
                      "bookings_untied": len(window.untied)}
 
 
+def _decoy_reads_jordans_loyalty(ports: Ports, ctx: Context):
+    arguments = {"travelerId": JORDAN_TRAVELER, "program": LOYALTY_PROGRAM}
+    audit_before = ports.database.deny_audit_count(DECOY_TRAVELER)
+    raw = ports.gateway(DECOY, LOYALTY_TOOL, arguments)
+    delta = ports.database.deny_audit_count(DECOY_TRAVELER) - audit_before
+    verdict = classify_gateway(raw, deny_rows=delta, design=ctx.design)
+    return verdict, {"deny_audit_rows": delta, "design": ctx.design, "shape": gateway_shape(raw)}
+
+
+def _jordan_reads_own_loyalty(ports: Ports, ctx: Context):
+    arguments = {"travelerId": JORDAN_TRAVELER, "program": LOYALTY_PROGRAM}
+    raw = ports.gateway(JORDAN, LOYALTY_TOOL, arguments)
+    verdict = classify_gateway(raw, deny_rows=0, design=ctx.design)
+    return verdict, {"shape": gateway_shape(raw)}
+
+
 PLAN: tuple[ProbeSpec, ...] = (
     ProbeSpec("backend.decoy_reads_jordan_memory", "backend", DECOY, REFUSED,
               "GET /api/memory/<Jordan's traveler id> with the decoy's token",
@@ -391,6 +409,11 @@ PLAN: tuple[ProbeSpec, ...] = (
     ProbeSpec("gateway.jordan_places_hold", "gateway", JORDAN, ALLOWED,
               "tools/call create_courtesy_hold with Jordan's token (released afterwards)",
               _jordan_places_hold),
+    ProbeSpec("gateway.decoy_reads_jordans_loyalty", "gateway", DECOY, REFUSED,
+              "tools/call loyalty_balance with the decoy's token and travelerId set to Jordan",
+              _decoy_reads_jordans_loyalty),
+    ProbeSpec("gateway.jordan_reads_own_loyalty", "gateway", JORDAN, ALLOWED,
+              "tools/call loyalty_balance with Jordan's token", _jordan_reads_own_loyalty),
 )
 
 

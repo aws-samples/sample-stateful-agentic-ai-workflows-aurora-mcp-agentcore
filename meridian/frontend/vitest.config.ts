@@ -10,6 +10,8 @@ import react from '@vitejs/plugin-react'
  */
 export default defineConfig({
   plugins: [react()],
+  // The briefing test reads the AgentCore template that sits beside the frontend folder.
+  server: { fs: { allow: ['..'] } },
   test: {
     environment: 'jsdom',
     // Use jsdom's browser storage, not Node 25+'s file-backed native storage.

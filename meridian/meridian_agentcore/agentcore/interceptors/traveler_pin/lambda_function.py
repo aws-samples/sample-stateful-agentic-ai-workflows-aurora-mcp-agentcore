@@ -51,6 +51,7 @@ BEARER_VALUE = re.compile(r"bearer +(\S+)", re.IGNORECASE)
 DEFAULT_PINNED_TOOLS = (
     "MeridianHolds___create_courtesy_hold",
     "MeridianHolds___confirm_booking",
+    "MeridianHolds___loyalty_balance",
 )
 REFUSAL_PREFIX = "Identity Check Failed: "
 REFUSALS = {

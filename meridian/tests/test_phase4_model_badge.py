@@ -95,13 +95,15 @@ def test_phase4_reply_has_no_badge_when_the_runtime_reports_no_model(monkeypatch
     assert response.model_label is None
 
 
-def test_phase4_reply_badge_names_the_reported_gpt_model(monkeypatch):
+def test_phase4_reply_badge_keeps_the_id_of_a_reported_model_the_table_does_not_name(
+    monkeypatch,
+):
     response = _run_phase4(
         monkeypatch,
         [_runtime_started([{"label": "model", "value": "us.openai.gpt-6-luna"}])],
         "Find Tokyo trips for me.",
     )
-    assert response.model_label == "GPT-6 Luna"
+    assert response.model_label == "us.openai.gpt-6-luna"
 
 
 def test_phase4_workflow_handoff_has_no_badge(monkeypatch):

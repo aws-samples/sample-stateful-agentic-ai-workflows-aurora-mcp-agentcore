@@ -186,6 +186,13 @@ def test_parse_status_json_current_cli_shape():
     assert parsed["gateway_url"] == "https://gw.example.com/mcp"
 
 
+def test_the_default_search_tool_is_the_catalog_hybrid_search(monkeypatch):
+    monkeypatch.setenv("AGENTCORE_SKIP_CLI_SYNC", "1")
+    monkeypatch.delenv("AGENTCORE_GATEWAY_SEARCH_TOOL", raising=False)
+    cfg = cli_config.resolve_agentcore_config()
+    assert cfg.gateway_search_tool == "MeridianCatalog___hybrid_trip_search"
+
+
 def test_env_overrides_deployed_state(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AGENTCORE_RUNTIME_ARN", "arn:override")
     monkeypatch.setenv("AGENTCORE_SKIP_CLI_SYNC", "1")

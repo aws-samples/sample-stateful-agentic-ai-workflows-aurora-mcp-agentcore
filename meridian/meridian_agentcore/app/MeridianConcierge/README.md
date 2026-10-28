@@ -17,9 +17,12 @@ server-sent events.
 | `hold_execution.py` | Runs the hold or confirmation the traveler confirmed, through the gateway, before the model writes its reply |
 | `caller_identity.py` | Who is calling. In `iam` mode the traveler comes from the payload; in `jwt` mode it comes from the `traveler_id` claim of the access token in the `Authorization` header, and a token that is malformed, expired or without the claim is refused |
 | `gateway_auth.py` | How MCP requests reach the gateway. In `iam` mode they are signed with SigV4 using the runtime's execution role; in `jwt` mode they carry the caller's access token as received |
-| `prompts.py` | System, turn and narration prompts |
+| `prompts.py` | Turn instructions and narration prompts; the tool guidance is the shared definition's |
+| `concierge_definition.py` | Generated copy of backend/agents/concierge_definition.py (the tool contract, the prompt core, the traveler pin and `build_agent`); gitignored, staged on every render |
 | `model/load.py` | Bedrock model factory for Claude Sonnet 5.5 (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-sonnet-5-5`); repeats `backend/bedrock_model.py` |
 | `tool_errors.py` | Ends the turn with the real error when a tool could not be set up; repeats `backend/agents/strands_hooks.py` |
+| `turn_watchdog.py` | The 35 second idle watchdog and 300 second cap over a turn, the keepalive, and the closing of the saved history when a turn is ended early |
+| `turn_work.py` | The small executor for setup and teardown calls that can hang, and the order of history repairs between turns |
 
 ## Model and latency
 
@@ -40,7 +43,7 @@ error, and no other model answers. A tool that could not be set up (missing cred
 permissions or configuration) ends the turn with that error (`tool_errors.py`).
 There is no automatic replay of failed tool turns.
 
-Discovery uses one semantic search, recommends up to two trips, and defers
+Discovery uses one hybrid search (meaning plus words, reranked), recommends up to two trips, and defers
 availability checks until requested or needed to answer a missing fact. Follow-up
 comparisons reuse the authorized context. Runtime startup, memory retrieval and
 Gateway calls still contribute to first-turn latency; a model swap does not
@@ -51,6 +54,23 @@ package IDs for provisional cards; the browser resolves these against its live
 Aurora catalog. Unrecognized IDs are not displayed. Final hydration, memory
 persistence and the completed response remain authoritative. Card actions stay
 disabled while the turn is running.
+
+## Turn limits, Memory and setup failures
+
+A turn ends when nothing has happened for 35 seconds (the idle limit), or 300 seconds after it
+started, whichever comes first. The backend reads the stream with a 45 second socket timeout, so after
+15 seconds without an event for the caller the Runtime sends a `keepalive` event, which the backend
+ignores and which does not count as progress. The agent build, the Gateway client start and close, and every
+AgentCore Memory save and read run on worker threads, not on the event loop, so a slow call costs wall time
+the idle watchdog sees and the keepalive keeps running. Each Memory client allows 2 seconds to connect,
+4 seconds to read and 3 attempts in all, retried by botocore in standard mode. A hung Gateway client start ends
+the turn at the idle limit, and a client that starts after the turn gave up is closed. A Gateway rejection or
+other tool setup failure ends the turn with the real error (`tool_errors.py`), with 12-digit account ids masked.
+
+A turn ended early can leave a tool call with no result in the saved history. The Runtime appends a fixed error
+result for each open call and a fixed closing reply, so the next turn sends Bedrock a history that alternates
+roles; the next turn waits up to 3 seconds for a repair still running. A Memory write that was still running
+when its turn ended lands afterwards and sorts before the closing messages.
 
 ## Payload
 

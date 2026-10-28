@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from backend.activity import ActivityEntry, Product, TraceTelemetry, create_activity
 from backend.chat_stream import chat_event_sink
-from backend.retrieval.availability import retrieval_availability_search
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -41,10 +40,11 @@ from backend.agents.phase_04_production.concierge import runtime_model_id
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.config import bedrock_model_label
+from backend.agents.phase_03_retrieval import run_retrieval_turn
 from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.timing import clock, elapsed_ms
 from backend.trace_names import (
-    AVAILABILITY_CODE, BOUNDARY_CODE, MCP_CODE, PRODUCTION_CODE, SQL_CODE, WORKFLOW_CODE,
+    BOUNDARY_CODE, MCP_CODE, PRODUCTION_CODE, SQL_CODE, WORKFLOW_CODE,
 )
 from backend.logging_config import log_exception, log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.agentcore.errors import CallerCredentialError
@@ -70,7 +70,6 @@ from backend.catalog_compat import row_to_api_product
 # compare, price range, region inventory, FX and loyalty. Memory tools live
 # in Phase 4 by design (Aurora RLS + AgentCore).
 from backend.mcp.concierge_mcp_client import concierge_mcp_session
-from backend.llm_polish import PolishResult, polish_concierge_reply
 from backend.agents.phase_04_production.write_outcome import (
     STEP_WORDS,
     GovernedWriteReply,
@@ -1082,176 +1081,7 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
 
 
 # =============================================================================
-# Search-response prose helper. Phase 4 returns its managed Runtime answer;
-# Phase 5 returns its checkpointed operational result without another rewrite.
-# Search prose receives the returned catalog facts and a grounding instruction.
-# That instruction is guidance, not a guarantee; structured receipts remain
-# authoritative for actions and inventory.
-# =============================================================================
-
-
-async def _polish_phase_reply(
-    phase: int,
-    user_query: str,
-    raw_message: str,
-    products: List[Product],
-    activities: List[ActivityEntry],
-    memory_facts: Optional[List[Any]] = None,  # MemoryFact pydantic OR dict
-) -> PolishResult:
-    """Run the Bedrock polish over a search reply.
-
-    Returns the polish result: the final message, the model that wrote it and
-    how long its call took, or no model and a note. On failure the raw_message
-    is returned verbatim and the note says why; no other model is tried.
-    """
-    if not products and not raw_message:
-        return PolishResult(
-            text=raw_message, model_id=None, note="no content to polish", skipped=True
-        )
-
-    # Build a deterministic, fact-only context block. The system prompt
-    # in llm_polish forbids inventing anything outside this block.
-    lines: List[str] = [f"Mode: phase {phase}", f"Tool reply: {raw_message}"]
-
-    if products:
-        lines.append("")
-        lines.append(f"Top {len(products)} trips returned by the agent:")
-        for rank, p in enumerate(products[:5], start=1):
-            facts = [
-                f"rank={rank}",
-                f"name={p.name}",
-                f"trip_type={p.category}",
-                f"operator={p.brand}",
-                f"price=${p.price:,.0f}",
-            ]
-            if p.available_sizes:
-                facts.append(f"durations={', '.join(p.available_sizes[:3])}")
-            if p.highlights:
-                facts.append(f"highlights={', '.join(p.highlights[:3])}")
-            if p.description:
-                facts.append(f"description={p.description[:180]}")
-            lines.append("- " + ", ".join(facts))
-
-    if memory_facts:
-        lines.append("")
-        # Pass the full For-you fact set (the same one the right-rail panel
-        # shows) so the polish has the widest material to weave from. The
-        # system prompt caps how many it actually mentions so this stays
-        # natural — but giving the model 12 facts beats giving it 2 and
-        # forcing it to repeat shellfish + no_red_eye in every reply.
-        lines.append("Traveler preferences applied to this turn:")
-        for fact in memory_facts[:12]:
-            # Phase 4 passes Pydantic MemoryFact objects; the SearchAgent /
-            # legacy paths pass plain dicts. Support both shapes.
-            if hasattr(fact, "key"):
-                key = str(getattr(fact, "key", "") or "").strip()
-                val = str(getattr(fact, "value", "") or "").strip()
-            else:
-                key = str(fact.get("key", "") if isinstance(fact, dict) else "").strip()
-                val = str(fact.get("value", "") if isinstance(fact, dict) else "").strip()
-            if key and val:
-                lines.append(f"- {key}: {val}")
-
-    # Surface a couple of distinctive trace spans so the polish can mention
-    # what the agent actually did (rerank, RLS scope, workflow step, etc.).
-    # Filter to *successful* spans only — we never want the concierge to
-    # narrate degraded paths ("our reranker was unavailable") at the user.
-    # If a step failed, fall back silently and let the model talk about
-    # results, not infrastructure hiccups. We also drop the "unavailable"
-    # / "failed" / "fallback" titles explicitly so a span without a
-    # status field still can't leak.
-    def _is_healthy_span(a: ActivityEntry) -> bool:
-        title = (a.title or "").lower()
-        if any(k in title for k in ("unavailable", "failed", "fallback", "error")):
-            return False
-        status = (getattr(a, "status", None) or "").lower()
-        if status and status != "ok":
-            return False
-        return True
-
-    notable_spans = [
-        a for a in activities
-        if a.title
-        and _is_healthy_span(a)
-        and any(
-            k in a.title.lower()
-            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "snapshot saved", "saved step", "node:")
-        )
-    ]
-    if notable_spans:
-        lines.append("")
-        lines.append("Notable trace spans for this turn:")
-        for a in notable_spans[:5]:
-            lines.append(f"- {a.title}")
-
-    raw = "\n".join(lines)
-
-    return await polish_concierge_reply(user_query, raw)
-#
-# AWS docs:
-#   Cohere Embed v4: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
-#   Aurora pgvector: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Extensions.html#AuroraPostgreSQL.Extensions.pgvector
-
-async def _polish_and_record(
-    *,
-    phase: int,
-    mode_label: str,
-    agent_name: str,
-    user_query: str,
-    raw_message: str,
-    products: List[Product],
-    activities: List[ActivityEntry],
-    memory_facts: Optional[List[Any]] = None,
-) -> tuple[str, Optional[str]]:
-    """Polish a reply and append the matching success/failure span.
-
-    Phase 3 ends a turn this way: run the Bedrock rewrite, record whether it
-    succeeded, and fall back to the deterministic reply if it did not.
-
-    Returns:
-        (message, model_label). `model_label` names the one configured model
-        that wrote `message`, or None when polish did not run or failed, so the
-        raw tool result is returned unpolished and no model wrote any part of it.
-    """
-    polish = await _polish_phase_reply(
-        phase=phase,
-        user_query=user_query,
-        raw_message=raw_message,
-        products=products,
-        activities=activities,
-        memory_facts=memory_facts,
-    )
-    if polish.model_id:
-        activities.append(create_activity(
-            activity_type="reasoning",
-            title=f"Bedrock: concierge polish ({polish.model_id})",
-            details=f"Wrapping {mode_label} reply in concierge tone",
-            execution_time_ms=polish.elapsed_ms,
-            agent_name=agent_name,
-            agent_file="backend/llm_polish.py",
-        ))
-        return polish.text, bedrock_model_label(polish.model_id)
-    if polish.skipped:
-        activities.append(create_activity(
-            activity_type="reasoning",
-            title="Bedrock polish skipped",
-            details=f"No model was called: {polish.note}",
-            agent_name=agent_name,
-            agent_file="backend/llm_polish.py",
-        ))
-        return raw_message, None
-    activities.append(create_activity(
-        activity_type="error",
-        title="Bedrock polish unavailable",
-        details=polish.note or "unknown",
-        agent_name=agent_name,
-        agent_file="backend/llm_polish.py",
-    ))
-    return raw_message, None
-
-
-# =============================================================================
-# PHASE 3 (live): Strands RetrievalAgent driving Bedrock tool delegation.
+# PHASE 3 (live): one Strands agent loop over the cumulative tools.
 # =============================================================================
 
 _MEMORY_RECALL_PATTERNS = re.compile(
@@ -1283,30 +1113,9 @@ def _is_memory_recall_query(query: str) -> bool:
     The honest answer is "I can't see prior turns from here." Phase 4
     (Production — AgentCore Memory + Aurora RLS over conversation_messages
     and trip_interactions) is exactly the fix. So we short-circuit, return
-    zero products, and let the polish reply explain the gap.
+    zero products, and answer with the boundary reply.
     """
     return bool(_MEMORY_RECALL_PATTERNS.search(query or ""))
-
-
-# Availability-intent: the supervisor should delegate these to the PackageAgent
-# specialist (departure slots / open dates on a *named* package), not run a
-# fresh hybrid search. This is what makes "supervised multi-agent" visible in
-# the demo — a different specialist, a different tool, a different trace.
-_AVAILABILITY_PATTERNS = re.compile(
-    r"\b(availability|available|open dates?|departure dates?|departures?|"
-    r"what dates?|when can (we|i)|free dates?|open slots?|slots?)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_availability_query(query: str) -> bool:
-    """Detect departure/availability questions that belong to the PackageAgent.
-
-    Guard against overlap with memory-recall ("what did we discuss") — those
-    are handled separately and must take precedence, so callers check
-    _is_memory_recall_query first.
-    """
-    return bool(_AVAILABILITY_PATTERNS.search(query or ""))
 
 
 def _workflow_handoff_message(destination: Optional[str]) -> str:
@@ -1413,127 +1222,54 @@ def _needs_checkpointed_workflow(query: str) -> bool:
     return has_plan_intent and has_availability_step and dependent_steps >= 2
 
 
-async def retrieval_supervisor_search(
-    query: str,
-    limit: int = 5,
-) -> tuple[List[Product], List[ActivityEntry]]:
-    """Phase 3 via live Strands supervisor — Bedrock LLM picks the SearchAgent tool."""
-    from backend.agents.phase_03_retrieval import create_retrieval_system
+def _recall_boundary_spans() -> List[ActivityEntry]:
+    """The two spans of the deterministic boundary reply: Phase 3 has no conversation store.
 
-    activities: List[ActivityEntry] = []
-
-    def collect(entry: Any) -> None:
-        try:
-            act = _memory_activity_to_entry(entry)
-            activities.append(act)
-            log_activity_entry(act)
-        except Exception:
-            # Best-effort: keep going if the entry shape is unexpected.
-            pass
-
-    # Memory-recall short-circuit. We deliberately do not embed-and-search
-    # these prompts — Phase 3 has no conversation history, so any pgvector
-    # match would be coincidental. Surface the limitation in the trace so
-    # the polish reply can name the gap and point at Phase 4 as the fix.
-    if _is_memory_recall_query(query):
-        activities.append(create_activity(
+    No model runs, so the spans name the boundary check as code (``BOUNDARY_CODE``), as
+    Release 1 does: a step is called an agent only when a model runs its loop.
+    """
+    return [
+        create_activity(
             activity_type="reasoning",
-            title="Memory-recall prompt detected — Retrieval mode has no conversation store",
+            title="Memory-recall prompt detected: Retrieval mode has no conversation store",
             details=(
-                "Retrieval mode is pure search (pgvector + Cohere rerank). "
-                "Prior-turn memory is intentionally not in scope — that's "
-                "Production mode (AgentCore Memory + Aurora RLS over "
-                "conversation_messages / trip_interactions). Returning "
-                "zero results so the concierge can explain the gap."
+                "Retrieval mode searches the current prompt. Prior-turn memory is "
+                "intentionally not in scope: that is Production mode (AgentCore Memory and "
+                "Aurora RLS over conversation_messages and trip_interactions). Returning no "
+                "results so the concierge can explain the gap."
             ),
             agent_name=BOUNDARY_CODE,
             agent_file="backend/routers/chat.py",
-        ))
-        activities.append(create_activity(
+        ),
+        create_activity(
             activity_type="result",
             title="Retrieval mode cannot resolve memory-recall queries",
-            details="Routed to honest-failure path; Production mode is the upgrade.",
+            details="Routed to the boundary reply; Production mode is the upgrade.",
             agent_name=BOUNDARY_CODE,
             agent_file="backend/routers/chat.py",
-        ))
-        return [], activities
+        ),
+    ]
 
-    activities.append(create_activity(
-        activity_type="reasoning",
-        title="RetrievalAgent invoked (Strands + Bedrock)",
-        details="Bedrock will choose which specialist tool to call",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py",
-    ))
 
-    supervisor = create_retrieval_system(activity_callback=collect)
+async def retrieval_agent_search(
+    query: str,
+    *,
+    traveler_id: str,
+    limit: int = 5,
+) -> tuple[List[Product], List[ActivityEntry], Optional[str], Optional[str]]:
+    """Phase 3: one Strands agent loop over the cumulative tools.
 
-    packages, _llm_reply = await supervisor.process_search(query, activity_callback=collect)
-
-    # Belt-and-suspenders: if Bedrock chose to answer conversationally
-    # without calling the SearchAgent tool, we'd have an empty package
-    # list even though the user clearly asked for a trip. Fall back to
-    # calling SearchAgent.hybrid_search() directly so Phase 3 always
-    # surfaces hybrid results for trip-shaped prompts.
-    if not packages:
-        activities.append(create_activity(
-            activity_type="reasoning",
-            title="Supervisor returned no packages — fallback to direct hybrid search",
-            details=(
-                "Bedrock did not invoke _delegate_to_search; calling "
-                "SearchAgent.hybrid_search directly to guarantee "
-                "pgvector + tsvector + Cohere rerank coverage."
-            ),
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py",
-        ))
-        try:
-            direct = await supervisor.search_agent.hybrid_search(query, limit=limit)
-            packages = direct.get("packages", [])
-        except Exception as exc:
-            log_error("retrieval_direct_fallback", error=str(exc))
-
-    products: List[Product] = []
-    for pkg in packages[:limit]:
-        # SearchAgent returns dicts with package_id; map to API Product shape.
-        products.append(Product(
-            product_id=pkg.get("package_id", ""),
-            name=pkg.get("name", ""),
-            brand=pkg.get("operator", ""),
-            price=float(pkg.get("price_per_person", 0.0)),
-            description=pkg.get("description", "") or "",
-            image_url=pkg.get("image_url", "") or "",
-            category=pkg.get("trip_type", "") or "",
-            destination=pkg.get("destination"),
-            region=pkg.get("region"),
-            available_sizes=pkg.get("durations") or [],
-            availability=pkg.get("availability") or {},
-            highlights=pkg.get("highlights") or [],
-            similarity=pkg.get("similarity"),
-            pre_rerank_position=pkg.get("pre_rerank_position"),
-            pre_rerank_similarity=pkg.get("pre_rerank_similarity"),
-            rank_delta=pkg.get("rank_delta"),
-        ))
-
-    if not products:
-        activities.append(create_activity(
-            activity_type="result",
-            title="Supervisor search returned no trips",
-            details="Strands delegation + direct fallback both empty",
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py",
-        ))
-        return products, activities
-
-    activities.append(create_activity(
-        activity_type="result",
-        title=f"Supervisor returned {len(products)} trips",
-        details="Bedrock-driven delegation completed",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py",
-    ))
-
-    return products, activities
+    Returns the products the agent's search found, the trace spans, the agent's own reply (the
+    visible message; the voice rules apply when the turn completes) and the label of the model
+    that wrote it. A memory-recall prompt gets the deterministic boundary reply instead, with
+    no model call, because Phase 3 has no memory.
+    """
+    if _is_memory_recall_query(query):
+        return [], _recall_boundary_spans(), None, None
+    turn = await run_retrieval_turn(query, traveler_id=traveler_id, limit=limit)
+    for entry in turn.activities:
+        log_activity_entry(entry)
+    return turn.products, turn.activities, turn.message, bedrock_model_label(turn.model_id)
 
 
 # =============================================================================
@@ -1767,21 +1503,6 @@ async def production_search(
     return api_products, activities, message, conv_id, memory_facts
 
 
-# =============================================================================
-# PHASE 3: PackageAgent — duration inventory and package details
-# =============================================================================
-
-def is_availability_query(query: str) -> bool:
-    """Check if the query is asking about availability or departure slots."""
-    query_lower = query.lower()
-    availability_patterns = [
-        'available', 'do you have', 'check availability',
-        'availability', 'how many', 'what dates', 'dates available',
-        'departure', 'departures', 'is the', 'is there', 'got any', 'slots'
-    ]
-    return any(pattern in query_lower for pattern in availability_patterns)
-
-
 def _is_workflow_resume_query(query: str) -> bool:
     normalized = " ".join((query or "").lower().split())
     return normalized in {
@@ -1886,7 +1607,7 @@ async def chat(
     Routes to the appropriate search implementation based on phase:
     - Phase 1: Direct RDS Data API filters
     - Phase 2: MCP-backed SQL
-    - Phase 3: Hybrid retrieval + Cohere rerank; PackageAgent for slot checks
+    - Phase 3: a Strands agent over the cumulative tools (hybrid retrieval, details, loyalty)
     - Phase 4: Production concierge with AgentCore Runtime/Gateway/Memory
     """
     traveler_id = await authorize_traveler(principal, request.customer_id)
@@ -1918,56 +1639,6 @@ async def chat(
             )], conversation_id=request.conversation_id,
             recovery_request=request.message,
         ), request.phase, turn_started)
-
-    # Only Phase 3 uses the local PackageAgent shortcut. Phase 4 must apply
-    # the context guard and execute through the managed Runtime below. Multi-step
-    # planning prompts that also ask for availability should NOT be collapsed
-    # into this single specialist path; Phase 4 uses them as the bridge to the
-    # checkpointed Workflow mode.
-    if (
-        request.phase == 3
-        and is_availability_query(request.message)
-        and not _needs_checkpointed_workflow(request.message)
-    ):
-        activities.append(create_activity(
-            activity_type="reasoning",
-            title="Processing with the package availability check",
-            details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
-            agent_name=AVAILABILITY_CODE,
-            agent_file="retrieval/availability.py"
-        ))
-
-        try:
-            products, availability_activities, message = await retrieval_availability_search(request.message)
-            activities.extend(availability_activities)
-
-            follow_ups = ["Show similar trips", "What other durations are available?", "Find alternatives"]
-
-            return _complete_chat_turn(
-                ChatResponse(
-                message=message,
-                products=products if products else None,
-                order=None,
-                activities=activities,
-                follow_ups=follow_ups,
-                memory_facts=None,
-            ),
-                request.phase,
-                turn_started,
-            )
-        except TravelerAuthorizationError as e:
-            log_error("production_authorization", error=str(e))
-            raise HTTPException(status_code=403, detail=str(e)) from e
-        except Exception:
-            error_ref = log_exception("package_agent")
-            activities.append(create_activity(
-                activity_type="error",
-                title="PackageAgent error",
-                details=f"The availability lookup failed. Reference {error_ref}.",
-                agent_name=AVAILABILITY_CODE,
-                agent_file="agents/phase_03_retrieval/package_agent.py"
-            ))
-            # Fall through to regular search
 
     # Phase 4: ProductionAgent + AgentCore Runtime/Gateway/Memory
     if request.phase == 4:
@@ -2222,14 +1893,11 @@ async def chat(
                         f"Reference {error_ref}."),
             ) from e
 
-    # Phase 3: live Strands supervisor (Bedrock-driven tool delegation).
-    phase3_fn = retrieval_supervisor_search
-    phase3_method = "Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor"
-
     phase_configs = {
         1: (SQL_CODE, "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
         2: (MCP_CODE, "MCP tool routing", mcp_search, "backend/routers/chat.py"),
-        3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/phase_03_retrieval/supervisor.py"),
+        3: ("RetrievalAgent", "One Strands agent over the cumulative tools",
+            retrieval_agent_search, "agents/phase_03_retrieval/agent.py"),
     }
 
     agent_name, method, search_fn, agent_file = phase_configs[request.phase]
@@ -2323,18 +1991,9 @@ async def chat(
                 traveler_id=request.customer_id,
                 limit=5,
             )
-        elif (
-            request.phase == 3
-            and not _is_memory_recall_query(request.message)
-            and _is_availability_query(request.message)
-        ):
-            # An availability question goes to the package availability check
-            # (places left on a named package), not a fresh hybrid search. The
-            # router picks it by keyword; no model routes the call. Memory-recall
-            # is checked first so it keeps precedence (its honest-failure path
-            # handles those prompts).
-            products, search_activities, domain_text = await retrieval_availability_search(
-                request.message
+        elif request.phase == 3:
+            products, search_activities, domain_text, model_label = await retrieval_agent_search(
+                request.message, traveler_id=request.customer_id, limit=5,
             )
         else:
             products, search_activities = await search_fn(request.message, limit=5)
@@ -2349,46 +2008,23 @@ async def chat(
             # speaks for itself.
             message = domain_text
         elif products:
-            if request.phase in (3, 4):
-                top_similarity = products[0].similarity
-                if top_similarity and top_similarity > 0.8:
-                    raw_message = f"I found {len(products)} trips that closely match what you're looking for:"
-                else:
-                    raw_message = f"Here are {len(products)} trips that might interest you:"
-            else:
-                prices = [product.price for product in products]
-                lowest_price = min(prices)
-                highest_price = max(prices)
-                lowest = [
-                    product.name
-                    for product in products
-                    if product.price == lowest_price
-                ]
-                lowest_names = " and ".join(lowest[:2])
-                raw_message = (
-                    f"I found {len(products)} trips within your filters, from "
-                    f"${lowest_price:,.0f} to ${highest_price:,.0f} per traveler. "
-                    f"{lowest_names} {'are' if len(lowest) > 1 else 'is'} the "
-                    f"lowest-priced {'options' if len(lowest) > 1 else 'option'} "
-                    f"at ${lowest_price:,.0f}; compare duration and live inventory "
-                    "on the cards below."
-                )
-
-            # Phase 3 specifically benefits from polish: similarity scores
-            # in the product list let the model name *why* each trip
-            # matched (intent, vibe, dates) instead of just listing.
-            if request.phase == 3:
-                message, model_label = await _polish_and_record(
-                    phase=3,
-                    mode_label="Retrieval",
-                    agent_name="RetrievalAgent",
-                    user_query=request.message,
-                    raw_message=raw_message,
-                    products=products,
-                    activities=activities,
-                )
-            else:
-                message = raw_message
+            prices = [product.price for product in products]
+            lowest_price = min(prices)
+            highest_price = max(prices)
+            lowest = [
+                product.name
+                for product in products
+                if product.price == lowest_price
+            ]
+            lowest_names = " and ".join(lowest[:2])
+            message = (
+                f"I found {len(products)} trips within your filters, from "
+                f"${lowest_price:,.0f} to ${highest_price:,.0f} per traveler. "
+                f"{lowest_names} {'are' if len(lowest) > 1 else 'is'} the "
+                f"lowest-priced {'options' if len(lowest) > 1 else 'option'} "
+                f"at ${lowest_price:,.0f}; compare duration and live inventory "
+                "on the cards below."
+            )
         else:
             if request.phase == 2:
                 message = (

@@ -73,6 +73,11 @@ def test_loyalty_balance_refuses_an_unbound_traveler_without_reading(monkeypatch
     )
 
     assert result["error"] == "traveler_not_authorized"
+    assert result["final"] is True
+    assert result["message"] == (
+        "This traveler is not authorized for this request. Asking again will not change "
+        "the answer.")
+    assert result["message"] == concierge_server.REFUSAL_MESSAGE
     assert result["traveler_id"] == "trv_demo_decoy"
     assert "points_balance" not in result
     assert db.reads == []

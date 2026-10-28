@@ -50,19 +50,6 @@ class SearchConfig:
 class AgentConfig:
     """Agent configuration by phase."""
 
-    # Agent names and files for each phase
-    search_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
-        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
-        3: ("RetrievalAgent", "agents/phase_03_retrieval/supervisor.py"),
-    })
-
-    booking_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
-        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
-        3: ("BookingAgent", "agents/phase_03_retrieval/booking_agent.py"),
-    })
-
     # Progressive reveal delays (ms) for the showcase
     phase_delays: Dict[int, int] = field(default_factory=lambda: {
         1: 600,  # Slower to show process
@@ -75,12 +62,11 @@ class AgentConfig:
 class BedrockConfig:
     """Bedrock LLM configuration.
 
-    Every model call in Meridian (the Phase 3 supervisor, the reply polish and the managed
-    Concierge) uses Claude Sonnet 5.5 through its global inference profile,
-    ``global.anthropic.claude-sonnet-5-5``. ``BEDROCK_MODEL_ID`` selects another Bedrock model
-    for the local agents. The managed Concierge reads its own ``BEDROCK_MODEL_ID`` from the
-    AgentCore deployment template, so changing the backend environment does not change that
-    Runtime.
+    Every model call in Meridian (the Phase 3 agent and the managed Concierge) uses Claude
+    Sonnet 5.5 through its global inference profile, ``global.anthropic.claude-sonnet-5-5``.
+    ``BEDROCK_MODEL_ID`` selects another Bedrock model for the local agents. The managed
+    Concierge reads its own ``BEDROCK_MODEL_ID`` from the AgentCore deployment template, so
+    changing the backend environment does not change that Runtime.
 
     Sonnet 5.5 rejects a ``temperature``, ``thinking: disabled`` and a forced tool choice, so
     none is sent; ``backend/bedrock_model.py`` builds the model. If you see::
@@ -128,18 +114,14 @@ _MODEL_LABELS = {
     "claude-sonnet-5-5": "Claude Sonnet 5.5",
     "claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
     "claude-opus-5": "Claude Opus 5",
-    "gpt-6-luna": "GPT-6 Luna",
-    "gpt-6-sol": "GPT-6 Sol",
-    "gpt-6.1-sol": "GPT-6.1 Sol",
 }
 
 
 def bedrock_model_label(model_id: str) -> str:
     """Name a known reported model; preserve unknown IDs instead of guessing."""
     profile = model_id.rsplit("/", 1)[-1]
-    for provider in ("anthropic.", "openai."):
-        if provider in profile:
-            return _MODEL_LABELS.get(profile.split(provider, 1)[-1], profile)
+    if "anthropic." in profile:
+        return _MODEL_LABELS.get(profile.split("anthropic.", 1)[-1], profile)
     return profile
 
 

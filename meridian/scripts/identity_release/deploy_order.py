@@ -50,6 +50,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from backend.agentcore.auth_mode import IAM, JWT
 from scripts.identity_release import deploy_diff, gateway_release, holds_logs, preflight
+from scripts import stage_concierge_runtime, stage_workflow_runtime
 from scripts.identity_release import settings, snapshot
 from scripts.identity_release import stages
 from scripts.provision_service_logins import require_account
@@ -268,21 +269,29 @@ def snapshot_findings(deps: Any, replaced: str, gateway_id: str,
     Returns the findings and, when one is usable, a line naming it with its commit and age.
     """
     take = _take_command(replaced)
-    loaded, _ = snapshot.complete_snapshots(deps.release_dir)
+    loaded, skipped = snapshot.complete_snapshots(deps.release_dir)
+    unusable = _unusable_text(skipped)
     of_mode = [(path, document) for path, document in loaded if document.get("mode") == replaced]
     if not of_mode:
         newest = f"; the newest complete snapshot is of the {loaded[0][1].get('mode')} release" \
             if loaded else ""
-        return [f"no complete snapshot of the {replaced} release exists{newest}, and the "
-                f"{replaced} Gateway is the one being deleted and cannot be restored from "
+        return [f"no complete snapshot of the {replaced} release exists{newest}{unusable}, and "
+                f"the {replaced} Gateway is the one being deleted and cannot be restored from "
                 f"anything else; take one now: {take}"], []
     problems = [_snapshot_problem(document, gateway_id, wanted) for _, document in of_mode]
     usable = next((i for i, problem in enumerate(problems) if problem is None), None)
     if usable is None:
-        return [f"the newest {replaced} snapshot, {of_mode[0][0].name}, {problems[0]}; take "
-                f"one now: {take}"], []
+        return [f"the newest {replaced} snapshot, {of_mode[0][0].name}, {problems[0]}{unusable}; "
+                f"take one now: {take}"], []
     path, document = of_mode[usable]
     return [], [_snapshot_note(path, document, deps.now())]
+
+
+def _unusable_text(skipped: list[tuple[str, str]]) -> str:
+    """The files in the release folder that could not be loaded, each with its reason."""
+    if not skipped:
+        return ""
+    return "; not usable: " + "; ".join(f"{name} {reason}" for name, reason in skipped)
 
 
 def _snapshot_note(path: Path, document: Mapping[str, Any], now: datetime) -> str:
@@ -517,6 +526,40 @@ def _steps(stage: str) -> list[str]:
     return steps
 
 
+RUNTIME_COPY_FIXES = (
+    ("Concierge", "venv/bin/python scripts/stage_concierge_runtime.py"),
+    ("Workflow", "venv/bin/python scripts/stage_workflow_runtime.py"),
+)
+
+
+def runtime_copy_problems() -> list[str]:
+    """The staged Runtime files that are missing or stale, as ``Concierge: <file>`` lines.
+
+    Reads the Concierge copy and the Workflow bundle through the stagers' own ``check``
+    functions, in this process. A copy whose check cannot run (a corrupt manifest raises
+    ``ValueError``, an unreadable file ``OSError``) counts as stale, so the refusal names the
+    stager that rewrites it.
+    """
+    checks = {"Concierge": stage_concierge_runtime.check, "Workflow": stage_workflow_runtime.check}
+    problems: list[str] = []
+    for name, check in checks.items():
+        try:
+            problems += [f"{name}: {path}" for path in check()]
+        except (ValueError, OSError) as error:
+            problems.append(f"{name}: the staged copy cannot be checked ({type(error).__name__})")
+    return problems
+
+
+def _refuse_stale_copies(problems: list[str]) -> None:
+    if not problems:
+        return
+    fixes = " and ".join(f"`{command}`" for _, command in RUNTIME_COPY_FIXES)
+    raise settings.ReleaseConfigError(
+        "refusing: the staged Runtime copy is missing or stale, so the deploy would ship old "
+        "code:\n  " + "\n  ".join(problems) + f"\nRestage with {fixes} (a render does both), "
+        "then run deploy again.")
+
+
 def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     """Plan, or run, one build stage and read the Gateway back.
 
@@ -525,8 +568,10 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
 
     Raises:
         DeployOrderError: When a check fails (apply), or the plan or the deploy fails.
-        ReleaseConfigError: When a setting is missing or malformed.
+        ReleaseConfigError: When a setting is missing or malformed, or a staged Runtime copy is
+            missing or stale (checked first, before anything is read).
     """
+    _refuse_stale_copies(deps.runtime_copy_problems())
     env = deps.env
     mode = args.to or settings.release_mode(env)
     account, region = settings.deployment_target(env)

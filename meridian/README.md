@@ -58,8 +58,8 @@ you open them. This keeps the projector focused on the topic being discussed.
 | --- | --- | --- |
 | 1. SQL | Query | Rows from Aurora through one parameterized `search_trips` statement over the RDS Data API; code, not a model, picks the filter |
 | 2. MCP | Tools | Typed tools on the custom `meridian-concierge` MCP server: `search_trips`, package comparison, currency conversion, destination price range, region inventory and loyalty. Every value a tool sends to Aurora is a bound parameter, and the `search_trips` trace shows the statement with its values |
-| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, with a Claude Sonnet 5.5 Strands supervisor routing to specialists |
-| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
+| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, chosen by one Claude Sonnet 5.5 Strands agent that holds the earlier tools |
+| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) with ten Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
 | 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry |
 
 ### Prompts
@@ -85,9 +85,8 @@ Phase 4's **Use traveler context** switch applies to every Production turn,
 including availability questions. With it off, the turn stops before reading or
 writing traveler memory. With it on, the managed runtime handles the turn.
 
-Phase 3's Booking Agent only estimates prices. Neither it nor the reference SQL
-agent can write a booking, and the retrieval supervisor refuses write
-delegation. Every hold and confirmation uses the governed Gateway path.
+Neither the Phase 3 retrieval agent nor the reference SQL agent has a tool that
+writes a booking. Every hold and confirmation uses the governed Gateway path.
 
 ### Where state lives
 
@@ -193,7 +192,7 @@ Every route except `/health` requires the HTTP principal described under
 | Variable | Purpose |
 | --- | --- |
 | `AWS_DEFAULT_REGION`, `BEDROCK_REGION` | AWS SDK and Bedrock Region |
-| `BEDROCK_MODEL_ID` | Model for the backend's Strands agents and the reply polish (the managed concierge is configured separately, in the AgentCore template). Default: `global.anthropic.claude-sonnet-5-5`. The hosted web app's roles stack accepts only a global inference profile id (`global.<model>`), because its IAM grant is written for one |
+| `BEDROCK_MODEL_ID` | Model for the backend's Strands agent (the managed concierge is configured separately, in the AgentCore template). Default: `global.anthropic.claude-sonnet-5-5`. The hosted web app's roles stack accepts only a global inference profile id (`global.<model>`), because its IAM grant is written for one |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | Default `cohere.embed-v4:0` at 1024 dimensions, matching the pgvector columns |
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Restricted role for scoped sessions. Default `meridian_app` |
@@ -201,7 +200,8 @@ Every route except `/health` requires the HTTP principal described under
 | `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling when the traveler has no saved budget. Default `400000`. The `MeridianHolds` Lambda reads the same variable; set both or neither |
 | `AGENTCORE_WORKFLOW_RUNTIME_ARN` | ARN of the `MeridianWorkflow` Runtime that runs Phase 5. `scripts/sync_agentcore_env.py --write` sets it |
 | `AURORA_WORKFLOW_SECRET_ARN` | Secret for the `meridian_workflow` login, written by `scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env` |
-| `AURORA_BACKEND_SECRET_ARN`, `AURORA_GATEWAY_SECRET_ARN`, `AURORA_IDENTITY_SECRET_ARN` | Secrets for the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, written by `scripts/provision_service_logins.py --login <name> --apply --i-understand-this-changes-aws --write-env`. In a `jwt` release the hosted service runs as `meridian_backend` (the stack sets its `AURORA_SECRET_ARN` from `AURORA_BACKEND_SECRET_ARN`) and the Gateway Lambdas run as `meridian_gateway` once `scripts/release_identity.py lambdas` reports that stage |
+| `AURORA_CATALOG_SECRET_ARN` | Secret for the `meridian_catalog` login the `meridian-catalog-tools` Lambda runs as, written by `scripts/provision_service_logins.py --login catalog --apply --i-understand-this-changes-aws --write-env` |
+| `AURORA_BACKEND_SECRET_ARN`, `AURORA_GATEWAY_SECRET_ARN`, `AURORA_IDENTITY_SECRET_ARN` | Secrets for the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, written by `scripts/provision_service_logins.py --login <name> --apply --i-understand-this-changes-aws --write-env`. In a `jwt` release the hosted service runs as `meridian_backend` (the stack sets its `AURORA_SECRET_ARN` from `AURORA_BACKEND_SECRET_ARN`) and the holds Lambda runs as `meridian_gateway` once `scripts/release_identity.py lambdas` reports that stage |
 | `MERIDIAN_COGNITO_REGION`, `MERIDIAN_COGNITO_USER_POOL_ID`, `MERIDIAN_COGNITO_APP_CLIENT_ID` | Amazon Cognito sign-in for the API, all three or none, written by `scripts/sync_cognito_env.py --write` |
 | `VITE_COGNITO_DOMAIN`, `VITE_COGNITO_CLIENT_ID`, `VITE_REQUIRE_SIGN_IN` | Web build sign-in. The first two turn the sign-in screen on and are written to `frontend/.env.development.local`; `VITE_REQUIRE_SIGN_IN=1` fails a build that lacks them. A `jwt` build from `scripts/publish.py` sets all three from the identity stack outputs; an `iam` build blanks them. See [Sign-in settings](docs/OPERATIONS.md#sign-in-settings-in-the-web-build) |
 | `MERIDIAN_AGENTCORE_AUTH` | `iam` (default, also when unset or blank) signs every AgentCore hop with AWS credentials; `jwt` sends the signed-in person's Amazon Cognito access token to both Runtimes and the Gateway. Any other value is refused. `backend/agentcore/auth_mode.py` is the one definition |
@@ -367,7 +367,7 @@ package before a hold. It is not enabled.
 | Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases. The LangGraph version is in `examples/langgraph/` |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
-| Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge, the Phase 3 supervisor and the reply polish, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap; the reply polish has the same cap and reads the same request fields. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
+| Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge and the Phase 3 agent, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
 | MCP | The custom `meridian-concierge` server (typed `search_trips` and domain tools) for Phase 2, and the custom `meridian-memory` server for external MCP hosts (the app reads memory directly); `awslabs.postgres-mcp-server` serves only the reference MCP agent |
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs in the runtime's CloudWatch log group, with the trace ID shown in the UI |
 

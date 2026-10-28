@@ -45,7 +45,7 @@ class FakeSession:
     def __init__(self, clock: FakeClock) -> None:
         self.clock = clock
 
-    def client(self, _service):
+    def client(self, _service, **_kwargs):
         self.clock.spend(30)
         return FakeMemory(self.clock)
 
@@ -67,7 +67,7 @@ def _fake_gateway(clock: FakeClock):
 
         def list_tools_sync(self):
             clock.spend(120)
-            return [SimpleNamespace(tool_name="MeridianSearch___semantic_trip_search")]
+            return [SimpleNamespace(tool_name="MeridianCatalog___hybrid_trip_search")]
 
     return FakeGateway
 
@@ -83,6 +83,7 @@ def runtime(monkeypatch, clock):
     fake_time = SimpleNamespace(perf_counter=clock.read, monotonic=clock.read)
     monkeypatch.setattr(module, "time", fake_time)
     monkeypatch.setattr(module, "SESSION", FakeSession(clock))
+    monkeypatch.setattr(module, "memory_session", lambda: module.SESSION)
     return module
 
 
@@ -104,6 +105,8 @@ async def _first(events, count: int) -> list:
 
 def test_tools_list_span_carries_only_the_list_tools_time(runtime, clock, monkeypatch):
     monkeypatch.setattr(runtime, "MCPClient", _fake_gateway(clock))
+    monkeypatch.setattr(runtime, "memory_manager", lambda *_args: None)
+    monkeypatch.setattr(runtime, "build_agent", lambda **_kwargs: SimpleNamespace(messages=[]))
     payload = {"event": "concierge_turn", "traveler_id": "trv_meridian_demo",
                "conversation_id": "conv-1"}
     started, tools, memory = asyncio.run(_first(runtime.run(payload), 3))
@@ -114,3 +117,90 @@ def test_tools_list_span_carries_only_the_list_tools_time(runtime, clock, monkey
     # Opening the gateway session (300 ms) is not the tools/list call.
     assert tools["execution_time_ms"] == 120
     assert memory["execution_time_ms"] == 45
+
+
+async def _collect(events) -> list:
+    return [event async for event in events]
+
+
+def test_the_runtime_agent_comes_from_the_shared_definition(runtime, clock, monkeypatch):
+    from concierge_definition import TravelerPinHook
+
+    captured = {}
+
+    class FakeAgent:
+        async def stream_async(self, _prompt):
+            yield {"data": "Done."}
+            yield {"result": SimpleNamespace(metrics=SimpleNamespace(accumulated_usage={}))}
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return FakeAgent()
+
+    monkeypatch.setattr(runtime, "MCPClient", _fake_gateway(clock))
+    monkeypatch.setattr(runtime, "build_agent", fake_build)
+    monkeypatch.setattr(runtime, "memory_manager", lambda *_args: "session")
+    monkeypatch.setattr(runtime, "concierge_model", lambda: "model")
+    payload = {"event": "concierge_turn", "traveler_id": "trv_meridian_demo",
+               "conversation_id": "conv-1", "prompt": "Find Tokyo"}
+
+    events = asyncio.run(_collect(runtime.run(payload)))
+
+    assert captured["phase"] == 4 and captured["model"] == "model"
+    assert captured["session_manager"] == "session" and captured["callback_handler"] is None
+    assert isinstance(captured["hooks"][0], TravelerPinHook)
+    assert captured["hooks"][0].traveler_id == "trv_meridian_demo"
+    assert "has not confirmed" in captured["extra_instructions"]
+    assert [t.tool_name for t in captured["tools"]] == ["MeridianCatalog___hybrid_trip_search"]
+    assert events[-1]["type"] == "result" and events[-1]["message"] == "Done."
+
+
+class _Registry:
+    """Collects the callbacks a hook provider registers, by event type."""
+
+    def __init__(self) -> None:
+        self.callbacks: dict = {}
+
+    def add_callback(self, event_type, callback) -> None:
+        self.callbacks.setdefault(event_type, []).append(callback)
+
+
+@pytest.mark.parametrize("tool", [
+    "MeridianHolds___loyalty_balance",
+    "MeridianHolds___create_courtesy_hold",
+    "MeridianHolds___confirm_booking",
+])
+def test_the_runtimes_own_pin_overwrites_a_decoy_traveler_on_every_traveler_tool(
+    runtime, clock, monkeypatch, tool
+):
+    """In iam mode the Gateway has no traveler binding, so this pin is the only one.
+
+    The hooks are the ones main.py hands the agent, less TraceHooks, which pins the same
+    argument for its own span; what remains must overwrite the decoy by itself.
+    """
+    from strands.hooks import BeforeToolCallEvent
+
+    captured = {}
+
+    class FakeAgent:
+        async def stream_async(self, _prompt):
+            yield {"data": "Done."}
+
+    monkeypatch.setattr(runtime, "MCPClient", _fake_gateway(clock))
+    monkeypatch.setattr(runtime, "build_agent", lambda **kw: captured.update(kw) or FakeAgent())
+    monkeypatch.setattr(runtime, "memory_manager", lambda *_args: "session")
+    monkeypatch.setattr(runtime, "concierge_model", lambda: "model")
+    payload = {"event": "concierge_turn", "traveler_id": "trv_pinned",
+               "conversation_id": "conv-1", "prompt": "Find Tokyo"}
+    asyncio.run(_collect(runtime.run(payload)))
+
+    registry = _Registry()
+    for hook in captured["hooks"]:
+        if not isinstance(hook, runtime.TraceHooks):
+            hook.register_hooks(registry)
+    event = SimpleNamespace(
+        tool_use={"name": tool, "toolUseId": "t1", "input": {"travelerId": "trv_decoy"}})
+    for callback in registry.callbacks[BeforeToolCallEvent]:
+        callback(event)
+
+    assert event.tool_use["input"]["travelerId"] == "trv_pinned"

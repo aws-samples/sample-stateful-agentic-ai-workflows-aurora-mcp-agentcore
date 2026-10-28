@@ -13,9 +13,9 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Runtime | `MeridianWorkflow` | Runs the Phase 5 workflow as the `meridian_workflow` database login; a stopped session resumes from saved snapshots on a new microVM |
 | Memory | `meridian_session` | Runtime session store, `SEMANTIC` strategy over `/users/{actorId}/sessions/{sessionId}` |
 | Gateway | `meridian-aurora` (`meridian-aurora-jwt` in `jwt` mode) | MCP endpoint with AWS_IAM inbound auth (Cognito JWT in `jwt` mode) and the Cedar policy engine attached in `ENFORCE` mode |
-| Gateway target | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector, served by the Lambda function you create in step 2 |
-| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `create_courtesy_hold` and `confirm_booking` |
-| Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget. In `jwt` mode the render adds a fourth rule, `meridian_traveler_binding`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
+| Gateway target | `MeridianCatalog` | `search_trips`, `compare_packages`, `price_range`, `region_inventory`, `currency_convert` and `hybrid_trip_search` over Amazon Aurora, served by the Lambda function `meridian-catalog-tools` you create in step 2. It replaces `SemanticTripSearchLambda` |
+| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold` and `confirm_booking` |
+| Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the catalog tools, `get_package_details` and `loyalty_balance`; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget. In `jwt` mode the render adds a fourth rule, `meridian_traveler_binding`, which covers `loyalty_balance`, `create_courtesy_hold` and `confirm_booking`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
 
 The resources are declared in
 [`meridian_agentcore/agentcore/agentcore.template.json`](../meridian_agentcore/agentcore/agentcore.template.json).
@@ -42,9 +42,10 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   ```
 
   The render refuses to run without it. The `MeridianHolds` policy it writes may
-  read that secret. The Lambdas keep running as the master login until
-  `scripts/release_identity.py lambdas` and its deploy steps move them (see
+  read that secret. The `MeridianHolds` Lambda keeps running as the master login until
+  `scripts/release_identity.py lambdas` and its deploy steps move it (see
   [OPERATIONS.md](OPERATIONS.md#move-the-lambdas-to-the-gateway-login)).
+  The catalog Lambda runs as its own `meridian_catalog` login from the day you create it (step 2).
 - AWS credentials for the account that owns the cluster. Sign in with
   `aws login` or `aws sso login`, then confirm with
   `aws sts get-caller-identity`.
@@ -105,45 +106,99 @@ and the Cedar policy engine: the policies name the gateway, which does not
 exist yet. The [AgentCore project README](../meridian_agentcore/README.md)
 describes each placeholder.
 
-## 2. Create the semantic search Lambda
+## 2. Create the catalog Lambda
 
-The `SemanticTripSearchLambda` target points at an existing function named
-`meridian-semantic-trip-search`. Create it once, with an execution role that
-can call Bedrock, the Data API and the database secret:
+The `MeridianCatalog` target points at an existing function named
+`meridian-catalog-tools`. The Lambda runs as the `meridian_catalog` login, which
+reads the catalog and nothing else; create the login first, as the Create the
+catalog login section of [Operations](OPERATIONS.md#create-the-catalog-login)
+says. That leaves `AURORA_CATALOG_SECRET_ARN` in `meridian/.env` and the
+`MeridianCatalogAuroraAccess` managed policy in your account.
+
+Create the role and the function once. The role gets `AWSLambdaBasicExecutionRole`,
+`MeridianCatalogAuroraAccess` (the Data API on the cluster and
+`secretsmanager:GetSecretValue` on the catalog login's secret alone) and an inline policy
+that allows `bedrock:InvokeModel` and nothing else:
 
 ```bash
-TARGET=meridian/meridian_agentcore/agentcore/gateway_targets/semantic_trip_search
+export CATALOG_SECRET_ARN=<AURORA_CATALOG_SECRET_ARN from meridian/.env>
+TARGET=meridian/meridian_agentcore/agentcore/gateway_targets/meridian_catalog
 
-aws iam create-role --role-name meridian-semantic-trip-search \
+aws iam create-role --role-name MeridianCatalogToolsRole \
   --assume-role-policy-document "file://${TARGET}/trust-policy.json"
-aws iam attach-role-policy --role-name meridian-semantic-trip-search \
+aws iam attach-role-policy --role-name MeridianCatalogToolsRole \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-aws iam put-role-policy --role-name meridian-semantic-trip-search \
-  --policy-name meridian-semantic-trip-search --policy-document "{
+aws iam attach-role-policy --role-name MeridianCatalogToolsRole \
+  --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/MeridianCatalogAuroraAccess"
+aws iam put-role-policy --role-name MeridianCatalogToolsRole \
+  --policy-name meridian-catalog-tools --policy-document "{
     \"Version\": \"2012-10-17\",
     \"Statement\": [
       {\"Effect\": \"Allow\", \"Action\": \"bedrock:InvokeModel\",
-       \"Resource\": \"arn:aws:bedrock:${REGION}::foundation-model/cohere.embed-v4:0\"},
-      {\"Effect\": \"Allow\", \"Action\": \"rds-data:ExecuteStatement\", \"Resource\": \"${CLUSTER_ARN}\"},
-      {\"Effect\": \"Allow\", \"Action\": \"secretsmanager:GetSecretValue\", \"Resource\": \"${SECRET_ARN}\"}
+       \"Resource\": [\"arn:aws:bedrock:${REGION}::foundation-model/cohere.embed-v4:0\",
+                      \"arn:aws:bedrock:${REGION}::foundation-model/cohere.rerank-v3-5:0\"]}
     ]}"
 
-zip -j semantic-trip-search.zip "${TARGET}/lambda_function.py"
+zip -j meridian-catalog-tools.zip "${TARGET}/lambda_function.py"
 aws lambda create-function --region "$REGION" \
-  --function-name meridian-semantic-trip-search \
+  --function-name meridian-catalog-tools \
   --runtime python3.13 --handler lambda_function.lambda_handler \
-  --role "arn:aws:iam::${ACCOUNT_ID}:role/meridian-semantic-trip-search" \
-  --zip-file fileb://semantic-trip-search.zip --timeout 30 --memory-size 512 \
+  --role "arn:aws:iam::${ACCOUNT_ID}:role/MeridianCatalogToolsRole" \
+  --zip-file fileb://meridian-catalog-tools.zip --timeout 30 --memory-size 512 \
   --environment "{\"Variables\": {\"AURORA_CLUSTER_ARN\": \"${CLUSTER_ARN}\",
-    \"AURORA_SECRET_ARN\": \"${SECRET_ARN}\", \"AURORA_DATABASE\": \"meridian\"}}"
-rm semantic-trip-search.zip
+    \"AURORA_SECRET_ARN\": \"${CATALOG_SECRET_ARN}\", \"AURORA_DATABASE\": \"meridian\"}}"
+rm meridian-catalog-tools.zip
 ```
 
-Set `AURORA_DATABASE` to your database name if it is not `meridian`. If
-`create-function` reports that the role cannot be assumed, wait a few seconds
-for the new role to propagate and run it again, from the `zip` line on. To
-deploy a code change later, run the `TARGET=` and `zip -j` lines again, then
-`aws lambda update-function-code --region "$REGION" --function-name meridian-semantic-trip-search --zip-file fileb://semantic-trip-search.zip`.
+Set `AURORA_DATABASE` to your database name if it is not `meridian`. The function's
+`AURORA_SECRET_ARN` is the catalog login's secret, never `SECRET_ARN` and never the
+gateway login's. If `create-function` reports that the role cannot be assumed, wait a few
+seconds for the new role to propagate and run it again, from the `zip` line on.
+
+Read it back before you go on. `State` is `Active`, the function reads the catalog login's secret and no
+other, the attached policies are exactly `AWSLambdaBasicExecutionRole` and `MeridianCatalogAuroraAccess`,
+and the inline policy's only action is `bedrock:InvokeModel`:
+
+```bash
+aws lambda get-function-configuration --region "$REGION" --function-name meridian-catalog-tools \
+  --query '{State:State,Runtime:Runtime,Handler:Handler}' --output json
+test "$(aws lambda get-function-configuration --region "$REGION" --function-name meridian-catalog-tools \
+  --query Environment.Variables.AURORA_SECRET_ARN --output text)" = "$CATALOG_SECRET_ARN" \
+  && echo "the function reads the catalog login's secret"
+aws iam list-attached-role-policies --role-name MeridianCatalogToolsRole \
+  --query 'AttachedPolicies[].PolicyName' --output json
+aws iam get-role-policy --role-name MeridianCatalogToolsRole --policy-name meridian-catalog-tools \
+  --query 'PolicyDocument.Statement[].Action' --output json
+```
+
+Smoke each tool by direct invoke; the Gateway is not involved yet. The client context
+names the tool the way the Gateway does:
+
+```bash
+mkdir -p meridian/.local
+invoke() {  # invoke <tool> <json payload>
+  CTX=$(printf '{"custom":{"bedrockAgentCoreToolName":"MeridianCatalog___%s"}}' "$1" | base64)
+  aws lambda invoke --region "$REGION" --function-name meridian-catalog-tools \
+    --client-context "$CTX" --cli-binary-format raw-in-base64-out --payload "$2" \
+    "meridian/.local/invoke-$1.json" --query StatusCode --output text
+  python -c "import json,sys; d=json.load(open(sys.argv[1])); print({k: (v if k in ('error','reranked','candidates','sample_size') else '...') for k, v in d.items()})" "meridian/.local/invoke-$1.json"
+}
+invoke price_range '{"destination":"Tokyo"}'
+invoke search_trips '{"trip_type":"City Breaks","limit":3}'
+invoke compare_packages '{"package_ids":["CTY-002"]}'
+invoke region_inventory '{"region":"Asia"}'
+invoke currency_convert '{"amount":100,"from_ccy":"USD","to_ccy":"EUR"}'
+invoke hybrid_trip_search '{"query":"quiet boutique city stay in Tokyo under $3,000","limit":3}'
+```
+
+Expect six `200` lines and no `error` key. For `hybrid_trip_search`, `reranked` is `True`
+and `candidates` shows non-zero `semantic` and `lexical` counts. A permission error from
+Amazon Aurora means the `meridian_catalog` login cannot run a statement the function sends:
+stop and report the first failing statement; widening the login is a migration, not a
+shortcut.
+
+To deploy a code change later, run the `TARGET=` and `zip -j` lines again, then
+`aws lambda update-function-code --region "$REGION" --function-name meridian-catalog-tools --zip-file fileb://meridian-catalog-tools.zip`.
 The CDK app grants the gateway role permission to invoke the function.
 
 ## 3. Publish the holds Lambda's settings
@@ -330,7 +385,7 @@ while the hold step is running. Each run removes the rows it creates.
 From the repository root:
 
 ```bash
-python meridian/scripts/verify_agentcore.py        # runtime, gateway, memory, policy engine ACTIVE and ENFORCE, four tools
+python meridian/scripts/verify_agentcore.py        # runtime, gateway, memory, policy engine ACTIVE and ENFORCE, ten tools
 python meridian/scripts/smoke_gateway_tools.py CTY-002   # tools/list and get_package_details, signed with your credentials
 python meridian/scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold placed, over-budget hold denied
 ```
@@ -342,9 +397,9 @@ Holds expire on their own.
 In the showcase trace for a Production turn, expect:
 
 - `Workload identity: AWS STS` and `Workload traveler grant allowed`
-- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with four tools
+- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with ten tools
 - `AgentCore Memory: session restored` with the event count
-- `AgentCore Gateway: tools/call → semantic_trip_search` and its result
+- `AgentCore Gateway: tools/call → hybrid_trip_search` and its result. A parameterized filter shows `tools/call → search_trips`, and a points question shows `tools/call → loyalty_balance`
 - For a hold: `AgentCore Gateway: tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
 - For a confirmation: `AgentCore Gateway: tools/call → confirm_booking` under `meridian_booking_governance`, and a **Confirmed booking** receipt with the same booking ID
 - For a hold the policy refuses: `Hold refused by Cedar policy`, with the status label **Denied by policy**
@@ -408,6 +463,8 @@ Adding a gateway tool together with a policy that names it takes two deploys:
 the tool first, then the policy, because a policy is validated against the
 gateway's tool schema.
 
+Replacing a target is a create and a delete. A target's name is the prefix of its tool names and of the Cedar action ids, so a rename changes both. Because a rule is validated against the tools that exist, a release that renames a target runs two deploys through `release_identity.py deploy`: the first adds the new target and any new tool and leaves the rules alone, the second changes the rules, removes the old target and updates the Runtimes. The plan gate (`scripts/identity_release/deploy_diff.py`) accepts a removal only for a target named in `RETIRED_TARGETS`.
+
 Publishing the web app checks that MeridianWorkflow is READY and that its ARN is
 set, and refuses otherwise.
 
@@ -420,14 +477,19 @@ resources you created by hand:
 aws cloudformation delete-stack --region "$REGION" --stack-name AgentCore-meridianv2-default
 aws cloudformation wait stack-delete-complete --region "$REGION" --stack-name AgentCore-meridianv2-default
 
-aws lambda delete-function --region "$REGION" --function-name meridian-semantic-trip-search
-aws iam delete-role-policy --role-name meridian-semantic-trip-search --policy-name meridian-semantic-trip-search
-aws iam detach-role-policy --role-name meridian-semantic-trip-search \
+aws lambda delete-function --region "$REGION" --function-name meridian-catalog-tools
+aws iam delete-role-policy --role-name MeridianCatalogToolsRole --policy-name meridian-catalog-tools
+aws iam detach-role-policy --role-name MeridianCatalogToolsRole \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-aws iam delete-role --role-name meridian-semantic-trip-search
+aws iam detach-role-policy --role-name MeridianCatalogToolsRole \
+  --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/MeridianCatalogAuroraAccess"
+aws iam delete-role --role-name MeridianCatalogToolsRole
 aws ssm delete-parameters --region "$REGION" \
   --names /meridian/aurora/cluster_arn /meridian/aurora/secret_arn /meridian/aurora/database
 ```
+
+The catalog login has its own teardown, in the Roll back the service logins and sign-in section of
+[Operations](OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
 
 The stack name is recorded as `stackName` in
 `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. The runtime and Lambda

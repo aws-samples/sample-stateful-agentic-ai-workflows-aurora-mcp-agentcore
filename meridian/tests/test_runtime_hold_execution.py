@@ -278,3 +278,36 @@ def test_a_confirmed_write_whose_call_raises_is_an_error_in_the_audit_row(monkey
     assert row["authorization_decision"] == "error"
     assert row["turn_error"] == f"ToolSetupError: {message}"
     assert str(raised) == f"AgentCore Runtime error: {message}"
+
+
+class _ResultSpy:
+    """A hook provider whose ``after`` records ``event.result`` as the platform call left it."""
+
+    def __init__(self, hooks):
+        self.hooks = hooks
+        self.seen = []
+
+    def before(self, event):
+        self.hooks.before(event)
+
+    def after(self, event):
+        self.seen.append(json.dumps(event.result))
+        self.hooks.after(event)
+
+
+@pytest.mark.parametrize("kind", WRITES)
+def test_a_platform_call_error_reaches_the_trace_and_the_model_with_account_ids_masked(kind):
+    execute, target, _tool = WRITES[kind]
+    queue = asyncio.Queue()
+    spy = _ResultSpy(TraceHooks(queue, _turn(booking_confirmed=True)))
+    failure = RuntimeError("arn:aws:lambda:us-east-1:123456789012:function:x timed out")
+
+    def call_tool(*_args):
+        raise failure
+
+    with pytest.raises(RuntimeError):
+        execute(spy, call_tool, target)
+    reported = json.dumps(_drain(queue))
+    assert "123456789012" not in reported and "<acct>" in reported
+    (handed_to_hooks,) = spy.seen
+    assert "123456789012" not in handed_to_hooks and "<acct>" in handed_to_hooks

@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SolutionBriefing } from '../SolutionBriefing';
+import templateText from '../../../../../meridian_agentcore/agentcore/agentcore.template.json?raw';
+import { POLICIES, TOOLS, toolCounts, toolsHeading } from '../solutionBriefingContent';
 
 describe('SolutionBriefing', () => {
   it('starts with only architecture open and reveals preparation and phases on demand', () => {
@@ -77,5 +79,46 @@ describe('SolutionBriefing', () => {
     expect(onOpenLadder).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: /Inspect system evidence/ }));
     expect(onOpenEvidence).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SolutionBriefing against the deployed Cedar template', () => {
+  const squash = (text: string) => text.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\[\s+/g, '[')
+    .replace(/\s+\]/g, ']').replace(/\s+\)/g, ')').trim();
+  const generic = (text: string) => text
+    .replace('{{AWS_REGION}}', '<region>').replace('{{AWS_ACCOUNT_ID}}', '<account-id>')
+    .replace('{{GATEWAY_ID}}', '<gateway-id>');
+  const template = JSON.parse(templateText);
+  const deployed = template.policyEngines[0].policies as { name: string; statement: string }[];
+  const gatewayTargets = (template.agentCoreGateways[0].targets as { name: string }[]).map(target => target.name);
+
+  it('shows every deployed Cedar statement, read rule and traveler binding included', () => {
+    const shown = new Map(POLICIES.map(([name, , statement]) => [name, squash(statement)]));
+    expect([...shown.keys()].sort()).toEqual(deployed.map(policy => policy.name).sort());
+    for (const policy of deployed) {
+      expect(shown.get(policy.name), policy.name).toBe(squash(generic(policy.statement)));
+    }
+  });
+
+  it('lists the tools the Gateway serves, the two writes named here, and none that were retired', () => {
+    const listed = TOOLS.map(([name]) => name).sort();
+    const read = deployed.find(policy => policy.name === 'meridian_read_tools')!.statement;
+    const readActions = [...read.matchAll(/Action::"([^"]+)"/g)].map(match => match[1]);
+    const writes = ['MeridianHolds___create_courtesy_hold', 'MeridianHolds___confirm_booking'];
+    expect(listed).toEqual([...readActions, ...writes].sort());
+  });
+
+  it('groups the listed tools under exactly the targets the template defines', () => {
+    const prefixes = new Set(TOOLS.map(([name]) => name.split('___')[0]));
+    expect([...prefixes].sort()).toEqual([...gatewayTargets].sort());
+  });
+
+  it('counts the tools and targets in the heading from the same data the list renders', () => {
+    const { container } = render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    const heading = [...container.querySelectorAll('h3')].find(node => /MCP tools/.test(node.textContent ?? ''));
+    expect(heading?.textContent).toBe(toolsHeading());
+    expect(heading?.textContent).toBe('Ten MCP tools, two Lambda targets');
+    expect(container.querySelectorAll('.mds-brief-tools > div')).toHaveLength(toolCounts().tools);
+    expect(toolCounts()).toEqual({ tools: TOOLS.length, targets: gatewayTargets.length });
   });
 });

@@ -68,7 +68,7 @@ def test_deployed_ids_of_an_empty_or_odd_state_are_all_absent():
 
 
 def spec(*, holds=True, engines=True, engine_variable=True):
-    targets = [{"name": "SemanticTripSearchLambda"}]
+    targets = [{"name": "MeridianCatalog"}]
     if holds:
         targets.append({"name": "MeridianHolds"})
     variables = [{"name": "MERIDIAN_POLICY_MODE", "value": "ENFORCE"}]

@@ -35,7 +35,7 @@ from backend.agents.phase_05_workflow.state import (
 )
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
 from backend.search_utils import numbered_sql
-from backend.trace_names import RETRIEVAL_CODE
+from backend.trace_names import AVAILABILITY_CODE, RETRIEVAL_CODE
 
 logger = logging.getLogger(__name__)
 
@@ -341,9 +341,9 @@ class WorkflowNodes:
             telemetry={
                 "category": "orchestration",
                 "component": (
-                    "Strands Graph → PackageAgent fan-out"
+                    f"Strands Graph → {AVAILABILITY_CODE} fan-out"
                     if fan_out
-                    else "Strands Graph → PackageAgent"
+                    else f"Strands Graph → {AVAILABILITY_CODE}"
                 ),
                 "status": "ok",
                 "fields": [

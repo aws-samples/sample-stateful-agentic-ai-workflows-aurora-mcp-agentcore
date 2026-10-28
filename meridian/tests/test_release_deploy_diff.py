@@ -431,18 +431,57 @@ def test_an_in_place_authorizer_change_is_still_refused_in_a_catalog_release():
 def test_retiring_the_target_with_only_a_rule_update_is_refused():
     found = complete(RULE_UPDATED, SEMANTIC_REMOVED)
 
-    assert any("retired" in line and "update a Runtime" in line for line in found)
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
 
 
 def test_retiring_the_target_with_only_the_catalog_add_is_refused():
     found = complete(CATALOG_ADDED, SEMANTIC_REMOVED)
 
-    assert any("retired" in line and "update a Runtime" in line for line in found)
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
 
 
 def test_retiring_the_target_with_the_runtime_and_a_rule_passes():
     assert complete(RULE_UPDATED, SEMANTIC_REMOVED, fx.CONCIERGE) == []
     assert complete(SEMANTIC_REMOVED, fx.CONCIERGE) == []
+
+
+WORKFLOW_RUNTIME = (
+    "[~] AWS::BedrockAgentCore::Runtime Application/AgentMeridianWorkflow/Runtime "
+    "ApplicationAgentMeridianWorkflowRuntime1A2B3C4D\n"
+    " └─ [~] RequestHeaderConfiguration\n")
+LOOKALIKE_RUNTIME = WORKFLOW_RUNTIME.replace("AgentMeridianWorkflow", "AgentMeridianConciergeV2")
+
+
+def test_retiring_the_target_with_only_the_workflow_runtime_updated_is_refused():
+    found = complete(RULE_UPDATED, SEMANTIC_REMOVED, WORKFLOW_RUNTIME)
+
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
+
+
+def test_retiring_the_target_with_a_lookalike_concierge_runtime_is_refused():
+    found = complete(RULE_UPDATED, SEMANTIC_REMOVED, LOOKALIKE_RUNTIME)
+
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
+
+
+@pytest.mark.parametrize("name", ["AgentMeridianConcierge_x", "AgentMeridianConcierge-x"])
+def test_retiring_the_target_with_a_separator_lookalike_runtime_is_refused(name):
+    lookalike = WORKFLOW_RUNTIME.replace("AgentMeridianWorkflow", name)
+    found = complete(RULE_UPDATED, SEMANTIC_REMOVED, lookalike)
+
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
+
+
+def test_retiring_the_target_with_a_nested_concierge_path_is_refused():
+    nested = fx.CONCIERGE.replace("/AgentMeridianConcierge/Runtime ",
+                                  "/AgentMeridianConcierge/Role ")
+    found = complete(RULE_UPDATED, SEMANTIC_REMOVED, nested)
+
+    assert any("retired" in line and "Concierge Runtime" in line for line in found)
+
+
+def test_retiring_the_target_passes_when_both_runtimes_are_updated():
+    assert complete(RULE_UPDATED, SEMANTIC_REMOVED, WORKFLOW_RUNTIME, fx.CONCIERGE) == []
 
 
 @pytest.mark.parametrize("path", [

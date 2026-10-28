@@ -1,20 +1,34 @@
-"""Check, and restart, the Lambdas that move from the master login to the meridian_gateway login.
+"""Check, and restart, the Lambdas that read an Aurora login's secret.
 
-Three things carry the master login today: the SSM parameter the ``MeridianHolds`` Lambda reads at
-its first call after a cold start, the ``meridian-semantic-trip-search`` Lambda's environment (set
-by hand, outside the CDK app), and both roles' ``GetSecretValue`` grants. The stages are:
+The holds path moves from the master login to the meridian_gateway login: the SSM parameter the
+``MeridianHolds`` Lambda reads at its first call after a cold start, and the holds role's
+``GetSecretValue`` grants. The stages are:
 
 ``master``     the baseline: nothing has moved.
-``gateway``    the parameter and the semantic Lambda name the gateway login's secret, and both
-               roles can read it. The master grant may remain, so a rollback still works.
-``tightened``  as ``gateway``, and no role can read the master login's secret any more.
+``gateway``    the parameter names the gateway login's secret, and the holds role can read it.
+               The master grant may remain, so a rollback still works.
+``tightened``  as ``gateway``, and the holds role cannot read the master login's secret any more.
 
-A grant counts when an Allow statement lets the role call ``secretsmanager:GetSecretValue`` (a
-wildcard action counts) on a resource pattern that matches the secret's ARN (``*`` matches every
-secret). An Allow with ``NotAction`` counts unless a ``NotAction`` pattern covers that action; an
-Allow with ``NotResource`` counts unless a ``NotResource`` pattern matches the secret. Conditions
-and Deny statements are not evaluated, so the answer errs toward "still can read". Inline,
+The ``meridian-catalog-tools`` Lambda (set by hand, outside the CDK app) never moves: it runs as
+its own login, meridian_catalog, from creation. At every stage its ``AURORA_SECRET_ARN`` names
+that login's secret, its role can read that secret, and its role can read neither the master nor
+the gateway login's secret.
+
+A statement applies to a secret when its action covers ``secretsmanager:GetSecretValue`` (a
+wildcard action covers it; ``NotAction`` covers it unless a pattern matches that action) and its
+resource matches the secret's ARN (``*`` matches every secret; ``NotResource`` matches every
+secret that no listed pattern matches). Allow and Deny statements are read the same way. Inline,
 customer-managed and AWS-managed attached policies are all read.
+
+Conditions are not evaluated, so each check reads them in the direction that cannot clear a
+finding by mistake:
+
+``may_use``      for a forbidden grant (the finding is "the role can read it"). An Allow counts with
+                 or without a ``Condition``; only a Deny without a ``Condition`` removes it. A
+                 conditional Deny does not clear the finding, because the role can still read the
+                 secret wherever the condition does not deny it.
+``surely_uses``  for a required grant (the finding is "the role cannot read it"). Only an Allow
+                 without a ``Condition`` counts, and any Deny, conditional or not, removes it.
 
 The holds Lambda caches its configuration for the life of an execution environment, so a changed
 parameter takes effect only after a restart; ``restart_holds`` forces one by changing an
@@ -43,7 +57,8 @@ from scripts.identity_release import preflight, settings
 from scripts.provision_service_logins import require_account
 
 HOLDS_TARGET = "MeridianHolds"
-SEMANTIC_FUNCTION = "meridian-semantic-trip-search"
+CATALOG_FUNCTION = "meridian-catalog-tools"
+CATALOG_SECRET_NAME = "meridian/aurora/catalog-login"
 SSM_SECRET_PARAMETER = "/meridian/aurora/secret_arn"
 MARKER = "MERIDIAN_COLD_START"
 STAGES = ("master", "gateway", "tightened")
@@ -62,10 +77,15 @@ class LambdaError(settings.ReleaseConfigError):
 
 @dataclass(frozen=True)
 class Secrets:
-    """The two login secrets this release moves between."""
+    """The two login secrets the holds path moves between, and the catalog Lambda's own.
+
+    ``catalog`` is empty when ``AURORA_CATALOG_SECRET_ARN`` is not set; ``check``, ``rollback`` and
+    the ``lambdas`` run all need it.
+    """
 
     master: str
     gateway: str
+    catalog: str = ""
 
 
 def holds_function_arn(control: Any, gateway_id: str) -> str:
@@ -105,13 +125,19 @@ def _matches(pattern: str, text: str) -> bool:
 
 @dataclass(frozen=True)
 class Grant:
-    """Resources an Allow statement opens: those matching ``include`` but not ``exclude``."""
+    """Resources a statement covers: those matching ``include`` but not ``exclude``.
+
+    ``deny`` marks a Deny statement (an Allow is the default); ``conditional`` marks a statement
+    that carries a ``Condition``, which is never evaluated.
+    """
 
     include: tuple[str, ...]
     exclude: tuple[str, ...] = ()
+    deny: bool = False
+    conditional: bool = False
 
     def covers(self, secret_arn: str) -> bool:
-        """Whether the statement lets the role read ``secret_arn``."""
+        """Whether the statement applies to ``secret_arn``."""
         return (any(_matches(p, secret_arn) for p in self.include)
                 and not any(_matches(p, secret_arn) for p in self.exclude))
 
@@ -128,12 +154,17 @@ def _document_grants(document: dict[str, Any], action: str = READ_ACTION) -> lis
     statements = document.get("Statement", [])
     grants: list[Grant] = []
     for statement in [statements] if isinstance(statements, dict) else list(statements):
-        if statement.get("Effect") != "Allow" or not _allows_action(statement, action):
+        effect = statement.get("Effect")
+        if effect not in ("Allow", "Deny") or not _allows_action(statement, action):
             continue
+        deny = effect == "Deny"
+        conditional = bool(statement.get("Condition"))
         if "NotResource" in statement:
-            grants.append(Grant(("*",), tuple(_as_list(statement["NotResource"]))))
+            excluded = tuple(_as_list(statement["NotResource"]))
+            grants.append(Grant(("*",), excluded, deny, conditional))
         else:
-            grants.append(Grant(tuple(_as_list(statement.get("Resource")))))
+            resources = tuple(_as_list(statement.get("Resource")))
+            grants.append(Grant(resources, deny=deny, conditional=conditional))
     return grants
 
 
@@ -149,10 +180,11 @@ def _paged(call: Callable[..., dict[str, Any]], key: str, **kwargs: Any) -> list
 
 
 def secret_grants(iam: Any, role: str, action: str = READ_ACTION) -> list[Grant]:
-    """Every grant of ``action`` (lower case) in the role's inline and attached policies.
+    """Every Allow and Deny of ``action`` (lower case) in the role's inline and attached policies.
 
-    Customer-managed and AWS-managed attached policies are both read. The default action is the
-    secret read the Lambda moves care about.
+    Ask ``may_use`` or ``surely_uses`` whether they let the role act on a resource.
+    Customer-managed and AWS-managed attached policies are both read. The default action is
+    the secret read the Lambda moves care about.
     """
     grants: list[Grant] = []
     for name in _paged(iam.list_role_policies, "PolicyNames", RoleName=role):
@@ -166,15 +198,30 @@ def secret_grants(iam: Any, role: str, action: str = READ_ACTION) -> list[Grant]
     return grants
 
 
-def _can_read(grants: list[Grant], secret_arn: str) -> bool:
-    return any(grant.covers(secret_arn) for grant in grants)
+def may_use(grants: list[Grant], resource: str) -> bool:
+    """Whether the role may use ``resource``: use it for a forbidden grant.
+
+    Some Allow covers it, with or without a ``Condition``, and no Deny without a ``Condition``
+    does.
+    """
+    return (any(g.covers(resource) for g in grants if not g.deny)
+            and not any(g.covers(resource) for g in grants if g.deny and not g.conditional))
+
+
+def surely_uses(grants: list[Grant], resource: str) -> bool:
+    """Whether the role surely can use ``resource``: use it for a required grant.
+
+    Some Allow without a ``Condition`` covers it and no Deny does, conditional or not.
+    """
+    return (any(g.covers(resource) for g in grants if not g.deny and not g.conditional)
+            and not any(g.covers(resource) for g in grants if g.deny))
 
 
 def _role_findings(subject: str, grants: list[Grant], secrets: Secrets, stage: str) -> list[str]:
     found = []
-    if stage != "master" and not _can_read(grants, secrets.gateway):
+    if stage != "master" and not surely_uses(grants, secrets.gateway):
         found.append(f"{subject}: its role cannot read the meridian_gateway secret")
-    if stage == "tightened" and _can_read(grants, secrets.master):
+    if stage == "tightened" and may_use(grants, secrets.master):
         found.append(f"{subject}: its role still can read the master login's secret")
     return found
 
@@ -218,17 +265,24 @@ def holds_read_findings(lam: Any, iam: Any, control: Any, gateway_id: str,
     return _holds_findings(lam, iam, holds_function_arn(control, gateway_id), secrets, "gateway")
 
 
-def semantic_findings(lam: Any, iam: Any, wanted: str, named: str, secrets: Secrets,
-                       stage: str) -> list[str]:
-    semantic = function_configuration(lam, SEMANTIC_FUNCTION)
-    if semantic is None:
-        return [f"Lambda {SEMANTIC_FUNCTION}: does not exist"]
+def catalog_findings(lam: Any, iam: Any, secrets: Secrets) -> list[str]:
+    """Findings when the catalog Lambda is not on its own login. The same at every stage."""
+    catalog = function_configuration(lam, CATALOG_FUNCTION)
+    subject = f"Lambda {CATALOG_FUNCTION}"
+    if catalog is None:
+        return [f"{subject}: does not exist"]
     found = []
-    if semantic.get("Environment", {}).get("Variables", {}).get("AURORA_SECRET_ARN") != wanted:
-        found.append(f"Lambda {SEMANTIC_FUNCTION}: AURORA_SECRET_ARN is not the {named} login's "
-                     "secret")
-    grants = secret_grants(iam, role_name(semantic))
-    return found + _role_findings(f"Lambda {SEMANTIC_FUNCTION}", grants, secrets, stage)
+    variables = catalog.get("Environment", {}).get("Variables", {})
+    if variables.get("AURORA_SECRET_ARN") != secrets.catalog:
+        found.append(f"{subject}: AURORA_SECRET_ARN is not the meridian_catalog login's secret")
+    grants = secret_grants(iam, role_name(catalog))
+    if not surely_uses(grants, secrets.catalog):
+        found.append(f"{subject}: its role cannot read the meridian_catalog secret")
+    for named, secret in (("master", secrets.master), ("meridian_gateway", secrets.gateway)):
+        if may_use(grants, secret):
+            found.append(f"{subject}: its role can read the {named} login's secret, which it "
+                         "never needs")
+    return found
 
 
 def parameter_findings(ssm: Any, wanted: str, named: str) -> list[str]:
@@ -242,54 +296,72 @@ def parameter_findings(ssm: Any, wanted: str, named: str) -> list[str]:
     return []
 
 
+def require_catalog_secret(secrets: Secrets) -> None:
+    """Refuse when ``AURORA_CATALOG_SECRET_ARN`` is not set. Calls nothing.
+
+    The hint reads the existing secret. It never points at the provisioner with ``--apply``,
+    because provisioning a login that exists rotates its password.
+
+    Raises:
+        ReleaseConfigError: When ``secrets`` has no catalog login secret.
+    """
+    if secrets.catalog:
+        return
+    raise settings.ReleaseConfigError(
+        "AURORA_CATALOG_SECRET_ARN is not set in meridian/.env, and the catalog Lambda is checked "
+        "against the meridian_catalog login's secret. Set it to the ARN of the existing secret "
+        f"{CATALOG_SECRET_NAME} (read it with: aws secretsmanager describe-secret --secret-id "
+        f"{CATALOG_SECRET_NAME} --query ARN --output text). Only if that secret does not exist, "
+        "provision the catalog login as docs/OPERATIONS.md describes under Service logins; "
+        "provisioning a login that exists rotates its password.")
+
+
 def check(ssm: Any, lam: Any, iam: Any, control: Any, gateway_id: str, secrets: Secrets,
           stage: str) -> list[str]:
-    """One line per way the three Lambdas differ from the ``stage``. Only reads.
+    """One line per way the parameter and the two Lambdas differ from the ``stage``. Only reads.
+
+    The catalog Lambda is checked against its own login whatever the stage.
 
     Raises:
         ValueError: When ``stage`` is not one of ``master``, ``gateway`` or ``tightened``.
+        ReleaseConfigError: When ``secrets`` has no catalog login secret.
     """
     if stage not in STAGES:
         raise ValueError(f"stage must be one of {', '.join(STAGES)}, not {stage!r}")
+    require_catalog_secret(secrets)
     wanted = secrets.master if stage == "master" else secrets.gateway
     named = "master" if stage == "master" else "meridian_gateway"
     found = parameter_findings(ssm, wanted, named)
     found += _holds_findings(lam, iam, holds_function_arn(control, gateway_id), secrets, stage)
-    return found + semantic_findings(lam, iam, wanted, named, secrets, stage)
+    return found + catalog_findings(lam, iam, secrets)
 
 
 def remedies(findings: list[str], stage: str) -> list[str]:
     """What the operator does about each kind of finding that no command here fixes."""
-    key = "AURORA_SECRET_ARN" if stage == "master" else "AURORA_GATEWAY_SECRET_ARN"
     flag = "" if stage == "master" else " --gateway-login"
     steps = []
     if any(line.startswith(f"SSM {SSM_SECRET_PARAMETER}:") for line in findings):
         steps.append("FIX SSM (ASK FIRST): python scripts/publish_gateway_parameters.py" + flag
                      + f" --apply {settings.CONFIRM_FLAG}, then lambdas --restart-holds")
-    subject = f"Lambda {SEMANTIC_FUNCTION}: "
+    return steps + _catalog_remedies(findings)
+
+
+def _catalog_remedies(findings: list[str]) -> list[str]:
+    subject = f"Lambda {CATALOG_FUNCTION}: "
+    steps = []
     if any(line.startswith((f"{subject}AURORA_SECRET_ARN", f"{subject}its role cannot read"))
            for line in findings):
-        target = "master" if stage == "master" else "gateway"
-        grant = "" if stage == "master" else (
-            "it grants the role the read on the gateway login's secret first; ")
         steps.append(
-            f"FIX semantic Lambda (ASK FIRST; {SEMANTIC_FUNCTION} is outside the CDK app): python "
-            f"scripts/release_identity.py semantic-lambda --to {target} --apply "
-            f"{settings.CONFIRM_FLAG} ({grant}it sets AURORA_SECRET_ARN from {key} in "
-            "meridian/.env keeping every other variable, and reads both back)")
-    steps += _role_remedies(findings)
-    return steps
-
-
-def _role_remedies(findings: list[str]) -> list[str]:
-    subject = f"Lambda {SEMANTIC_FUNCTION}: its role"
-    steps = []
-    if any(line.startswith(f"{subject} still can read") for line in findings):
+            f"MANUAL STEP (ASK FIRST; {CATALOG_FUNCTION} is outside the CDK app): set its "
+            "AURORA_SECRET_ARN to AURORA_CATALOG_SECRET_ARN from meridian/.env, keeping every "
+            "other variable, and attach the MeridianCatalogAuroraAccess policy to its role, as "
+            "\"Create the catalog Lambda\" in docs/AGENTCORE_DEPLOY_RUNBOOK.md does.")
+    if any(line.startswith(f"{subject}its role can read") for line in findings):
         steps.append(
-            f"MANUAL STEP (ASK FIRST; the {SEMANTIC_FUNCTION} role is outside the CDK app): "
-            "remove the secretsmanager:GetSecretValue grant on the master login's secret "
-            "(AURORA_SECRET_ARN) from that role's inline and attached policies, only after the "
-            "gateway stage passes and a rollback no longer needs it.")
+            f"MANUAL STEP (ASK FIRST; the {CATALOG_FUNCTION} role is outside the CDK app): "
+            "remove every secretsmanager:GetSecretValue grant on the master or the "
+            "meridian_gateway login's secret from that role's inline and attached policies; it "
+            "needs only the meridian_catalog secret.")
     return steps
 
 
@@ -368,7 +440,8 @@ def restart_holds(lam: Any, function_arn: str, stamp: str, *, account: str, regi
 
 def login_secrets(env: Mapping[str, str | None]) -> Secrets:
     secrets = Secrets(master=(env.get("AURORA_SECRET_ARN") or "").strip(),
-                      gateway=(env.get("AURORA_GATEWAY_SECRET_ARN") or "").strip())
+                      gateway=(env.get("AURORA_GATEWAY_SECRET_ARN") or "").strip(),
+                      catalog=(env.get("AURORA_CATALOG_SECRET_ARN") or "").strip())
     if not secrets.master or not secrets.gateway:
         raise settings.ReleaseConfigError(
             "AURORA_SECRET_ARN and AURORA_GATEWAY_SECRET_ARN must both be set in meridian/.env")
@@ -404,6 +477,8 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     if not settings.REGION.fullmatch(region):
         raise settings.ReleaseConfigError(
             "the Region in AURORA_CLUSTER_ARN is not a Region name; check meridian/.env")
+    if not args.restart_holds:
+        require_catalog_secret(secrets)
     session = deps.session(region)
     require_account(session.client("sts"), env["AURORA_CLUSTER_ARN"])
     gateway_id, _ = preflight.hop_ids(env)

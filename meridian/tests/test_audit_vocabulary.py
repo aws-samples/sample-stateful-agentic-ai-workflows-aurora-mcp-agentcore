@@ -47,7 +47,7 @@ def test_an_error_without_a_denial_is_an_error_and_a_denial_outranks_it():
 
 @pytest.mark.parametrize("calls", [
     [],
-    [ToolCall("semantic_trip_search", "allowed")],
+    [ToolCall("hybrid_trip_search", "allowed")],
     [refused("business_rule", "insufficient_inventory"),
      refused("runtime_guard", "write_already_attempted")],
 ])
@@ -57,7 +57,7 @@ def test_allowed_calls_business_refusals_and_guarded_retries_are_allowed(calls):
 
 @pytest.mark.parametrize("calls", [
     [],
-    [ToolCall("semantic_trip_search", "allowed")],
+    [ToolCall("hybrid_trip_search", "allowed")],
     [refused("business_rule", "insufficient_inventory")],
 ])
 def test_a_turn_that_failed_is_an_error_even_when_no_call_was(calls):

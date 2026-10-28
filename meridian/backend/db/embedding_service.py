@@ -19,6 +19,16 @@ import os
 from typing import Any, Dict, List, Optional
 
 import boto3
+from botocore.config import Config
+
+
+# Query-time calls must fail fast so EmbeddingUnavailable and the candidate-order fallback are
+# reachable inside a turn. Each call is one attempt in all (botocore's total_max_attempts); a
+# search makes EMBEDDING_ATTEMPTS embedding calls and one rerank call, at most 3 x 7 = 21 s.
+# The MeridianCatalog Lambda defines the same values; tests/test_catalog_lambda_parity.py
+# keeps the two equal.
+BEDROCK_CONFIG = Config(
+    connect_timeout=2, read_timeout=5, retries={"mode": "standard", "total_max_attempts": 1})
 
 
 class EmbeddingUnavailable(RuntimeError):
@@ -66,7 +76,8 @@ class EmbeddingService:
     @property
     def bedrock_client(self):
         if self._bedrock_client is None:
-            self._bedrock_client = boto3.client("bedrock-runtime", region_name=self.region)
+            self._bedrock_client = boto3.client(
+                "bedrock-runtime", region_name=self.region, config=BEDROCK_CONFIG)
         return self._bedrock_client
 
     @property

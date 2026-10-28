@@ -12,8 +12,14 @@ from gateway_url import map_gateway_url
 
 map_gateway_url(os.environ)
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
+from backend.logging_config import setup_logging  # noqa: E402
 
+# Nothing on this entry path imports the logging setup, so call it before the SDK and the app
+# exist: the record factory masks every record, so the handler BedrockAgentCoreApp() adds and
+# uvicorn's are masked too, and every handler (Strands and MCP library records included) is.
+setup_logging()
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 from backend.agents.phase_05_workflow.runtime_entry import workflow_turn  # noqa: E402
 
 app = BedrockAgentCoreApp()

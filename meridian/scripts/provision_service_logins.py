@@ -90,7 +90,7 @@ LOGINS: Dict[str, LoginSpec] = {
                   "the Meridian backend on App Runner"),
         LoginSpec("gateway", "meridian_gateway", "meridian/aurora/gateway-login",
                   "MeridianGatewayAuroraAccess", "AURORA_GATEWAY_SECRET_ARN",
-                  "the MeridianHolds and meridian-semantic-trip-search Lambdas"),
+                  "the MeridianHolds Lambda"),
         LoginSpec("identity", "meridian_identity", "meridian/aurora/identity-login",
                   "MeridianIdentityAuroraAccess", "AURORA_IDENTITY_SECRET_ARN",
                   "the Cognito pre-token-generation Lambda"),

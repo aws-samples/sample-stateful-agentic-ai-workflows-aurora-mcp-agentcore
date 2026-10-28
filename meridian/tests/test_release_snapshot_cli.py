@@ -17,6 +17,15 @@ from tests.test_release_identity_cli import NOW, env
 FLAG = settings.CONFIRM_FLAG
 SNAP_NAME = "snapshot-20261008T120000Z.json"
 
+PRE_CATALOG = ("was taken before the catalog Lambda moved to its own login; "
+               "take a new one")
+
+
+def iam_env(**extra):
+    """The settings of an IAM deployment whose catalog Lambda runs as its own login."""
+    return env(MERIDIAN_AGENTCORE_AUTH="iam", AURORA_GATEWAY_SECRET_ARN=ss.GATEWAY_SECRET,
+               AURORA_CATALOG_SECRET_ARN=ss.CATALOG_SECRET, **extra)
+
 
 def SAVED(tmp_path):  # noqa: N802 - reads like the constant it stands for
     """The snapshot file the helpers above write."""
@@ -25,8 +34,8 @@ def SAVED(tmp_path):  # noqa: N802 - reads like the constant it stands for
 
 def run(argv, world, tmp_path, environment=None):
     deps = release_identity.Dependencies(
-        env=environment or env(MERIDIAN_AGENTCORE_AUTH="iam"), session=world.session,
-        now=lambda: NOW, head_sha=lambda: rs.SHA, proof_path=tmp_path / "proof.json",
+        env=environment or iam_env(), session=world.session, now=lambda: NOW,
+        head_sha=lambda: rs.SHA, proof_path=tmp_path / "proof.json",
         release_dir=tmp_path / "release-b2", sleep=lambda seconds: None,
         hosted_release_path=world.hosted_release)
     return release_identity.main(argv, deps)
@@ -207,6 +216,48 @@ def test_a_newer_broken_snapshot_is_named_and_skipped(world, tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "skipped" in out and "snapshot-20261009T000000Z.json" in out and SNAP_NAME in out
+
+
+def old_shape(world, tmp_path, name):
+    """A complete, intact snapshot in the shape before the catalog Lambda, under ``name``."""
+    saved = ss.taken(world)
+    saved["lambdas"] = {"holds": saved["lambdas"]["holds"], "semantic": {"name": "old"}}
+    path = snapshot.write(saved, tmp_path / "release-b2", ss.STAMPED)
+    return path.rename(path.with_name(name))
+
+
+def test_a_newer_pre_change_snapshot_is_skipped_with_the_reason_not_called_broken(
+        world, tmp_path, capsys):
+    newer = old_shape(world, tmp_path, "snapshot-20261009T000000Z.json")
+    save(world, tmp_path)
+    world.release()
+    capsys.readouterr()
+
+    assert run(["rollback"], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert f"skipped {newer.name}" in out
+    assert PRE_CATALOG in out
+    assert "not a complete, intact snapshot" not in out
+
+
+def test_naming_a_pre_change_snapshot_gives_the_same_reason(world, tmp_path, capsys):
+    path = old_shape(world, tmp_path, "snapshot-20261009T000000Z.json")
+
+    assert run(["rollback", "--snapshot", str(path)], world, tmp_path) == 2
+
+    err = capsys.readouterr().err
+    assert PRE_CATALOG in err
+    assert world.built == []
+
+
+def test_when_only_a_pre_change_snapshot_exists_the_rollback_says_why(world, tmp_path, capsys):
+    old_shape(world, tmp_path, "snapshot-20261009T000000Z.json")
+
+    assert run(["rollback"], world, tmp_path) == 2
+
+    assert PRE_CATALOG in capsys.readouterr().err
+    assert world.built == []
 
 
 def test_an_unexpected_error_prints_one_masked_line_and_no_traceback(

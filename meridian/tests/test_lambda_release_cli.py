@@ -10,17 +10,18 @@ from scripts import release_identity
 from scripts.identity_release import lambda_release, settings
 from tests import release_support as rs
 from tests.aws_recorders import client_error
-from tests.lambda_release_support import GATEWAY, HOLDS_ROLE, MASTER, World, policy
+from tests.lambda_release_support import CATALOG, GATEWAY, HOLDS_ROLE, MASTER, World, policy
 
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 CLUSTER = f"arn:aws:rds:{rs.REGION}:{rs.ACCOUNT}:cluster:meridian"
 RESTART = ["lambdas", "--restart-holds"]
+CONFIRM = settings.CONFIRM_FLAG
 
 
 def env(**extra):
     return {
         "AURORA_CLUSTER_ARN": CLUSTER, "AURORA_SECRET_ARN": MASTER,
-        "AURORA_GATEWAY_SECRET_ARN": GATEWAY,
+        "AURORA_GATEWAY_SECRET_ARN": GATEWAY, "AURORA_CATALOG_SECRET_ARN": CATALOG,
         "AGENTCORE_GATEWAY_URL": f"https://{rs.GATEWAY_ID}.gateway.bedrock-agentcore."
                                  f"{rs.REGION}.amazonaws.com/mcp",
         "AGENTCORE_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:runtime/"
@@ -46,13 +47,13 @@ def test_the_lambdas_command_reports_ok_at_the_stage_the_secrets_are_at(tmp_path
 
 
 def test_the_lambdas_command_lists_what_has_not_moved_and_exits_one(tmp_path, capsys):
-    world = World(ssm=MASTER, semantic_env=MASTER)
+    world = World(ssm=MASTER, catalog_env=MASTER)
 
     assert run(["lambdas", "--expect", "gateway"], world, tmp_path) == 1
 
     out = capsys.readouterr().out
     assert "DRIFT  SSM /meridian/aurora/secret_arn:" in out
-    assert "semantic-lambda --to gateway --apply" in out
+    assert "MANUAL STEP (ASK FIRST; meridian-catalog-tools" in out
     assert "publish_gateway_parameters.py --gateway-login --apply" in out
 
 
@@ -94,6 +95,65 @@ def test_missing_secrets_in_the_env_exit_two_naming_the_keys(tmp_path, capsys):
     assert run(["lambdas"], World(), tmp_path, environment) == 2
 
     assert "AURORA_GATEWAY_SECRET_ARN" in capsys.readouterr().err
+
+
+def test_a_missing_catalog_secret_stops_the_check_but_not_the_restart(tmp_path, capsys):
+    environment = env()
+    del environment["AURORA_CATALOG_SECRET_ARN"]
+
+    assert run(["lambdas"], World(), tmp_path, environment) == 2
+    assert "AURORA_CATALOG_SECRET_ARN" in capsys.readouterr().err
+    assert run(RESTART, World(), tmp_path, environment) == 0
+
+
+def no_catalog_secret_run(tmp_path, argv):
+    """``main`` with no catalog secret in the env and a session that fails on any client."""
+    built = []
+
+    def session(region):
+        built.append(region)
+        raise AssertionError("no AWS client may be built")
+
+    environment = env()
+    del environment["AURORA_CATALOG_SECRET_ARN"]
+    deps = release_identity.Dependencies(
+        env=environment, session=session, now=lambda: NOW, head_sha=lambda: rs.SHA,
+        proof_path=tmp_path / "none.json", release_dir=tmp_path / "release",
+        sleep=lambda seconds: None)
+    return release_identity.main(argv, deps), built
+
+
+@pytest.mark.parametrize("argv", [["lambdas"], ["lambdas", "--expect", "tightened"]])
+def test_a_missing_catalog_secret_is_refused_before_any_aws_client_exists(
+        tmp_path, capsys, argv):
+    code, built = no_catalog_secret_run(tmp_path, argv)
+
+    assert code == 2 and built == []
+    err = capsys.readouterr().err
+    assert "AURORA_CATALOG_SECRET_ARN" in err and "unexpected" not in err
+
+
+def test_the_missing_secret_hint_reads_the_existing_secret_and_never_rotates_the_login(
+        tmp_path, capsys):
+    no_catalog_secret_run(tmp_path, ["lambdas"])
+
+    err = capsys.readouterr().err
+    assert "aws secretsmanager describe-secret --secret-id meridian/aurora/catalog-login" in err
+    assert "--query ARN --output text" in err
+    assert "meridian/.env" in err and "docs/OPERATIONS.md" in err
+    assert "does not exist" in err
+    for rotating in ("--apply", "--write-env", "provision_service_logins.py", CONFIRM):
+        assert rotating not in err
+
+
+def test_the_check_function_gives_the_same_hint(tmp_path):
+    world = World()
+
+    with pytest.raises(settings.ReleaseConfigError) as refused:
+        lambda_release.check(world.ssm, world.lam, world.iam, world.control, rs.GATEWAY_ID,
+                             lambda_release.Secrets(master=MASTER, gateway=GATEWAY), "gateway")
+
+    assert "describe-secret" in str(refused.value) and "--apply" not in str(refused.value)
 
 
 def test_restarting_the_holds_lambda_is_a_dry_run_without_both_flags(tmp_path, capsys):

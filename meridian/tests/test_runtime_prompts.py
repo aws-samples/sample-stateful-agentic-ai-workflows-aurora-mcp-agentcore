@@ -8,7 +8,12 @@ from pathlib import Path
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
 
-from prompts import narration_prompt, system_prompt, turn_prompt  # noqa: E402
+from prompts import (  # noqa: E402
+    narration_prompt,
+    system_prompt,
+    turn_instructions,
+    turn_prompt,
+)
 
 
 def test_confirmed_turn_has_no_tools_and_narrates_the_platform_decision():
@@ -22,8 +27,9 @@ def test_confirmed_turn_has_no_tools_and_narrates_the_platform_decision():
 
 def test_system_prompt_names_the_tools_and_the_confirmation_rule():
     text = system_prompt(hold_confirmed=False, hold_target=None)
-    assert "semantic_trip_search" in text
+    assert "hybrid_trip_search" in text
     assert "get_package_details" in text
+    assert "loyalty_balance" in text
     assert "create_courtesy_hold" in text
     assert "has not confirmed" in text
 
@@ -55,3 +61,28 @@ def test_confirmed_booking_turn_has_no_tools_and_says_no_payment():
     prompt = narration_prompt("Booking HLD-9 is confirmed", booking, 640000, action="booking")
     assert prompt.startswith("The traveler confirmed the booking of a held package")
     assert "HLD-9" in prompt and "499800" in prompt and "$6,400.00 for this party" in prompt
+
+
+def test_the_runtime_prompt_is_the_shared_phase_four_prompt_plus_the_turn_rule():
+    from concierge_definition import system_prompt as shared
+
+    target = {"package_id": "CTY-002"}
+    for confirmed in (False, True):
+        full = system_prompt(hold_confirmed=confirmed, hold_target=target if confirmed else None)
+        rule = turn_instructions(
+            hold_confirmed=confirmed, hold_target=target if confirmed else None)
+        assert full == shared(4) + "\n" + rule
+    assert system_prompt(hold_confirmed=False, hold_target=None).count("hybrid_trip_search") >= 1
+
+
+def test_the_runtime_prompt_tells_the_agent_a_refusal_is_final():
+    text = " ".join(system_prompt(hold_confirmed=False, hold_target=None).split())
+    assert "do not call that tool again in this turn" in text
+
+
+def test_the_turn_rules_name_what_only_the_runtime_knows():
+    booking = {"booking_id": "HLD-9"}
+    assert "has not confirmed" in turn_instructions(False, None)
+    assert "Hold button" in turn_instructions(False, None)
+    assert "no tools" in turn_instructions(True, {"package_id": "CTY-002"})
+    assert "Confirm button" in turn_instructions(False, None, True, booking)

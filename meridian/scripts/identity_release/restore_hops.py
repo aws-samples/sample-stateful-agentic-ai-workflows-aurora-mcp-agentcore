@@ -723,16 +723,46 @@ def holds_restore(ctx: Context) -> None:
     ctx.pending.discard(PENDING_RESTART)
 
 
-def semantic_check(ctx: Context) -> list[str]:
-    saved = ctx.saved["lambdas"]["semantic"]
-    if saved["name"] != lambda_release.SEMANTIC_FUNCTION:
-        raise RestoreRefused("Lambda semantic: the saved copy is for another function")
-    return environment_lines(ctx, "Lambda semantic", saved["name"], saved["environment"],
-                             "lambdas.semantic")
+def catalog_saved(ctx: Context) -> Mapping[str, Any]:
+    """The saved catalog Lambda, after proving its saved login is meridian_catalog's.
+
+    The catalog Lambda runs as the meridian_catalog login whatever the release stage, so a
+    snapshot that saved it on another login is never written back.
+
+    Raises:
+        RestoreRefused: When the saved copy is for another function, or its ``AURORA_SECRET_ARN``
+            is not the secret in ``AURORA_CATALOG_SECRET_ARN`` (or that setting is absent).
+    """
+    saved = ctx.saved["lambdas"]["catalog"]
+    if saved["name"] != lambda_release.CATALOG_FUNCTION:
+        raise RestoreRefused("Lambda catalog: the saved copy is for another function")
+    wanted = str(ctx.where.env.get("AURORA_CATALOG_SECRET_ARN") or "").strip()
+    if not wanted:
+        raise RestoreRefused(
+            "Lambda catalog: AURORA_CATALOG_SECRET_ARN is not set in meridian/.env, so the saved "
+            "login cannot be confirmed as meridian_catalog; nothing was changed")
+    found = saved["environment"].get("AURORA_SECRET_ARN")
+    if found == wanted:
+        return saved
+    logins = (("master", "AURORA_SECRET_ARN"), ("meridian_gateway", "AURORA_GATEWAY_SECRET_ARN"))
+    named = next((name for name, key in logins
+                  if found and found == str(ctx.where.env.get(key) or "").strip()), None)
+    saved_as = f"the {named} login's secret" if named else "not the meridian_catalog login's secret"
+    raise RestoreRefused(
+        f"Lambda catalog: the snapshot saved its AURORA_SECRET_ARN as {saved_as}; the catalog "
+        "Lambda runs as the meridian_catalog login at every stage, so this snapshot is not "
+        "restored for it. Nothing was changed; set it by hand to the AURORA_CATALOG_SECRET_ARN "
+        "secret")
 
 
-def semantic_restore(ctx: Context) -> None:
-    saved = ctx.saved["lambdas"]["semantic"]
+def catalog_check(ctx: Context) -> list[str]:
+    saved = catalog_saved(ctx)
+    return environment_lines(ctx, "Lambda catalog", saved["name"], saved["environment"],
+                             "lambdas.catalog")
+
+
+def catalog_restore(ctx: Context) -> None:
+    saved = catalog_saved(ctx)
     apply_environment(ctx, saved["name"], saved["environment"], False)
 
 
@@ -741,7 +771,8 @@ SECRET_STEP = "lambda secret parameter"
 
 def steps(runtime_names: list[str]) -> list[Step]:
     """The hops in the reverse of the release order: site, service, roles, Gateway, Runtimes,
-    rules, then the Lambdas. A Runtime needs the Gateway step; the Lambdas need the secret."""
+    rules, then the Lambdas. A Runtime needs the Gateway step; the holds Lambda needs the secret
+    parameter, which the catalog Lambda never reads."""
     runtimes = [Step(f"runtime {name}", lambda ctx, n=name: runtime_check(ctx, n),
                      lambda ctx, n=name: runtime_restore(ctx, n), replaced_note,
                      needs=("gateway",))
@@ -755,5 +786,5 @@ def steps(runtime_names: list[str]) -> list[Step]:
         Step("agentcore stack", stack_check, None, stack_remedy, needs=("gateway",)),
         Step(SECRET_STEP, ssm_check, ssm_restore),
         Step("lambda holds", holds_check, holds_restore, needs=(SECRET_STEP,)),
-        Step("lambda semantic", semantic_check, semantic_restore, needs=(SECRET_STEP,)),
+        Step("lambda catalog", catalog_check, catalog_restore),
     ]

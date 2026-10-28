@@ -16,6 +16,7 @@ from backend.agentcore.errors import CallerTokenExpired
 from tests.jwt_support import access_token
 from tests.runtime_support import load_runtime_main
 from tests.test_runtime_span_timings import FakeClock, FakeSession
+from tests.test_strands_hooks import ScriptedModel, says
 
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
@@ -204,6 +205,7 @@ def runtime(monkeypatch):
     clock = FakeClock()
     module = load_runtime_main(monkeypatch, "meridian_runtime_identity")
     module.SESSION = FakeSession(clock)
+    module.memory_session = lambda: module.SESSION
     module.created = []
     module.memory_calls = []
 
@@ -221,6 +223,8 @@ def runtime(monkeypatch):
             return [SimpleNamespace(tool_name="MeridianHolds___get_package_details")]
 
     module.MCPClient = Gateway
+    module.memory_manager = lambda *_args: None
+    module.concierge_model = lambda: ScriptedModel(says("unreachable"))
     original = module.memory_span
 
     def memory_span(traveler_id, conversation_id):
@@ -255,9 +259,12 @@ def test_jwt_mode_forwards_the_callers_token_and_uses_the_claims_traveler(runtim
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     payload = {k: v for k, v in PAYLOAD.items() if k != "traveler_id"}
     _, tools, _ = asyncio.run(first_events(runtime.run(payload, bearer(TOKENS["good"])), 3))
-    assert runtime.created[0] == {
+    created = dict(runtime.created[0])
+    recorder = created.pop("auth_provider")
+    assert created == {
         "url": "https://gw-1.gateway.example/mcp",
         "headers": {"Authorization": f"Bearer {TOKENS['good']}"}}
+    assert recorder.inner is None, "the token travels as a header; the wrapper only records"
     assert "bearer-token" in tools["details"]
     assert runtime.memory_calls == [JORDAN]
 

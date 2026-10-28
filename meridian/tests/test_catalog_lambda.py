@@ -1,11 +1,15 @@
 """The MeridianCatalog Lambda reads the catalog, gates and ranks, and fails closed."""
 
+import _socket
 import io
 import json
 import re
+import socket
 from types import SimpleNamespace
 
+import boto3
 import pytest
+from botocore.exceptions import EndpointConnectionError
 
 from tests.lambda_targets_support import TARGETS, load_target
 from tests.test_catalog_tools import _names_the_data_api_binds
@@ -490,3 +494,55 @@ def test_every_property_of_every_tool_is_one_the_tool_reads(world):
         result = call(name, EVERY_ARGUMENT[name])
         assert "error" not in result, (name, result)
         _effect(name, api, result)
+
+
+def test_the_bedrock_client_fails_fast_so_the_fallbacks_fit_in_the_function_timeout(monkeypatch):
+    """One attempt in all, short timeouts: a hung model call gives way to the fallback.
+
+    The function runs 30 s and the Runtime waits 35 s. One search makes EMBEDDING_ATTEMPTS
+    embedding calls and one rerank call, each at most (connect + read) seconds, which must
+    leave room for the Data API reads. The retry setting is read off the BUILT client.
+    """
+    monkeypatch.setattr(catalog, "CONFIG", ("arn:cluster", "arn:gateway-secret", "meridian"))
+    monkeypatch.setattr(catalog, "RDS", object())
+    monkeypatch.setattr(catalog, "BEDROCK", None)
+
+    catalog._boot()
+
+    config = catalog.BEDROCK.meta.config
+    assert (config.connect_timeout, config.read_timeout) == (2, 5)
+    assert config.retries["total_max_attempts"] == 1
+    calls = catalog.EMBEDDING_ATTEMPTS + 1
+    worst_case = calls * config.retries["total_max_attempts"] * (
+        config.connect_timeout + config.read_timeout)
+    assert worst_case <= 22, "leave at least 8 s of the 30 s function timeout for the reads"
+
+
+def test_a_bedrock_call_to_a_dead_endpoint_is_sent_once_and_not_retried(monkeypatch):
+    """Behaviour, not settings: botocore's legacy retries would send a second request.
+
+    The suite's network guard refuses every connect; this test lets one through, to the
+    loopback port it just closed, so the refusal is real and no other address is reachable.
+    """
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    guarded = socket.socket.connect
+
+    def connect_to_the_dead_port_only(sock, address):
+        if address == ("127.0.0.1", port):
+            return _socket.socket.connect(sock, address)
+        return guarded(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect_to_the_dead_port_only)
+    client = boto3.client("bedrock-runtime", region_name="us-east-1",
+                          endpoint_url=f"http://127.0.0.1:{port}", config=catalog.BEDROCK_CONFIG)
+    sent = []
+    client.meta.events.register("before-send.bedrock-runtime.InvokeModel",
+                                lambda request, **_: sent.append(request.url))
+
+    with pytest.raises(EndpointConnectionError):
+        client.invoke_model(modelId="cohere.embed-v4:0", body="{}")
+
+    assert len(sent) == 1

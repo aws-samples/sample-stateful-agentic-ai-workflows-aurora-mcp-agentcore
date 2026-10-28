@@ -62,6 +62,7 @@ from backend.agentcore.runtime import (
     TurnProgress,
     get_agentcore_runtime,
 )
+from backend.agents.concierge_definition import PACKAGE_SEARCH_TOOLS
 from backend.agents.budget import (
     BUDGET_KEYS,
     budget_ceiling_from_facts,
@@ -107,9 +108,11 @@ def response_packages(
     A follow-up without a search can name the same conversation's saved trips;
     they are rehydrated from the live catalog before display.
     """
-    searched = any("tools/call" in str(_read(activity, "title"))
-                   and "semantic_trip_search" in str(_read(activity, "title"))
-                   for activity in decision.activities)
+    searched = any(
+        "tools/call" in str(_read(activity, "title"))
+        and any(tool in str(_read(activity, "title")) for tool in PACKAGE_SEARCH_TOOLS)
+        for activity in decision.activities
+    )
     recall_only = not decision.packages and not searched
     pool = remembered if recall_only else decision.packages
     observed = {str(p["package_id"]): p for p in pool or [] if p.get("package_id")}

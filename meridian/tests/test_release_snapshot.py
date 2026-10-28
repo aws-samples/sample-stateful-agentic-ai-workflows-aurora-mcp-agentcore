@@ -17,6 +17,9 @@ from tests.aws_recorders import client_error
 
 NOW = ss.STAMPED
 
+PRE_CATALOG = ("was taken before the catalog Lambda moved to its own login; "
+               "take a new one")
+
 
 @pytest.fixture
 def world(tmp_path):
@@ -79,7 +82,7 @@ def test_the_snapshot_holds_the_site_the_roles_the_lambdas_and_the_rules(world):
     assert saved["lambdas"]["ssmSecretArn"]["value"] == rs.MASTER_SECRET
     assert saved["lambdas"]["holds"]["arn"] == ss.HOLDS_ARN
     assert saved["lambdas"]["holds"]["environment"]["POOL_SIZE"] == "4"
-    assert saved["lambdas"]["semantic"]["environment"]["AURORA_SECRET_ARN"] == rs.MASTER_SECRET
+    assert saved["lambdas"]["catalog"]["environment"]["AURORA_SECRET_ARN"] == ss.CATALOG_SECRET
     assert saved["policies"] == {name: "ACTIVE" for name in rs.BASE_POLICIES}
 
 
@@ -328,7 +331,8 @@ def test_a_newer_broken_snapshot_is_skipped_and_named(world, tmp_path):
 
     found, skipped = snapshot.complete_snapshots(tmp_path)
 
-    assert [path for path, _ in found] == [good] and skipped == [bad.name]
+    assert [path for path, _ in found] == [good]
+    assert skipped == [(bad.name, "cannot be read (JSONDecodeError)")]
 
 
 def test_no_snapshot_directory_means_none(tmp_path):
@@ -456,3 +460,52 @@ def test_the_baseline_carries_the_new_binding_finding_when_a_runtime_names_anoth
     saved = ss.taken(world)
 
     assert any("MERIDIAN_GATEWAY_ID" in line for line in saved["baselineFindings"])
+
+
+def _minimal_document(lambdas):
+    return {
+        "takenAt": "t", "commit": "c", "account": "a", "region": "r", "gateway": {},
+        "runtimes": {}, "service": {"ServiceArn": "arn"}, "site": {}, "roles": {},
+        "lambdas": lambdas, "policies": {}, "baselineFindings": [], "redacted": [], "mode": "jwt",
+    }
+
+
+def test_a_snapshot_from_before_the_catalog_lambda_is_refused_with_a_clear_reason():
+    old = _minimal_document({"holds": {}, "semantic": {}})
+
+    assert snapshot.structure_problems(old) == ["lambdas lacks holds or catalog"]
+    assert snapshot.structure_problems(_minimal_document({"holds": {}, "catalog": {}})) == []
+
+
+def old_shape_file(tmp_path, world, stamp=ss.STAMPED):
+    """A snapshot written in the shape before the catalog Lambda: ``semantic``, no ``catalog``."""
+    saved = ss.taken(world)
+    saved["lambdas"] = {"holds": saved["lambdas"]["holds"], "semantic": {"name": "old"}}
+    return snapshot.write(saved, tmp_path / "release", stamp)
+
+
+def test_loading_a_pre_change_snapshot_says_why_it_cannot_be_used(world, tmp_path):
+    path = old_shape_file(tmp_path, world)
+
+    with pytest.raises(snapshot.SnapshotError) as refused:
+        snapshot.load(path)
+
+    assert str(refused.value) == f"the snapshot {path.name} {PRE_CATALOG}"
+
+
+def test_the_files_that_do_not_load_are_listed_with_the_reason_each_gave(world, tmp_path):
+    good = snapshot.write(ss.taken(world), tmp_path / "release", ss.STAMPED)
+    newer = ss.STAMPED.replace(day=ss.STAMPED.day + 1)
+    old = old_shape_file(tmp_path, world, newer)
+    broken = tmp_path / "release" / "snapshot-20261020T000000Z.json"
+    broken.write_text("{")
+
+    loaded, skipped = snapshot.complete_snapshots(tmp_path / "release")
+
+    assert [path for path, _ in loaded] == [good]
+    names = [name for name, _ in skipped]
+    assert names == [broken.name, old.name]
+    reasons = dict(skipped)
+    assert reasons[old.name] == PRE_CATALOG
+    assert reasons[broken.name] == "cannot be read (JSONDecodeError)"
+    assert old.name not in reasons[old.name]

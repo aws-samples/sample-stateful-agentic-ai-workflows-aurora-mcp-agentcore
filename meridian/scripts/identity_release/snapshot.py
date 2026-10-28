@@ -3,7 +3,7 @@
 The snapshot holds what a rollback has to put back: the Gateway (every field ``update_gateway``
 takes), both Runtimes, the App Runner service definition, the hosted site's identity (the viewer
 function, the response headers policy and the function associations), the roles stack's
-template hash, the holds and semantic-search Lambdas' environments, the SSM parameter that
+template hash, the holds and catalog Lambdas' environments, the SSM parameter that
 names the login secret, and the active Cedar rules. It only reads.
 
 It holds names, ARNs and settings, never a secret value. A plain value whose name looks like a
@@ -342,13 +342,13 @@ def _lambdas_section(clients: Clients, where: Where) -> dict[str, Any]:
                             "the snapshot saves only references and will not print the value")
     holds_arn = lambda_release.holds_function_arn(clients.control, where.gateway_id)
     holds = lambda_release.require_holds(clients.lam, holds_arn, where.account, where.region)
-    semantic = clients.lam.get_function_configuration(FunctionName=lambda_release.SEMANTIC_FUNCTION)
+    catalog = clients.lam.get_function_configuration(FunctionName=lambda_release.CATALOG_FUNCTION)
     return {
         "ssmSecretArn": {"name": lambda_release.SSM_SECRET_PARAMETER, "type": value["Type"],
                          "value": value["Value"]},
         "holds": {"arn": holds_arn, "environment": read_environment(holds, "Lambda holds")},
-        "semantic": {"name": lambda_release.SEMANTIC_FUNCTION,
-                     "environment": read_environment(semantic, "Lambda semantic")},
+        "catalog": {"name": lambda_release.CATALOG_FUNCTION,
+                     "environment": read_environment(catalog, "Lambda catalog")},
     }
 
 
@@ -456,6 +456,10 @@ def load(path: Path) -> dict[str, Any]:
     missing = [key for key in SECTIONS if key not in document]
     if missing:
         raise SnapshotError(f"the snapshot {path.name} lacks {', '.join(missing)}")
+    lambdas = document.get("lambdas")
+    if isinstance(lambdas, dict) and not isinstance(lambdas.get("catalog"), dict):
+        raise SnapshotError(f"the snapshot {path.name} was taken before the catalog Lambda moved "
+                            "to its own login; take a new one")
     problems = structure_problems(document)
     if problems:
         raise SnapshotError(f"the snapshot {path.name} is malformed: {'; '.join(problems)}")
@@ -474,20 +478,36 @@ def structure_problems(document: Mapping[str, Any]) -> list[str]:
     service = document.get("service")
     if isinstance(service, dict) and not isinstance(service.get("ServiceArn"), str):
         problems.append("service has no ServiceArn")
+    lambdas = document.get("lambdas")
+    if isinstance(lambdas, dict) and not all(
+        isinstance(lambdas.get(name), dict) for name in ("holds", "catalog")
+    ):
+        problems.append("lambdas lacks holds or catalog")
     return problems
 
 
-def complete_snapshots(directory: Path) -> tuple[list[tuple[Path, dict[str, Any]]], list[str]]:
-    """Every snapshot that loads, newest first, and the names of the files that did not."""
+def _reason(name: str, error: SnapshotError) -> str:
+    """The refusal ``load`` gave, without the file name that the caller prints itself."""
+    text = str(error)
+    unreadable = f"cannot read the snapshot {name}: "
+    if text.startswith(unreadable):
+        return f"cannot be read ({text.removeprefix(unreadable)})"
+    return text.removeprefix(f"the snapshot {name} ")
+
+
+def complete_snapshots(
+    directory: Path,
+) -> tuple[list[tuple[Path, dict[str, Any]]], list[tuple[str, str]]]:
+    """Every snapshot that loads, newest first, and each file that did not with its reason."""
     if not directory.is_dir():
         return [], []
     loaded: list[tuple[Path, dict[str, Any]]] = []
-    skipped: list[str] = []
+    skipped: list[tuple[str, str]] = []
     for path in sorted((p for p in directory.iterdir() if NAME.fullmatch(p.name)), reverse=True):
         try:
             loaded.append((path, load(path)))
-        except SnapshotError:
-            skipped.append(path.name)
+        except SnapshotError as error:
+            skipped.append((path.name, _reason(path.name, error)))
     return loaded, skipped
 
 

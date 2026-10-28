@@ -259,14 +259,15 @@ python scripts/release_demo_bookings.py --booking-id <booking-id>
 
 ## Service logins
 
-Three Aurora logins sit next to `meridian_workflow`. None owns anything or can
+Four Aurora logins sit next to `meridian_workflow`. None owns anything or can
 bypass row-level security, and each holds only what its workload queries.
 
 | Login | Workload | Holds |
 | --- | --- | --- |
 | `meridian_backend` | The App Runner backend | SELECT on `traveler_identity_bindings` and `trip_packages`, INSERT on `traveler_access_audit`, EXECUTE on `backend_admin_count`, and SET ROLE to `meridian_app` |
-| `meridian_gateway` | The `MeridianHolds` and `meridian-semantic-trip-search` Lambdas | The same tables and SET ROLE to `meridian_app`, and no function |
+| `meridian_gateway` | The `MeridianHolds` Lambda | The same tables and SET ROLE to `meridian_app`, and no function |
 | `meridian_identity` | The Amazon Cognito pre-token-generation Lambda | SELECT on `traveler_identity_bindings` |
+| `meridian_catalog` | The `meridian-catalog-tools` Lambda behind the `MeridianCatalog` target | SELECT on `trip_packages` and EXECUTE on `package_places_left`, and nothing else: no identity bindings, no audit, no SET ROLE |
 
 The backend counts rows across every traveler in only two places, the RLS probe
 and the session receipt. The master login used to do that without RLS applying
@@ -284,9 +285,10 @@ No service login can use those policies.
 ### What remains after the release
 
 In a `jwt` release the hosted backend connects as `meridian_backend`, the
-`MeridianHolds` and `meridian-semantic-trip-search` Lambdas connect as
-`meridian_gateway`, the workflow Runtime connects as `meridian_workflow`, and
-the Amazon Cognito trigger connects as `meridian_identity`. Three removals are
+`MeridianHolds` Lambda connects as `meridian_gateway`, the
+`meridian-catalog-tools` Lambda as `meridian_catalog`, the workflow Runtime
+connects as `meridian_workflow`, and the Amazon Cognito trigger connects as
+`meridian_identity`. Three removals are
 not done:
 
 - The shared API token secret and its grant on the App Runner instance role.
@@ -429,6 +431,81 @@ backend login has not been exercised against the live cluster.
 [SIGNED_SCOPE_EVALUATION.md](SIGNED_SCOPE_EVALUATION.md) records why the
 database does not verify a signed traveler scope itself: the logins can set any
 traveler, so the application check and the workload grant remain the controls.
+
+### Create the catalog login
+
+The `meridian-catalog-tools` Lambda behind the `MeridianCatalog` target runs as its own login,
+`meridian_catalog`, created by migration 022 (`022_catalog_login.sql`). The Lambda reads `trip_packages` and
+calls `package_places_left`, and that is all it does. `meridian_gateway`, the holds Lambda's login, can also
+read the identity bindings, append to the access audit and `SET ROLE meridian_app`; the catalog needs none of
+that, so it does not get that login. Migration 023 drops the legacy product search function, a leftover that
+read a table the repository no longer has and that `PUBLIC` could still execute.
+
+1. L0a: apply migrations 022 and 023, each alone and in that order. `apply_migrations.py` has no flag that
+   names one file; without a flag it applies every pending file, so never run it bare. List what is pending
+   first. The list says which migration to apply next:
+
+   ```bash
+   python scripts/apply_migrations.py --pending
+   python scripts/apply_migrations.py --dry-run
+   ```
+
+   On a cluster that has Release 1's migrations and nothing newer, the list is `022_catalog_login.sql` and
+   `023_drop_legacy_product_search.sql`, and the rolled-back dry run reports 3 statements for 022 and 1 for
+   023. On a cluster where 022 is already applied, the list is 023 alone. On a database created with the
+   current `init_aurora_schema.py` and the apply-all step of the README, nothing is pending and L0a is done.
+   Any other name in the list: stop and ask. Then apply the one migration that is next, with the runner's
+   single-file function, which refuses unless that file is the first pending one. Edit `NEXT` to
+   `023_drop_legacy_product_search.sql` for the second run:
+
+   ```bash
+   python - <<'PY'
+   import boto3
+
+   from scripts import apply_migrations as runner
+
+   NEXT = "022_catalog_login.sql"
+   client = boto3.client("rds-data", region_name=runner.REGION)
+   pending = [p.name for p in runner._pending_paths(runner._applied_migrations_read_only(client))]
+   assert pending[:1] == [NEXT], f"pending is {pending}; stop and ask"
+   runner._apply_migration(client, runner.MIGRATIONS_DIR / NEXT)
+   print(f"applied {NEXT}")
+   PY
+   ```
+
+   `_apply_migration` runs the file and the `schema_migrations` insert in one transaction and rolls back on
+   any error. Read back with `--pending` after each. After 022 the role has `rolcanlogin` false, no
+   `BYPASSRLS` and no `INHERIT`, reads `trip_packages` and can execute `package_places_left`; after 023 the
+   legacy function is gone from `pg_proc`. A dry run that fails (for example `meridian_catalog exists with
+   attributes 022 does not allow`) is a finding: stop and report it, and never alter the role into shape.
+
+2. L0b: report the plan, then provision. Name the login: without `--login`, an `--apply` rotates every
+   login's password, so the script refuses to run without it.
+
+   ```bash
+   python scripts/provision_service_logins.py --login catalog
+   python scripts/provision_service_logins.py --login catalog --apply \
+     --i-understand-this-changes-aws --write-env
+   ```
+
+   This enables LOGIN with a SCRAM-SHA-256 verifier, creates the secret `meridian/aurora/catalog-login` and
+   the managed policy `MeridianCatalogAuroraAccess` (the Data API on the cluster, and
+   `secretsmanager:GetSecretValue` on that secret alone), checks that the login connects without
+   BYPASSRLS, and writes `AURORA_CATALOG_SECRET_ARN` to `.env`. A `new version` or `update` line in the dry run
+   means a catalog login was provisioned before: stop and read what exists.
+
+3. L0c: prove the login against the live cluster, including what it must not do. Run it from a clean checkout:
+
+   ```bash
+   python -m pytest -m database tests/test_migration_022_live.py
+   ```
+
+   As `meridian_catalog`, the catalog's own statements run; a SELECT on `traveler_identity_bindings`, an INSERT
+   into `traveler_access_audit`, `SET ROLE meridian_app` and every write to `trip_packages` are refused with
+   `permission denied`. A failure is a finding for the owner: a grant is a migration, never a quick `GRANT`.
+
+Then create the Lambda and its role, as section 2 of the
+[AgentCore deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md#2-create-the-catalog-lambda) says.
 
 ## Sign-in and who is calling
 
@@ -637,6 +714,21 @@ Undo in the reverse of the order above and stop at the step you need.
    policy and then the policy, and remove the three `AURORA_*_SECRET_ARN` lines
    from `.env`. Do this before the migration rollback.
 
+   The catalog login is a fourth. Detach `MeridianCatalogAuroraAccess` from
+   `MeridianCatalogToolsRole` first (or delete the function and its role first), then run
+   `ALTER ROLE meridian_catalog NOLOGIN PASSWORD NULL`, delete its secret with
+   `ForceDeleteWithoutRecovery`, delete the policy's non-default versions and then the policy, and remove
+   the `AURORA_CATALOG_SECRET_ARN` line from `.env`. Then, as the master login:
+
+   ```sql
+   DROP OWNED BY meridian_catalog;
+   DROP ROLE meridian_catalog;
+   DELETE FROM schema_migrations WHERE migration_name = '022_catalog_login.sql';
+   ```
+
+   Roll it back only while nothing uses the login: the `meridian-catalog-tools` Lambda stops answering
+   without it.
+
 4. Migration 018. Run these as the master login, in this order. The five
    `admin_count_select` policies belong to the master, so `DROP OWNED BY` on
    the service roles does not remove them and each needs its own statement:
@@ -746,14 +838,16 @@ the CDK builds the CloudFormation logical id from, so a different name is a diff
 | Runtime roles | get `bedrock-agentcore:InvokeGateway` on it | get no such statement (the CDK adds it for `AWS_IAM` only) |
 
 A Runtime has exactly one of the two URL variables, so the Runtime code reads whichever is set and has
-no mode branch for it. Every tool name (`MeridianHolds___create_courtesy_hold` and the others) is unchanged,
-because the target names are unchanged.
+no mode branch for it. Every tool name is the same in both Gateways (`MeridianCatalog___hybrid_trip_search`,
+`MeridianHolds___create_courtesy_hold` and the others), because the `iam` and `jwt` renders use the same
+target names.
 
 **Why the old and the new Gateway cannot sit side by side.** The preferred cutover (create the new Gateway
 next to the old one, repoint, prove, delete the old one later) is not possible with this tooling, and the
 repository pins the reasons in the CDK tests (`meridian_agentcore/agentcore/cdk/test/cdk.test.ts`):
 
-- Both Gateways would have a target called `MeridianHolds` and one called `SemanticTripSearchLambda`. The
+- Both Gateways would have a target called `MeridianHolds` and one called `MeridianCatalog` (the catalog target's
+  name since Release 2). The
   CDK adds the outputs `GatewayTarget<Name>IdOutput` at stack scope, so two Gateways with the same target
   names throw "already a Construct" while the stack is synthesized. Only different target names would avoid
   it, and a target name is the prefix of every tool name (`<target>___<tool>`) in the Concierge, the
@@ -775,11 +869,13 @@ new Gateway and removes the old one.
 
 **The four stages.** `render_agentcore_config.py` reads the CLI's deployed state and renders the first stage
 the state does not yet list. `release_identity.py deploy` checks that the rendered stage, the state's stage
-and the live Gateway agree, reads the plan, deploys once and reads the Gateway back by name.
+and the live Gateway agree, reads the plan, deploys once and reads the Gateway back by name. Before anything
+else it refuses a missing or stale staged Concierge copy or Workflow bundle with exit 2, before the confirmation
+check (restage with `scripts/stage_concierge_runtime.py` and `scripts/stage_workflow_runtime.py`; the render does both).
 
 | Stage | The render holds | What the deploy does | Why it is separate |
 | --- | --- | --- | --- |
-| 1 `gateway` | The new Gateway, `SemanticTripSearchLambda`, no `MeridianHolds`, no Cedar engine, both Runtimes with the Cognito authorizer | Creates the Gateway, its role and target; moves both Runtimes to the Cognito authorizer; deletes the old Gateway, its role, its targets, the old holds Lambda, the Cedar engine and its rules | The old holds Lambda holds the function name until CloudFormation deletes it. Its log group is kept, so `holds-logs` deletes it before stage 2 |
+| 1 `gateway` | The new Gateway, `MeridianCatalog`, no `MeridianHolds`, no Cedar engine, both Runtimes with the Cognito authorizer | Creates the Gateway, its role and target; moves both Runtimes to the Cognito authorizer; deletes the old Gateway, its role, its targets, the old holds Lambda, the Cedar engine and its rules | The old holds Lambda holds the function name until CloudFormation deletes it. Its log group is kept, so `holds-logs` deletes it before stage 2 |
 | 2 `targets` | Adds `MeridianHolds` and the Gateway id on the Runtimes | Creates the holds Lambda, its log group and role and the target. The tool refuses while the old log group exists and prints the `holds-logs` command | Cedar validates a rule against the tools that exist, so the tool comes before the rule |
 | 3 `governance` | Adds the Cedar engine, the rules and the association | Creates the engine and rules and attaches the engine in `ENFORCE` mode | The rules name the Gateway, whose id is known only after stage 1 |
 | 4 `complete` | Adds the engine id on the Runtimes | Updates both Runtimes | The engine id is known only after stage 3 |
@@ -815,7 +911,7 @@ hosted-UI host masked. Each stage must also show its own change:
 | 1 `gateway` | add exactly one Gateway, the mode's, and, when the other mode's Gateway is live, remove exactly one Gateway, that one | Only resources whose path or logical id carries the replaced Gateway's construct id (`GatewayMeridianAurora` or `GatewayMeridianAuroraJwt`; the first is a prefix of the second and is told apart) and the `MeridianGovernance` engine with its rules. Any other removal, a Runtime or the Memory included, refuses the deploy |
 | 2 `targets` | add a `GatewayTarget` and a `Lambda::Function` | None allowed |
 | 3 `governance` | add a `PolicyEngine` and a `Policy` | None allowed |
-| 4 `complete` | update a `Runtime` | None allowed |
+| 4 `complete` | update a `Runtime`, or add the `MeridianCatalog` target, or update a Cedar rule (`Policy`) | Only a target named in `RETIRED_TARGETS` (`SemanticTripSearchLambda`), and only when the same plan updates a `Runtime`; nothing else |
 
 No live `agentcore deploy --diff --json` has been captured, so the repository holds no sample of a real plan. The
 test fixtures use the resource types, construct paths and logical ids of the template the CDK app synthesizes,
@@ -834,7 +930,7 @@ and a deploy that updates the Gateway can detach it, so `check` is the drift rea
 | Backend and hosted service (`AGENTCORE_GATEWAY_URL` in `.env` and in the service) | `sync_agentcore_env.py --write` after each deploy, then `publish.py` | After stage 4 |
 | SSM parameters under `/meridian/aurora/` | None names the Gateway. `/meridian/aurora/secret_arn` moves to the gateway login after stage 2, when the new holds role can read that secret | After stage 2 |
 | Holds Lambda and its role | New function, new role (a new role id), created in stage 2; run `bind_gateway_workload.py` again so the database grant names the new role | After stage 2 |
-| `meridian-semantic-trip-search` | The function is outside the stack; the new Gateway role is granted `lambda:InvokeFunction` on it by the stack | Stage 1 |
+| `meridian-catalog-tools` | The function is outside the stack; the new Gateway role is granted `lambda:InvokeFunction` on it by the stack | Stage 1 |
 | Policy engine association | The engine is deleted in stage 1 and created again in stage 3; the Gateway is attached to it in the same deploy | Stage 3 |
 | Interceptor | `release_identity.py gateway --to jwt`: the invoke grant on the Gateway's role, then the attach | After stage 4 |
 | `MeridianTravelerPinInvoke` on the old Gateway's role | Written by an earlier window. Remove it before stage 1 (`gateway --to iam --apply ...`), because CloudFormation may fail to delete a role that carries a policy it does not know (assumed, not observed) | Before stage 1 |
@@ -850,7 +946,7 @@ has no traveler pin; the backend cannot reach the Runtimes in that period, so on
 valid Cognito access token could reach them directly.
 
 **Rollback.** `rollback` restores what the APIs can restore (the site, the service, the secret parameter and
-the semantic Lambda). It never restores the Gateway or the Runtimes' environment from the snapshot when the
+the catalog Lambda). It never restores the Gateway or the Runtimes' environment from the snapshot when the
 Gateway was replaced, because that environment holds the deleted Gateway's URL. Rolling back to `iam`
 is the same staged build in the other direction: `MERIDIAN_AGENTCORE_AUTH=iam`, render, deploy, four times,
 which creates a new `iam` Gateway. It has a new id and a new URL, so every consumer in the table above
@@ -871,8 +967,8 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
    --skip-service`. It lists drift for the Gateway name, both Runtimes and the rules. Nothing live changes.
 3. `venv/bin/python scripts/release_identity.py interceptor`, then with the flags. It deploys the
    interceptor Lambda and its log-only role (a second run changes nothing).
-4. `venv/bin/python scripts/release_identity.py semantic-lambda`, then with the flags (the function is
-   outside the stack; a second run changes nothing).
+4. Nothing to move for the catalog Lambda: it runs as its own login, `meridian_catalog`, from
+   creation, and `lambdas` checks that it still does.
 5. Clear the old Gateway's role: `venv/bin/python scripts/release_identity.py gateway --to iam`, then with
    the flags. It removes `MeridianTravelerPinInvoke` and detaches any interceptor; nothing else changes.
 6. Stage 1. Render and validate, then deploy through the tool. The outage starts here.
@@ -952,7 +1048,7 @@ out on purpose with `--skip-service`. A `check` with neither prints `NOT CHECKED
 when every hop matches, so use `--skip-service` for every read before the service moves (steps 1 to 8 of the
 window) and `--service-arn` after it. The backend login proof is compared only in
 `jwt` mode, so `check --expect iam` shows no proof line even when no receipt exists.
-`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway`, `deploy`, `holds-logs` and
+`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `gateway`, `deploy`, `holds-logs` and
 `rollback` are dry runs unless they get `--apply --i-understand-this-changes-aws`. The backend
 login proof comes from `scripts/prove_backend_login.py --apply
 --i-understand-this-changes-aws`. Exit codes of `release_identity.py`:
@@ -978,14 +1074,14 @@ you ran; `-` means the tool never returns it:
 
 ### Move the Lambdas to the gateway login
 
-Two Lambdas still connect as the master login until this step: the `MeridianHolds` Lambda (through
-the SSM parameter `/meridian/aurora/secret_arn`) and `meridian-semantic-trip-search` (through its
-`AURORA_SECRET_ARN` variable). Every command below is a dry run until it gets `--apply
+One Lambda still connects as the master login until this step: the `MeridianHolds` Lambda (through
+the SSM parameter `/meridian/aurora/secret_arn`). The catalog Lambda is created on its own
+`meridian_catalog` login and never moves, and `lambdas` checks it against that login at every stage.
+Every command below is a dry run until it gets `--apply
 --i-understand-this-changes-aws`, checks that the credentials belong to the account and Region of
 `AURORA_CLUSTER_ARN` before it builds any other client, and prints no secret value.
 
-The order matters. The semantic Lambda's role is outside the stack, so `semantic-lambda` can run
-before the window. The holds Lambda's role belongs to the AgentCore stack and gets the read on the
+The order matters. The holds Lambda's role belongs to the AgentCore stack and gets the read on the
 gateway login's secret only from the first jwt deploy (step 4 of the window). The
 `--gateway-login --apply` of `publish_gateway_parameters.py` therefore reads the holds role first
 and refuses, with nothing written, until it can read that secret: moving the parameter earlier
@@ -995,25 +1091,13 @@ would leave every new holds cold start unable to connect.
 python scripts/publish_gateway_parameters.py --gateway-login
 python scripts/publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws
 python scripts/release_identity.py lambdas --restart-holds --apply --i-understand-this-changes-aws
-python scripts/release_identity.py semantic-lambda
-python scripts/release_identity.py semantic-lambda --apply --i-understand-this-changes-aws
 python scripts/release_identity.py lambdas --expect gateway
 ```
 
 `publish_gateway_parameters.py` writes the three parameters and reads each back (the secret
 parameter with the same comparison `lambdas` makes). The holds Lambda keeps its cached value until
-`lambdas --restart-holds`. `semantic-lambda` first gives the semantic Lambda's role an inline policy
-(`meridian-gateway-login-read`, one statement marked `MeridianGatewayLoginRead`) that allows
-`secretsmanager:GetSecretValue` on the gateway login's secret alone; a policy of that name without
-the mark is never touched. It then reads the Lambda's whole environment, changes only
-`AURORA_SECRET_ARN` and sends every variable back with the revision it read, and reads both
-changes back. It refuses a function whose environment cannot be read in full (a KMS error, no
-variables), one whose `AURORA_SECRET_ARN` names neither login's secret, and a role in another
-account. A second run changes nothing. The way back is `semantic-lambda --to master --apply
---i-understand-this-changes-aws`, which keeps the grant; add `--remove-grant` to delete the policy
-the tool added. The operator profile needs `iam:GetRolePolicy` and `iam:PutRolePolicy` (and
-`iam:DeleteRolePolicy` for `--remove-grant`) on that role, `lambda:UpdateFunctionConfiguration`
-on the function and `ssm:PutParameter` on `/meridian/aurora/*`.
+`lambdas --restart-holds`. The operator profile needs `lambda:UpdateFunctionConfiguration` on
+the holds function and `ssm:PutParameter` on `/meridian/aurora/*`.
 
 ### Run the smoke scripts as a seeded user
 
@@ -1047,7 +1131,7 @@ paused workflow resumes from its last saved step with the new token.
 
 Before the window, `python scripts/release_identity.py snapshot --service-arn ARN` reads (and
 changes nothing) the Gateway, both Runtimes, the App Runner service, the site's viewer function and
-response headers policy, the roles stack, the holds and semantic Lambdas and the active Cedar rules,
+response headers policy, the roles stack, the holds and catalog Lambdas and the active Cedar rules,
 and writes them to `.local/release-b2/snapshot-<UTC time>.json` (mode 0600, with a SHA-256 over the
 content). It holds no secret value: a plain value under a credential-looking name is replaced with
 `<redacted>`, a token-shaped or access-key-shaped string with `<token>`, and the paths are listed
@@ -1075,7 +1159,7 @@ Restore order, which is the true reverse of the release:
 3. the Gateway and both Runtimes (see below: by API only when the Gateway was not replaced)
 4. the AgentCore stack (checked; commands printed): the Cedar rules and the `InvokeGateway`
    statement on both Runtime roles
-5. the secret parameter, then the holds Lambda (restarted) and the semantic Lambda
+5. the secret parameter, then the holds Lambda (restarted) and the catalog Lambda
 
 The release replaces the Gateway, so after stage 1 the Gateway the snapshot saved no longer exists.
 The rollback looks up the snapshot mode's Gateway by its saved name. If it exists under the saved id,
@@ -1135,6 +1219,50 @@ hop matches. The Aurora logins and the Cognito pool work with both modes and are
 The restore uses the service APIs and has been exercised only against recording fakes, not against
 a live deployment.
 
+### Release 2: one agent, the catalog target and loyalty_balance
+
+Release 2 replaces the Phase 3 supervisor and its specialists with one Strands agent, moves catalog search to
+a `MeridianCatalog` Gateway target served by the `meridian-catalog-tools` Lambda, and adds the governed
+`loyalty_balance` tool to `MeridianHolds`. The live order:
+
+1. Gate A, run in Release 2: [create the catalog login](#create-the-catalog-login) (migrations 022 and 023,
+   the login, its live test), then create the catalog Lambda and its role with its direct-invoke smoke
+   (section 2 of the [deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md#2-create-the-catalog-lambda)). Nothing
+   attaches to the Lambda yet.
+2. The deploy window, which is not yet scheduled and has not run. First save the configuration:
+   `venv/bin/python scripts/release_identity.py snapshot --service-arn "$SERVICE_ARN"` (add `--accept-baseline`
+   if hops report findings; see [Save the configuration, then roll back](#save-the-configuration-then-roll-back)).
+   Then Deploy A, from the Part I commit's tree, adds the `MeridianCatalog` target and the
+   `loyalty_balance` tool to the holds target; Cedar is unchanged, so the live Runtime keeps using
+   `SemanticTripSearchLambda`. Then the interceptor Lambda update. Deploy B, from the
+   final tree, changes the Cedar rules, removes `SemanticTripSearchLambda` and updates the Runtimes. Then
+   publish, the smoke scripts and proofs, and last, after the soak you choose, retire the old Lambda and its
+   role.
+
+Rollback. Deploy A adds the catalog target and `loyalty_balance` and updates the holds target and function; it
+removes nothing. Its additions are inert until Deploy B: the Part I Cedar rules permit no `MeridianCatalog` tool
+and not `loyalty_balance`, and the policy engine is in `ENFORCE` mode, so the Gateway denies them by default.
+Leaving them in place is the safe default.
+
+To go back further, use the snapshot saved before Deploy A. It is a snapshot of the live `jwt` release, so
+`rollback` does not choose it on its own; name it, as a dry run first:
+`venv/bin/python scripts/release_identity.py rollback --snapshot FILE`, then the same command with
+`--apply --i-understand-this-changes-aws`. It restores the Runtimes' artifact and environment, the Gateway
+settings, the App Runner service, the site and the Lambda environments, and prints the commands for the roles
+stack and the Cedar rules. It restores no Lambda function code (the holds, interceptor and catalog functions)
+and no Gateway target.
+
+To revert the holds function code, deploy a new commit that reverts it and keeps the catalog target. The plan
+gate accepts that plan only if the same plan also updates a Runtime or a Cedar rule, because a plan that only
+updates a function is refused at the complete stage. Do not redeploy a tree from before the catalog target:
+it removes the `MeridianCatalog` target, and the gate refuses that removal on purpose (it allows only the
+retired `SemanticTripSearchLambda`).
+
+Deploy B is undone by restoring the saved rendered config and deploying the Part I commit's tree through
+`release_identity.py deploy`. The plan gate accepts that plan because it adds the retired target back and
+updates the Cedar rules and the Runtimes, which a complete-stage plan may do; the old Lambda must still exist,
+so retire it last.
+
 ## Prove the decoy is refused
 
 `scripts/identity_proof.py` records, in a receipt, that a second signed-in user is refused at four layers and
@@ -1143,7 +1271,7 @@ Amazon Cognito access token and a real traveler row. Run it in `jwt` mode (see
 [Switch the AgentCore identity mode](#switch-the-agentcore-identity-mode)), from a clean checkout of the
 released commit. In `iam` mode, the default, the command refuses to run. It signs in as both users
 with tokens minted in memory from Secrets Manager, so it prints and stores no token and no password.
-It passed 17 of 17 probes against the hosted site on 2026-10-08.
+It passed 17 of 17 probes against the hosted site on 2026-10-08, and the plan has 19 probes since Release 2.
 
 ```bash
 python scripts/identity_proof.py                                              # the plan only, no AWS call
@@ -1153,7 +1281,7 @@ python scripts/identity_proof.py --render .local/identity-proof/latest.json   # 
 ```
 
 `--base-url` names the hosted site (the default comes from the release record) and `--output-dir` names a folder
-inside `.local/`. The plan has 17 probes, in the order they run. Each row has an expectation: a probe that aims the
+inside `.local/`. The plan has 19 probes, in the order they run. Each row has an expectation: a probe that aims the
 decoy at Jordan's data must end `refused`, and every other probe must end `allowed`. Two probes are decoy controls
 (`runtime.decoy_pings_workflow` and `gateway.decoy_reads_package`): they send the decoy's own valid token with no
 traveler named, so the decoy must be let in. They show that a refusal at the same layer came from the traveler check
@@ -1178,6 +1306,8 @@ and not from a layer that turns the decoy away for any request.
 | `gateway.decoy_reads_package` | Gateway | decoy | `get_package_details` for one package with the decoy's token, allowed |
 | `gateway.decoy_holds_for_jordan` | Gateway | decoy | `create_courtesy_hold` with `travelerId` set to Jordan |
 | `gateway.jordan_places_hold` | Gateway | Jordan | `create_courtesy_hold`, released afterwards |
+| `gateway.decoy_reads_jordans_loyalty` | Gateway | decoy | `loyalty_balance` with `travelerId` set to Jordan |
+| `gateway.jordan_reads_own_loyalty` | Gateway | Jordan | `loyalty_balance` |
 
 The database probe opens its own Data API transaction. It does not use the workload grant, so a zero count is
 row-level security's answer and nothing else. No probe depends on the decoy being refused its own records at the
@@ -1348,8 +1478,8 @@ explains why App Runner needs this.
 | --- | --- |
 | `AgentCore platform not configured` | The backend has no runtime, gateway or memory ID. Run `python scripts/sync_agentcore_env.py --write` and restart the backend. Production does not fall back to direct Aurora access. |
 | `runtimeSessionId ... valid min length: 33` | The runtime session ID is too short. Restart the backend on current code; `_build_runtime_session_id` in `backend/agentcore/runtime.py` builds a valid ID. |
-| Gateway reports `no targets were configured` | A target is missing. Check that `meridian-semantic-trip-search` exists, render the config and run `agentcore deploy -y`. |
-| Production returns no packages | Run `python scripts/verify_agentcore.py` (expect four tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
+| Gateway reports `no targets were configured` | A target is missing. Check that `meridian-catalog-tools` exists, render the config and run `agentcore deploy -y`. |
+| Production returns no packages | Run `python scripts/verify_agentcore.py` (expect ten tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
 | A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py`. |
 | Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant for that traveler. Run `python scripts/bind_web_backend_role.py --apply`, with `--traveler trv_demo_decoy` for Jordan Lee. |
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |

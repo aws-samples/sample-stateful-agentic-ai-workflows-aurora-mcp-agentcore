@@ -2,7 +2,7 @@
 """Prove that a second signed-in user is refused at four layers and Jordan is allowed at each.
 
 After the Cognito release, this signs in as the two seeded users (tokens minted in memory from
-Secrets Manager, never printed or stored) and sends seventeen probes at four layers: the hosted
+Secrets Manager, never printed or stored) and sends nineteen probes at four layers: the hosted
 backend, the two Runtimes, the Gateway and the database. For every probe it records the layer
 that answered. The decoy (a valid token, a real second traveler) must be refused at all four
 layers, each time by a layer named with evidence (a recognised refusal text or code, or a new

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 from scripts.identity_probes.probes import (
     CONCIERGE,
@@ -57,7 +58,7 @@ class FakeDatabase:
     def __init__(self, *, rls_hides: bool = True, baseline: int = 9) -> None:
         self.rls_hides = rls_hides
         self.baseline = baseline
-        self.deny_rows = 0
+        self.deny_rows: Counter[str] = Counter()
         self.bookings: dict[str, set[str]] = {JORDAN_TRAVELER: set(), DECOY_TRAVELER: set()}
         self.holds: dict[str, set[str]] = {}
         self.preflights = 0
@@ -79,7 +80,7 @@ class FakeDatabase:
         return self.baseline
 
     def deny_audit_count(self, traveler_id: str) -> int:
-        return self.deny_rows
+        return self.deny_rows[traveler_id]
 
     def booking_ids(self, traveler_id: str) -> set[str]:
         return set(self.bookings[traveler_id])
@@ -118,6 +119,12 @@ def lambda_refusal() -> dict:
     return {"error": "traveler_not_authorized", "governance": {"allowed": False}}
 
 
+def lambda_loyalty() -> dict:
+    """The Holds Lambda's success payload for Jordan's own saved balance."""
+    return {"traveler_id": JORDAN_TRAVELER, "program": "Marriott Bonvoy",
+            "points_balance": 86240, "tier": "Platinum Elite", "governance": {"allowed": True}}
+
+
 def fake_http(user, method, path, body):
     """A backend that refuses the decoy whenever a request names Jordan."""
     if path == "/api/me":
@@ -144,8 +151,13 @@ def fake_gateway(database: FakeDatabase):
     def gateway(user, tool, arguments):
         if tool.endswith("get_package_details"):
             return text_result({"package": PACKAGE})
+        if tool.endswith("loyalty_balance"):
+            if arguments["travelerId"] != TRAVELER_OF[user]:
+                database.deny_rows[TRAVELER_OF[user]] += 1
+                return text_result(lambda_refusal(), is_error=True)
+            return text_result(lambda_loyalty())
         if user == DECOY:
-            database.deny_rows += 1
+            database.deny_rows[TRAVELER_OF[user]] += 1
             return text_result(lambda_refusal(), is_error=True)
         database.add_booking(JORDAN_TRAVELER, "HLD-TEST0001", arguments["journeyRef"])
         return text_result(lambda_hold("HLD-TEST0001"))

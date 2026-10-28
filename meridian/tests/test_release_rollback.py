@@ -52,7 +52,7 @@ def test_every_restorable_hop_is_back_to_what_was_saved(tmp_path):
     assert world.violations() == []
     assert [r.name for r in outcome.results if r.status == "restored"] == [
         "site", "service", "gateway", "runtime MeridianConcierge", "runtime MeridianWorkflow",
-        "lambda secret parameter", "lambda holds", "lambda semantic"]
+        "lambda secret parameter", "lambda holds", "lambda catalog"]
 
 
 def test_the_writes_run_in_the_reverse_of_the_release_order(tmp_path):
@@ -311,14 +311,14 @@ def test_a_saved_copy_with_a_redacted_value_is_not_restored_for_that_hop(tmp_pat
 def test_a_lambda_saved_with_a_redacted_value_is_not_restored(tmp_path):
     world = ss.SnapWorld(tmp_path)
     world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]["SERVICE_TOKEN"] = "t-1"
-    world.lambdas[lambda_release.SEMANTIC_FUNCTION]["Environment"]["Variables"]["DB_PASSWORD"] = "p"
+    world.lambdas[lambda_release.CATALOG_FUNCTION]["Environment"]["Variables"]["DB_PASSWORD"] = "p"
     saved = json.loads(json.dumps(ss.taken(world)))
     world.release(manual=False)
 
     outcome, said = go(world, saved)
 
     failed = [r.name for r in outcome.results if r.status == "failed"]
-    assert failed == ["lambda holds", "lambda semantic"]
+    assert failed == ["lambda holds", "lambda catalog"]
     assert world.writes().count("update_function_configuration") == 0
     assert "SERVICE_TOKEN" in "\n".join(said)
 
@@ -346,7 +346,7 @@ def test_a_service_arn_in_another_account_is_refused(tmp_path):
 
 def test_a_holds_function_that_is_not_this_projects_is_refused(tmp_path):
     world, saved, _ = released(tmp_path)
-    saved["lambdas"]["holds"]["arn"] = ss.SEMANTIC_ARN
+    saved["lambdas"]["holds"]["arn"] = ss.CATALOG_ARN
 
     outcome, _ = go(world, saved)
 
@@ -415,7 +415,7 @@ def test_the_hops_that_do_not_depend_on_the_gateway_are_still_restored_by_api(tm
     outcome, _ = go(world, saved, gateway_id=NEW_ID)
 
     restored = {r.name for r in outcome.results if r.status == "restored"}
-    assert restored == {"site", "lambda secret parameter", "lambda holds", "lambda semantic"}
+    assert restored == {"site", "lambda secret parameter", "lambda holds", "lambda catalog"}
     assert world.state()["parameters"] == before["parameters"]
 
 

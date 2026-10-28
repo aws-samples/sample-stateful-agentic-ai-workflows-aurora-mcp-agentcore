@@ -3,7 +3,7 @@ Bedrock AgentCore Gateway adapter for Phase 4 (managed MCP).
 
 AgentCore Gateway converts APIs, Lambda functions, and existing MCP servers
 into a **single MCP endpoint** agents can call.  In Phase 4 the agent inside
-AgentCore Runtime discovers and calls the gateway tools itself (semantic trip
+AgentCore Runtime discovers and calls the gateway tools itself (hybrid trip
 search, package details, the governed courtesy hold), and the gateway's Cedar
 policies decide on every call.  This adapter is the laptop-side client the
 backend keeps for pre-session checks and smoke tests: ``tools/list`` and a
@@ -21,7 +21,7 @@ Gateway URL is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.js
 or env override:
 
     AGENTCORE_GATEWAY_URL=https://{id}.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
-    AGENTCORE_GATEWAY_SEARCH_TOOL=meridian-aurora___semantic_trip_search
+    AGENTCORE_GATEWAY_SEARCH_TOOL=MeridianCatalog___hybrid_trip_search
     AGENTCORE_GATEWAY_ACCESS_TOKEN=   # optional; omit for IAM SigV4
 
 With ``MERIDIAN_AGENTCORE_AUTH=jwt`` every request carries the signed-in caller's Cognito access
@@ -67,7 +67,7 @@ NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirects)
 class AgentCoreGatewayAdapter:
     """MCP client for an AgentCore Gateway endpoint (tools/list + tools/call)."""
 
-    DEFAULT_SEARCH_TOOL = "SemanticTripSearchLambda___semantic_trip_search"
+    DEFAULT_SEARCH_TOOL = "MeridianCatalog___hybrid_trip_search"
 
     def __init__(
         self,

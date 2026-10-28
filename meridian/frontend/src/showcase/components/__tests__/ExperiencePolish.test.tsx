@@ -716,7 +716,7 @@ describe('Experience presentation polish', () => {
       traceSpans: [
         ...paused.slice(0, 4), { ...checkpoint, latencyMs: null },
         traceSpan('Workflow node: availability fan-out', { latencyMs: 54 }),
-        traceSpan('PackageAgent: Finding package', { latencyMs: 40 }),
+        traceSpan('Availability: Finding package', { latencyMs: 40 }),
       ],
     })} />);
     expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');

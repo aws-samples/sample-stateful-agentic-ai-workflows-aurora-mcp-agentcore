@@ -48,7 +48,7 @@ class Cloud:
 
     def __init__(self, *modes, **extras):
         self.gateways = {f"gw-{mode}": gateway_of(mode, **extras.get(mode, {})) for mode in modes}
-        self.targets = {gid: ["SemanticTripSearchLambda"] for gid in self.gateways}
+        self.targets = {gid: ["MeridianCatalog"] for gid in self.gateways}
         self.popped = {}
         self.calls = []
 
@@ -58,7 +58,7 @@ class Cloud:
         if gateway_id not in self.gateways:
             return
         holds = stage in (stages.GOVERNANCE, stages.COMPLETE)
-        self.targets[gateway_id] = ["SemanticTripSearchLambda"] + (
+        self.targets[gateway_id] = ["MeridianCatalog"] + (
             [settings.HOLDS_TARGET] if holds else [])
         if stage in (stages.TARGETS, stages.GOVERNANCE):
             engine = self.gateways[gateway_id].pop("policyEngineConfiguration", None)
@@ -169,7 +169,7 @@ def spec(mode="jwt", stage=stages.COMPLETE, **changes):
     gateway = {
         "name": settings.gateway_logical_name(mode),
         "authorizerType": "CUSTOM_JWT" if mode == "jwt" else "AWS_IAM",
-        "targets": [{"name": "SemanticTripSearchLambda"}]
+        "targets": [{"name": "MeridianCatalog"}]
         + ([{"name": settings.HOLDS_TARGET}] if stages.renders_holds(stage) else [])}
     if mode == "jwt":
         pool = settings.cognito_settings(rs.COGNITO_ENV)
@@ -188,7 +188,7 @@ def spec(mode="jwt", stage=stages.COMPLETE, **changes):
 def state(mode="jwt", stage=stages.COMPLETE):
     gateway: dict = {}
     if stage != stages.GATEWAY:
-        gateway = {"gatewayId": f"gw-{mode}", "targets": {"SemanticTripSearchLambda": {
+        gateway = {"gatewayId": f"gw-{mode}", "targets": {"MeridianCatalog": {
             "targetId": "t1"}}}
         if stage in (stages.GOVERNANCE, stages.COMPLETE):
             gateway["targets"][settings.HOLDS_TARGET] = {"targetId": "t2"}
@@ -200,7 +200,7 @@ def state(mode="jwt", stage=stages.COMPLETE):
 
 
 def write_snapshot(release_dir, mode, hours_ago=1, gateway_id="live", account=rs.ACCOUNT,
-                   region=rs.REGION, baseline=(), commit=rs.SHA):
+                   region=rs.REGION, baseline=(), commit=rs.SHA, lambdas=None):
     """A complete snapshot of the mode's Gateway, taken ``hours_ago`` hours before NOW."""
     taken = NOW - timedelta(hours=hours_ago)
     gateway = {"gatewayId": f"gw-{mode}" if gateway_id == "live" else gateway_id,
@@ -209,7 +209,8 @@ def write_snapshot(release_dir, mode, hours_ago=1, gateway_id="live", account=rs
         "schema": snapshot.SCHEMA, "takenAt": taken.isoformat(), "commit": commit,
         "account": account, "region": region, "mode": mode, "gateway": gateway,
         "runtimes": {}, "service": {"ServiceArn": rs.SERVICE_ARN}, "site": {}, "roles": {},
-        "lambdas": {}, "policies": {}, "baselineFindings": list(baseline), "redacted": [],
+        "lambdas": lambdas or {"holds": {}, "catalog": {}}, "policies": {},
+        "baselineFindings": list(baseline), "redacted": [],
         "complete": True}
     snapshot.write(document, release_dir, taken)
 
@@ -243,7 +244,7 @@ def project(tmp_path, rendered=None, deployed=None, targets=True):
 
 def run(argv, world, tmp_path, runner, rendered=None, deployed=None, snaps="auto",
         proof=True, environment=None, mode=None, stage=stages.COMPLETE, changes=None,
-        configure_live=True):
+        configure_live=True, stale_copies=(), copy_check=None):
     mode = mode or world.mode
     if configure_live:
         world.cloud.at_stage(mode, stage)
@@ -264,7 +265,8 @@ def run(argv, world, tmp_path, runner, rendered=None, deployed=None, snaps="auto
         env=environment or env(MERIDIAN_AGENTCORE_AUTH=mode), session=world.session,
         now=lambda: NOW, head_sha=lambda: rs.SHA, proof_path=receipt, release_dir=release,
         sleep=lambda seconds: None, agentcore_dir=root, run_command=runner,
-        tree_changes=lambda: [] if changes is None else changes)
+        tree_changes=lambda: [] if changes is None else changes,
+        runtime_copy_problems=copy_check or (lambda: list(stale_copies)))
     return release_identity.main(argv, deps)
 
 
@@ -371,6 +373,21 @@ def test_each_missing_first_stage_precondition_is_named_and_nothing_runs(
 
     assert fragment in capsys.readouterr().err
     assert runner.diffs == [] and runner.deploys == []
+
+
+def test_a_snapshot_from_before_the_catalog_lambda_is_named_with_its_reason(tmp_path, capsys):
+    world = replacement()
+    old = {"mode": "iam", "lambdas": {"holds": {}, "semantic": {}}}
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world, JWT_REPLACES_IAM),
+               stage=stages.GATEWAY, snaps=[old])
+
+    err = capsys.readouterr().err
+    assert code == 2 and "no complete snapshot of the iam release" in err
+    (written,) = (tmp_path / "release").glob("snapshot-*.json")
+    assert (f"not usable: {written.name} was taken before the catalog Lambda moved to its own "
+            "login; take a new one") in err
+    assert "malformed" not in err
 
 
 def test_an_identity_stack_without_outputs_blocks_the_first_stage(tmp_path, capsys):

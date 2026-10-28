@@ -24,10 +24,13 @@ const named = (span: ShowcaseTraceSpan) => `${span.name} ${component(span)}`;
 const identityRefused = (span: ShowcaseTraceSpan) =>
   span.fields.some(field => field.label === 'refused_by' && field.value === 'identity_check');
 
-const STRANDS_SUPERVISOR = /^(Supervisor (processing|completed)|RetrievalAgent invoked)/i;
+// The Retrieval agent's own turn. Saved journeys and earlier backends carry the supervisor titles.
+const STRANDS_AGENT = new RegExp('^(Retrieval agent: (turn started|reply written)|'
+  + 'Supervisor (processing|completed)|RetrievalAgent invoked)', 'i');
+const CONCIERGE_SERVER = /meridian-concierge MCP server/i;
 const BEDROCK_CALL = /^Bedrock|concierge polish|embedding|^Cohere rerank/i;
 const AURORA_QUERY = new RegExp('^(Semantic search|Hybrid candidate|Catalog card|'
-  + 'Lexical candidates|PackageAgent: (Finding|Checking)|Aurora recall)', 'i');
+  + 'Lexical candidates|(Availability|PackageAgent): (Finding|Checking)|Aurora recall)', 'i');
 
 // First match wins. Routing and in-memory steps fall through to the app itself.
 const SERVICE_RULES: ServiceRule[] = [
@@ -40,14 +43,14 @@ const SERVICE_RULES: ServiceRule[] = [
   { service: 'AgentCore Gateway', matches: span => /AgentCore Gateway/i.test(named(span)) },
   { service: 'AgentCore Runtime', matches: span => /AgentCore Runtime/i.test(named(span)) },
   { service: 'AgentCore Memory', matches: span => /AgentCore Memory/i.test(named(span)) },
-  { service: 'AgentCore Identity', matches: span => /AgentCore Identity/i.test(component(span)) },
   { service: 'AWS STS', matches: span => /AWS STS/i.test(component(span)) },
   { service: 'Worker memory', matches: span => /MemorySaver/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => isSnapshotTitle(span.name) },
   { service: 'Aurora RLS', matches: span => /^Aurora RLS/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => /^Aurora/i.test(component(span)) },
   { service: 'MCP', matches: span => /^(postgres-mcp|meridian-concierge|MCP )/i.test(span.name) },
-  { service: 'Strands on Bedrock', matches: span => STRANDS_SUPERVISOR.test(span.name) },
+  { service: 'MCP', matches: span => CONCIERGE_SERVER.test(component(span)) },
+  { service: 'Strands on Bedrock', matches: span => STRANDS_AGENT.test(span.name) },
   { service: 'Bedrock', matches: span => BEDROCK_CALL.test(span.name) },
   {
     service: 'Strands Graph',
@@ -67,15 +70,19 @@ export function stepService(span: ShowcaseTraceSpan): string {
   return SERVICE_RULES.find(rule => rule.matches(span))?.service ?? 'Meridian app';
 }
 
-// Steps a model wrote: the Retrieval reply's polish, and the Runtime's turn.
-const MODEL_STEP = new RegExp(`concierge polish|${RUNTIME_TURN_COMPLETE.source}`, 'i');
+// Steps a model wrote: the Retrieval agent's reply (and the polish saved journeys carry), and the Runtime's turn.
+const MODEL_STEP = new RegExp(
+  `concierge polish|Retrieval agent: reply written|${RUNTIME_TURN_COMPLETE.source}`, 'i');
 
 function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: string): string | null {
   const decision = span.fields.find(field => field.label === 'cedar_decision')?.value;
   if (service === 'Cedar') return decision ?? 'deny';
   if (identityRefused(span)) return 'identity check refused';
   if (service === 'AgentCore Gateway' && decision) return `Cedar ${decision}`;
-  if (service === 'MCP') return span.name.match(/postgres-mcp|meridian-concierge/i)?.[0] ?? null;
+  if (service === 'MCP') {
+    const fromName = span.name.match(/postgres-mcp|meridian-concierge/i)?.[0];
+    return fromName ?? (CONCIERGE_SERVER.test(component(span)) ? 'meridian-concierge' : null);
+  }
   return MODEL_STEP.test(span.name) && replyModel ? replyModel : null;
 }
 

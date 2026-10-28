@@ -36,8 +36,8 @@ def plant_holds(world, value):
     world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]["NOTE"] = value
 
 
-def plant_semantic(world, value):
-    world.lambdas[lambda_release.SEMANTIC_FUNCTION]["Environment"]["Variables"]["NOTE"] = value
+def plant_catalog(world, value):
+    world.lambdas[lambda_release.CATALOG_FUNCTION]["Environment"]["Variables"]["NOTE"] = value
 
 
 def plant_viewer(world, value):
@@ -60,7 +60,7 @@ HOPS = [
     ("service", plant_service, ("update_service",), 0),
     ("gateway", plant_gateway, ("update_gateway",), 0),
     ("lambda holds", plant_holds, LAMBDA_WRITE, 1),
-    ("lambda semantic", plant_semantic, LAMBDA_WRITE, 1),
+    ("lambda catalog", plant_catalog, LAMBDA_WRITE, 1),
     ("site", plant_viewer, SITE_WRITES, 0),
     ("site", plant_viewer_code, SITE_WRITES, 0),
     ("site", plant_policy, SITE_WRITES, 0),
@@ -134,21 +134,7 @@ def test_a_failed_gateway_skips_the_runtimes_and_says_why(tmp_path):
     assert statuses["runtime MeridianWorkflow"] == "skipped"
     assert "update_agent_runtime" not in world.writes()
     assert "skipped because gateway failed" in "\n".join(said)
-    assert statuses["lambda semantic"] == "restored" and outcome.code == 1
-
-
-def test_a_failed_secret_parameter_skips_both_lambdas(tmp_path):
-    world, saved, _ = released(tmp_path, manual=False)
-    world.failures["put_parameter"] = client_error("ThrottlingException")
-
-    outcome, said = go(world, saved)
-
-    statuses = {r.name: r.status for r in outcome.results}
-    assert statuses["lambda secret parameter"] == "failed"
-    assert statuses["lambda holds"] == statuses["lambda semantic"] == "skipped"
-    assert "update_function_configuration" not in world.writes()
-    assert "skipped because lambda secret parameter failed" in "\n".join(said)
-    assert statuses["gateway"] == "restored" and outcome.code == 1
+    assert statuses["lambda catalog"] == "restored" and outcome.code == 1
 
 
 def test_a_step_that_depends_on_nothing_failed_still_runs(tmp_path):
@@ -197,7 +183,7 @@ def test_a_lambda_that_never_settles_fails_instead_of_hanging(tmp_path):
     outcome, said = go(world, saved)
 
     statuses = {r.name: r.status for r in outcome.results}
-    assert statuses["lambda holds"] == statuses["lambda semantic"] == "failed"
+    assert statuses["lambda holds"] == statuses["lambda catalog"] == "failed"
     assert "did not settle" in "\n".join(said)
 
 
@@ -224,7 +210,7 @@ def test_an_environment_that_cannot_be_read_in_full_is_never_replaced(tmp_path, 
 @pytest.mark.parametrize("environment", [{"Error": {"ErrorCode": "X", "Message": "x"}}, {}])
 def test_taking_a_snapshot_refuses_an_environment_it_cannot_read_in_full(tmp_path, environment):
     world = ss.SnapWorld(tmp_path)
-    world.lambdas[lambda_release.SEMANTIC_FUNCTION]["Environment"] = environment
+    world.lambdas[lambda_release.CATALOG_FUNCTION]["Environment"] = environment
 
     with pytest.raises(snapshot.SnapshotError, match="environment"):
         ss.taken(world)

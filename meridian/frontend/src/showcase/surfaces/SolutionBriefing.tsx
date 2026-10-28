@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Phase } from '../../types';
 import { BriefingArchitecture } from './BriefingArchitecture';
 import { BriefingPhases, BriefingPreparation } from './BriefingWalkthrough';
-import { CONTROLS, POLICIES, TOOLS } from './solutionBriefingContent';
+import { CONTROLS, POLICIES, TOOLS, toolsHeading } from './solutionBriefingContent';
 
 function Detail({ title, children }: { title: string; children: ReactNode }) {
   return <details className="mds-brief-detail">
@@ -53,7 +53,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
         </Detail>
         <Detail title="Tool contracts & Cedar policies">
           <p>The model interprets the request, chooses tools and writes grounded replies. Application code establishes the traveler, pins explicit confirmation and the saved budget, and validates the returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
-          <h3>Four MCP tools, two Lambda targets</h3>
+          <h3>{toolsHeading()}</h3>
           <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker uses the same governed hold tool.</p>
           <dl className="mds-brief-tools">{TOOLS.map(([name, kind, body]) => <div key={name}><dt><span>{kind}</span><code>{name}</code></dt><dd>{body}</dd></div>)}</dl>
           <h3>Configured Cedar policies</h3>

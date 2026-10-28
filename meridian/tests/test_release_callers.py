@@ -243,7 +243,7 @@ def test_the_gateway_tool_check_signs_in_before_it_lists_the_tools(monkeypatch):
 
         def list_tools(self):
             events.append("list")
-            return [{"name": "SemanticTripSearchLambda___semantic_trip_search"}], None
+            return [{"name": "MeridianCatalog___hybrid_trip_search"}], None
 
     monkeypatch.setattr(verify_agentcore, "caller_scope", lambda *a, **k: Scope())
     monkeypatch.setattr("backend.agentcore.gateway.AgentCoreGatewayAdapter", Adapter)

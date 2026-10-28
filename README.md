@@ -53,7 +53,7 @@ Browser (React, Vite)
        │    └─ AgentCore Gateway (MCP; Cognito access token in jwt mode)
        │         ├─ request interceptor: pins travelerId to the token's claim
        │         ├─ Cedar policy engine (ENFORCE)
-       │         ├─ SemanticTripSearchLambda ─── Aurora (pgvector search)
+       │         ├─ MeridianCatalog Lambda ───── Aurora (hybrid search, catalog tools)
        │         └─ MeridianHolds Lambda ─────── Aurora (hold and confirm functions)
        │
        └─ AgentCore Runtime (MeridianWorkflow, Strands Graph)
@@ -73,7 +73,7 @@ and configuration.
 Models on Amazon Bedrock: Claude Sonnet 5.5 for the agents, through its global
 cross-Region inference profile, Cohere Embed v4 for embeddings and Cohere
 Rerank 3.5 for reranking. `BEDROCK_MODEL_ID` changes the backend's Strands
-agents and reply polish; the managed Concierge runtime's model is set in
+agent; the managed Concierge runtime's model is set in
 `meridian/meridian_agentcore/agentcore/agentcore.template.json`.
 
 ## Prerequisites

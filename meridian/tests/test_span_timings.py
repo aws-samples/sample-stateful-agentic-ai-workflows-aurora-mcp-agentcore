@@ -13,18 +13,14 @@ from types import SimpleNamespace
 
 import pytest
 
-import backend.llm_polish as llm_polish
 import backend.retrieval.availability as availability
 import backend.retrieval.hybrid as hybrid
 import backend.routers.chat as chat_router
 from backend import timing
 from backend.agentcore.runtime import RuntimeDecision, _apply_result
 from backend.agents.phase_04_production.concierge import ProductionAgent
-from backend.agents.phase_03_retrieval.search_agent import SearchAgent
 from backend.authorization import AuthorizationContext
-from backend.config import config
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings
-from backend.llm_polish import PolishResult
 from backend.tools import catalog_tools
 
 
@@ -62,40 +58,6 @@ def _ms(activity):
     if isinstance(activity, dict):
         return activity["execution_time_ms"]
     return activity.execution_time_ms
-
-
-# --------------------------------------------------------------- Bedrock polish
-
-def test_polish_times_its_one_bedrock_call(clock, monkeypatch):
-    def converse(**kwargs):
-        clock.spend(1200)
-        return {
-            "stopReason": "end_turn",
-            "output": {"message": {"content": [{"text": "Here is your trip."}]}},
-        }
-
-    monkeypatch.setattr(llm_polish, "_client", lambda: SimpleNamespace(converse=converse))
-    result = llm_polish._polish_sync("Find a retreat", "facts")
-
-    assert result.model_id == config.bedrock.model_id
-    assert result.elapsed_ms == 1200
-
-
-def test_polish_span_carries_the_measured_call_time(monkeypatch):
-    async def polished(_query, _facts):
-        return PolishResult(
-            text="Polished.", model_id="global.anthropic.claude-sonnet-5-5", note=None,
-            elapsed_ms=1400,
-        )
-
-    monkeypatch.setattr(chat_router, "polish_concierge_reply", polished)
-    activities: list = []
-    asyncio.run(chat_router._polish_and_record(
-        phase=3, mode_label="Retrieval", agent_name="RetrievalAgent",
-        user_query="Find a retreat", raw_message="Two trips.", products=[],
-        activities=activities,
-    ))
-    assert _ms(activities[-1]) == 1400
 
 
 # ------------------------------------------------------------------------ MCP
@@ -209,7 +171,7 @@ class FakeEmbeddings:
 
 def test_workflow_search_spans_time_each_call_directly(clock, monkeypatch):
     monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: FakeDb(
-        clock, {"semantic_trip_search": 120, "ts_rank": 30},
+        clock, {"semantic_trip_search": 120, "ts_rank": 30, "package_id IN": 25},
     ))
     monkeypatch.setattr(hybrid, "get_embedding_service", lambda: FakeEmbeddings(clock))
     _products, activities = asyncio.run(hybrid.retrieval_search("quiet villa"))
@@ -218,6 +180,8 @@ def test_workflow_search_spans_time_each_call_directly(clock, monkeypatch):
     # The two retrieval arms, measured together, and nothing else.
     assert _ms(_span(activities, "Hybrid candidates fetched")) == 150
     assert _ms(_span(activities, "Cohere rerank applied")) == 90
+    # The catalog join of every merged candidate, timed on its own span.
+    assert _ms(_span(activities, "Catalog card details hydrated")) == 25
 
 
 def test_sql_search_times_its_query_on_the_step_that_ran_it(clock, monkeypatch):
@@ -232,30 +196,15 @@ def test_sql_search_times_its_query_on_the_step_that_ran_it(clock, monkeypatch):
     assert _ms(_span(activities, "Direct RDS Data API connection")) is None
 
 
-def test_package_agent_times_its_query_and_invents_nothing_for_in_memory_work(clock, monkeypatch):
+def test_availability_check_times_its_query_and_invents_nothing_in_memory(clock, monkeypatch):
     monkeypatch.setattr(availability, "get_rds_data_client", lambda: FakeDb(
         clock, {"FROM trip_packages": 40},
     ))
     _products, activities, _message = asyncio.run(availability.retrieval_availability_search(
         "Which trip lengths are still available?", package_id="AML-002",
     ))
-    assert _ms(_span(activities, "PackageAgent: Finding package")) == 40
-    assert _ms(_span(activities, "PackageAgent: Duration inventory verified")) is None
-
-
-def test_search_agent_times_the_arms_and_the_catalog_join(clock, monkeypatch):
-    monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: FakeDb(
-        clock, {"semantic_trip_search": 120, "ts_rank": 30, "package_id IN": 25},
-    ))
-    monkeypatch.setattr(hybrid, "get_embedding_service", lambda: FakeEmbeddings(clock))
-    agent = SearchAgent.__new__(SearchAgent)
-    spans: list = []
-    agent.activity_callback = spans.append
-
-    asyncio.run(agent.hybrid_search("quiet villa"))
-
-    assert _ms(_span(spans, "Hybrid candidates fetched")) == 150
-    assert _ms(_span(spans, "Catalog card details hydrated")) == 25
+    assert _ms(_span(activities, "Availability: Finding package")) == 40
+    assert _ms(_span(activities, "Availability: Duration inventory verified")) is None
 
 
 def test_production_hydration_times_the_catalog_query(clock):

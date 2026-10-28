@@ -486,7 +486,7 @@ def create_courtesy_hold(args: dict) -> dict:
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _transaction("rollback", tx)
-        return {"error": _named_error(error)}
+        return _failure("create_courtesy_hold", error, "hold_failed")
     lapsed = receipt["status"] == "held" and bool(receipt.get("lapsed"))
     result = {
         "bookingId": row["booking_id"],
@@ -564,7 +564,7 @@ def confirm_booking(args: dict) -> dict:
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _transaction("rollback", tx)
-        return {"error": _named_error(error)}
+        return _failure("confirm_booking", error, "booking_failed")
     result = {
         "bookingId": booking_id,
         "status": str(receipt["status"]),
@@ -610,6 +610,11 @@ def _record_denied_audit(traveler_id: str) -> str:
     return audit_id
 
 
+REFUSAL_MESSAGE = (
+    "This traveler is not authorized for this request. Asking again will not change the answer."
+)
+
+
 def _grant_refusal(governance: dict, traveler_id: str) -> dict:
     """The answer to a call this workload may not make for the traveler.
 
@@ -618,16 +623,44 @@ def _grant_refusal(governance: dict, traveler_id: str) -> dict:
     access_audit_id = _record_denied_audit(traveler_id)
     return {
         "error": "traveler_not_authorized",
+        "final": True,
+        "message": REFUSAL_MESSAGE,
         "governance": {**governance, "access_audit_id": access_audit_id},
     }
 
 
-def _named_error(error: Exception) -> str:
+def _business_error(error: Exception) -> str | None:
     text = str(error)
-    for name in BUSINESS_ERRORS:
-        if name in text:
-            return name
-    return text[:300]
+    return next((name for name in BUSINESS_ERRORS if name in text), None)
+
+
+def _failure(tool: str, error: Exception, fixed_code: str) -> dict:
+    """The answer for a raised error: its business name, else ``fixed_code`` and no error text.
+
+    A business answer is expected and adds no log record (the handler's own line records the
+    call). Any other failure logs its type and a masked, bounded detail, never in the result.
+    """
+    business = _business_error(error)
+    if business is None:
+        print(json.dumps({
+            "meridian_tool": tool, "ok": False,
+            "error_type": type(error).__name__, "detail": _masked_detail(error),
+        }), flush=True)
+    return {"error": business or fixed_code}
+
+
+ARN = re.compile(r"arn:[a-z0-9-]+:[^\s\"',)]*")
+ACCOUNT = re.compile(r"(?<![0-9A-Za-z])\d{12}(?![0-9A-Za-z])")
+CREDENTIAL = re.compile(r"(password|secret|token|key)=\S+", re.IGNORECASE)
+DETAIL_CHARS = 120
+LOYALTY_FAILED = "loyalty_balance_failed"
+
+
+def _masked_detail(error: Exception) -> str:
+    """The exception text for the log only: ARNs, account ids and credentials masked, cut short."""
+    text = CREDENTIAL.sub(r"\1=<masked>", str(error))
+    text = ACCOUNT.sub("<acct>", ARN.sub("<arn>", text))
+    return text[:DETAIL_CHARS]
 
 
 def _loyalty_unavailable(traveler_id: str, program: str) -> dict:
@@ -685,9 +718,9 @@ def loyalty_balance(args: dict) -> dict:
         _scope(traveler_id, tx)
         rows = query(LOYALTY_SQL, {"traveler": traveler_id}, tx)
         _transaction("commit", tx)
-    except Exception as error:  # noqa: BLE001 - named errors come back to the caller
+    except Exception as error:  # noqa: BLE001 - the caller gets a fixed code, the log the type
         _transaction("rollback", tx)
-        return {"error": _named_error(error)}
+        return _failure("loyalty_balance", error, LOYALTY_FAILED)
     result = loyalty_from_programs(
         traveler_id, program, (rows[0] if rows else {}).get("loyalty_programs"))
     result["governance"] = governance

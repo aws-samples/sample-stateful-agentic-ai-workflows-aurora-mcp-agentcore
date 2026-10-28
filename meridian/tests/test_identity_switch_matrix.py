@@ -154,8 +154,10 @@ def test_the_workflow_runtime_trusts_the_payload_in_iam_and_the_claim_in_jwt(mod
 def test_the_concierge_runtime_signs_in_iam_and_forwards_the_token_in_jwt(mode, runtime):  # noqa: F811
     headers = {"Authorization": f"Bearer {access_token(JORDAN)}"}
     asyncio.run(first_events(runtime.run(PAYLOAD, headers), 1))
-    expected = {"url", "auth_provider"} if mode == "iam" else {"url", "headers"}
-    assert set(runtime.created[0]) == expected
+    created = runtime.created[0]
+    expected = {"url", "auth_provider"} if mode == "iam" else {"url", "auth_provider", "headers"}
+    assert set(created) == expected
+    assert (created["auth_provider"].inner is not None) is (mode == "iam"), "only iam signs"
 
 
 def test_the_rendered_config_carries_the_mode_and_the_binding_rule_only_in_jwt(mode):

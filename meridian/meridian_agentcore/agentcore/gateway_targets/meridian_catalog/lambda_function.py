@@ -21,6 +21,7 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
+from botocore.config import Config
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "cohere.embed-v4:0")
 RERANK_MODEL = os.getenv("RERANK_MODEL", "cohere.rerank-v3-5:0")
@@ -30,6 +31,13 @@ MIN_CANDIDATES = 25
 MAX_LIMIT = 20
 MAX_QUERY_CHARS = 500
 EMBEDDING_ATTEMPTS = 2
+# The function runs 30 s. One search makes EMBEDDING_ATTEMPTS embedding calls and one rerank
+# call, and each call is one attempt in all (botocore's total_max_attempts; its max_attempts
+# counts retries after the first try, and the legacy mode retries timeouts). At most
+# 3 x (2 + 5) = 21 s of Bedrock time leaves the reads and the fallbacks in time. Standard
+# mode, as the other fail-fast clients in this repository use.
+BEDROCK_CONFIG = Config(
+    connect_timeout=2, read_timeout=5, retries={"mode": "standard", "total_max_attempts": 1})
 DETAIL_CHARS = 120
 MAX_DOCUMENT_CHARS = 2048
 MAX_COMPARE = 4
@@ -124,7 +132,7 @@ def _boot() -> None:
     if RDS is None:
         RDS = boto3.client("rds-data")
     if BEDROCK is None:
-        BEDROCK = boto3.client("bedrock-runtime")
+        BEDROCK = boto3.client("bedrock-runtime", config=BEDROCK_CONFIG)
 
 
 def _encode(value: Any) -> dict:

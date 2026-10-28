@@ -16,6 +16,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from backend.security.redaction import MaskingFilter, install_masking, install_record_factory
+
 
 def _env_bool(name: str, default: bool = True) -> bool:
     raw = os.getenv(name)
@@ -29,6 +31,7 @@ def agent_verbose_enabled() -> bool:
 
 
 LOGGER_ROOTS = ("meridian", "backend")
+LIBRARY_HANDLER_MARK = "meridian_library_handler"
 QUERY_LOG_CHARS = 60
 
 
@@ -61,10 +64,17 @@ class StructuredFormatter(logging.Formatter):
         if "query" in log_entry:
             log_entry["query"] = _query_prefix(log_entry["query"])
 
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
+        if record.exc_text or record.exc_info:
+            log_entry["exception"] = record.exc_text or self.formatException(record.exc_info)
 
         return json.dumps(log_entry)
+
+
+def _failure_text(formatter: logging.Formatter, record: logging.LogRecord) -> str:
+    """The traceback and stack of ``record``, each on its own lines; empty when it has neither."""
+    if record.exc_info and not record.exc_text:
+        record.exc_text = formatter.formatException(record.exc_info)
+    return "".join(f"\n{part}" for part in (record.exc_text, record.stack_info) if part)
 
 
 class ReadableFormatter(logging.Formatter):
@@ -112,7 +122,22 @@ class ReadableFormatter(logging.Formatter):
             extras.append(f"orchestration={record.orchestration}")
 
         extra_str = f" [{', '.join(extras)}]" if extras else ""
-        return f"{color}[{record.levelname}]{reset} {record.name}: {record.getMessage()}{extra_str}"
+        line = f"{color}[{record.levelname}]{reset} {record.name}: {record.getMessage()}{extra_str}"
+        return line + _failure_text(self, record)
+
+
+def _install_library_handler(formatter: logging.Formatter) -> None:
+    """Replace the masking handler on the root logger, and mask the handlers already there."""
+    root = logging.getLogger()
+    for existing in [h for h in root.handlers if getattr(h, LIBRARY_HANDLER_MARK, False)]:
+        root.removeHandler(existing)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(formatter)
+    handler.addFilter(MaskingFilter())
+    setattr(handler, LIBRARY_HANDLER_MARK, True)
+    root.addHandler(handler)
+    install_masking(root)
 
 
 def setup_logging(
@@ -124,14 +149,24 @@ def setup_logging(
     Application modules log under ``backend.*``; only the helpers in this file
     use ``meridian``. Both share one handler and do not propagate, so a record
     is written once.
+
+    Library loggers (``strands``, ``mcp``, ``botocore``) propagate to the root logger, which gets
+    its own handler on stderr at WARNING: INFO from a library is routine request chatter, and
+    stderr keeps an MCP stdio server's stdout free for the protocol. Every handler this
+    configures, and any already on the root logger, masks account ids and credentials in each
+    record, its traceback and its stack before a formatter sees it, and a record factory masks each
+    record when it is created, so a handler a library adds later cannot print a raw traceback.
     """
+    install_record_factory()
     level_name = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     log_level = getattr(logging, level_name, logging.INFO)
     use_json = json_output if json_output is not None else _env_bool("LOG_JSON", False)
 
+    formatter = StructuredFormatter() if use_json else ReadableFormatter()
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(log_level)
-    handler.setFormatter(StructuredFormatter() if use_json else ReadableFormatter())
+    handler.setFormatter(formatter)
+    handler.addFilter(MaskingFilter())
 
     for name in LOGGER_ROOTS:
         root = logging.getLogger(name)
@@ -140,6 +175,7 @@ def setup_logging(
         root.propagate = False
         root.addHandler(handler)
 
+    _install_library_handler(formatter)
     return logging.getLogger("meridian")
 
 

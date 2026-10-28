@@ -8,8 +8,6 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py interceptor [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py interceptor-delete [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
-    python scripts/release_identity.py semantic-lambda [--to gateway|master] [--remove-grant]
-        [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|attach|revoke]
         [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py deploy [--to iam|jwt]
@@ -30,13 +28,10 @@ must be named: ``--service-arn`` reads it, ``--skip-service`` leaves it out on p
 default) and then reads it back. Both resources carry the release tags; one that exists without
 them is never modified. ``interceptor-delete`` removes only resources that carry those tags,
 re-reading the tags before each delete.
-``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
-of the move to the meridian_gateway login (read-only); with ``--restart-holds`` (a dry run unless
-both flags) it forces the holds Lambda to re-read its configuration.
-``semantic-lambda`` gives the semantic-search Lambda's role read access to the gateway login's
-secret and then points the Lambda at it (dry run by default; the whole environment is read,
-changed in one value and sent back, then both changes are read back); ``--to master`` is the way
-back, and ``--remove-grant`` also deletes the policy the tool added.
+``lambdas`` checks that the SSM parameter and the holds Lambda's role are at a stage of the move
+to the meridian_gateway login, and that the catalog Lambda runs as its own meridian_catalog login
+(read-only); with ``--restart-holds`` (a dry run unless both flags) it forces the holds Lambda to
+re-read its configuration.
 ``gateway`` works on the interceptor of the mode's Gateway, found by name (dry run by default:
 before and after of the interceptor, and every precondition). It never changes the authorizer:
 neither CloudFormation nor ``UpdateGateway`` can, so the jwt Gateway is a new Gateway that
@@ -50,6 +45,8 @@ agree on the stage and, for the first stage, everything the irreversible replace
 mode's Gateway needs is in place. An apply then reads the plan with ``agentcore deploy --diff
 --json`` and refuses one that is not the stage's plan, runs ``/opt/homebrew/bin/agentcore deploy
 -y`` and reads the Gateway back by name; it never changes the Gateway itself.
+Before anything else, plan or apply, it refuses (exit 2) a missing or stale staged Concierge copy or
+Workflow bundle, through the two stagers' own ``check`` functions; the message names the stager.
 ``holds-logs`` deletes the old holds function's retained log group (``/aws/lambda/`` plus the
 function's fixed name) between stage 1 and stage 2, in a replacement and in a rollback: stage 2
 creates a log group of that name and CloudFormation refuses one that exists. It finds the group by
@@ -69,7 +66,8 @@ Exit codes, the same for every command:
     0  ok: every hop matches (and the service was checked or skipped on purpose), or a dry run
     1  drift: one ``DRIFT`` line per problem, or the read-back after an apply found a difference
     2  could not run or compare: a missing or malformed setting, credentials for another
-       account, an AWS error or failed wait, a foreign resource, an unexpected error
+       account, an AWS error or failed wait, a foreign resource, a missing or stale staged
+       Runtime copy (``deploy``, before the confirmation check), an unexpected error
     3  usage error (unknown or misspelled argument), or an apply refused because the
        confirmation flag is missing
     4  every hop matches but the App Runner service was not named, so the release is not fully
@@ -100,7 +98,7 @@ from scripts.identity_release import deploy_order, interceptor_lambda, preflight
 from scripts.identity_release import runtime_roles, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.identity_release import gateway_release  # noqa: E402
-from scripts.identity_release import holds_logs, rollback, semantic_lambda, snapshot  # noqa: E402
+from scripts.identity_release import holds_logs, rollback, snapshot  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -137,6 +135,7 @@ class Dependencies:
     sleep: Callable[[float], None] = time.sleep
     agentcore_dir: Path = field(default=settings.AGENTCORE_DIR)
     run_command: Callable[[Sequence[str], Path], tuple[int, str]] = deploy_order.run_command
+    runtime_copy_problems: Callable[[], list[str]] = deploy_order.runtime_copy_problems
 
 
 def default_dependencies() -> Dependencies:
@@ -184,10 +183,6 @@ def build_parser() -> argparse.ArgumentParser:
     move_lambdas.add_argument("--restart-holds", action="store_true",
                               help="force the holds Lambda to re-read its configuration")
     add_apply_flags(move_lambdas)
-    semantic = commands.add_parser(
-        "semantic-lambda", allow_abbrev=False,
-        help="move the semantic-search Lambda to the gateway login (dry run by default)")
-    semantic_lambda.add_arguments(semantic)
     move_gateway = commands.add_parser(
         "gateway", allow_abbrev=False,
         help="attach or detach the interceptor on the mode's Gateway (dry run by default)")
@@ -390,11 +385,6 @@ def run_lambdas(args: argparse.Namespace, deps: Dependencies) -> int:
     return lambda_release.run(args, deps, say)
 
 
-def run_semantic_lambda(args: argparse.Namespace, deps: Dependencies) -> int:
-    """Plan, or apply and read back, the semantic-search Lambda's move to the gateway login."""
-    return semantic_lambda.run(args, deps, say)
-
-
 def run_gateway(args: argparse.Namespace, deps: Dependencies) -> int:
     """Plan, or apply and read back, the Gateway's move to a mode."""
     return gateway_release.run(args, deps, say=say)
@@ -422,7 +412,7 @@ def run_rollback(args: argparse.Namespace, deps: Dependencies) -> int:
 
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
             "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
-            "semantic-lambda": run_semantic_lambda, "gateway": run_gateway,
+            "gateway": run_gateway,
             "deploy": run_deploy, "holds-logs": run_holds_logs,
             "snapshot": run_snapshot, "rollback": run_rollback}
 

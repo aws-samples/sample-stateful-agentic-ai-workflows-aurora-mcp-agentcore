@@ -358,7 +358,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         gateway_name=merged["gateway_name"],
         gateway_search_tool=os.getenv(
             "AGENTCORE_GATEWAY_SEARCH_TOOL",
-            "SemanticTripSearchLambda___semantic_trip_search",
+            "MeridianCatalog___hybrid_trip_search",
         ),
         memory_id=merged["memory_id"],
         memory_name=merged["memory_name"],

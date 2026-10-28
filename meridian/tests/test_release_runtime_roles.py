@@ -23,8 +23,8 @@ OTHER_GATEWAY = f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:gateway/som
 RUNTIMES = {name: rs.runtime(name, "iam") for name in rs.RUNTIME_IDS}
 
 
-def iam_with(statement):
-    document = {"Version": "2012-10-17", "Statement": [statement]}
+def iam_with(*statements):
+    document = {"Version": "2012-10-17", "Statement": list(statements)}
     return Recorder({"list_role_policies": {"PolicyNames": ["p"]},
                      "get_role_policy": {"PolicyDocument": document},
                      "list_attached_role_policies": {"AttachedPolicies": []}})
@@ -53,6 +53,26 @@ def test_a_role_without_the_grant_is_a_finding_per_runtime(statement):
     assert [line.split(":")[0] for line in found] == [
         "Runtime MeridianConcierge", "Runtime MeridianWorkflow"]
     assert all("InvokeGateway" in line and "agentcore deploy -y" in line for line in found)
+
+
+def test_an_explicit_deny_of_invoke_gateway_on_this_gateway_is_a_finding():
+    iam = iam_with(allow(resource="*"), allow(effect="Deny"))
+
+    assert len(runtime_roles.findings(iam, RUNTIMES, GATEWAY_ARN)) == 2
+    other = iam_with(allow(resource="*"), allow(resource=OTHER_GATEWAY, effect="Deny"))
+    assert runtime_roles.findings(other, RUNTIMES, GATEWAY_ARN) == []
+
+
+CONDITION = {"StringNotEquals": {"aws:SourceVpce": "vpce-0abc"}}
+
+
+def test_invoke_gateway_needs_a_grant_without_a_condition_and_no_deny_at_all():
+    plain = iam_with(allow())
+    assert runtime_roles.findings(plain, RUNTIMES, GATEWAY_ARN) == []
+    conditional_allow = iam_with({**allow(), "Condition": CONDITION})
+    assert len(runtime_roles.findings(conditional_allow, RUNTIMES, GATEWAY_ARN)) == 2
+    conditional_deny = iam_with(allow(), {**allow(effect="Deny"), "Condition": CONDITION})
+    assert len(runtime_roles.findings(conditional_deny, RUNTIMES, GATEWAY_ARN)) == 2
 
 
 def test_a_role_with_no_policy_at_all_is_a_finding():

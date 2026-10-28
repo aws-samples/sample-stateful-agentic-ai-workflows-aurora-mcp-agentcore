@@ -65,10 +65,9 @@ def test_no_default_still_names_the_retired_model(relative, base):
 
 
 def test_the_backend_default_is_not_the_retired_model():
-    # backend/config.py keeps "GPT-6 Sol" in its display-name table for model ids a Runtime can
-    # report, so the check here is on the default, not on the file's text.
     assert BedrockConfig.DEFAULT_MODEL_ID == "global.anthropic.claude-sonnet-5-5"
     assert "us.openai.gpt-6-sol" not in read("backend/config.py")
+    assert "GPT-6" not in read("backend/config.py")
 
 
 def test_the_wrong_docstrings_are_gone():
@@ -154,3 +153,9 @@ def test_the_unused_outbound_identity_path_and_postgres_mcp_client_are_gone():
     assert "get_resource_api_key" not in identity and "resource_provider" not in identity
     concierge = read("backend/agents/phase_04_production/concierge.py")
     assert "AgentCore Identity resolved" not in concierge
+
+
+def test_structure_says_when_account_ids_are_masked():
+    structure = read("STRUCTURE.md")
+    assert "Read-time masking" not in structure
+    assert "error text before it is stored or shown" in structure

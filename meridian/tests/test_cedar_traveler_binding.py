@@ -15,7 +15,10 @@ GATEWAY_ID = "meridianv2-meridian-aurora-abcde12345"
 GATEWAY = f"arn:aws:bedrock-agentcore:us-west-2:{ACCOUNT}:gateway/{GATEWAY_ID}"
 HOLD = "MeridianHolds___create_courtesy_hold"
 BOOKING = "MeridianHolds___confirm_booking"
-SEARCH = "SemanticTripSearchLambda___semantic_trip_search"
+CATALOG_TOOLS = ("search_trips", "compare_packages", "price_range", "region_inventory",
+                 "currency_convert", "hybrid_trip_search")
+SEARCH = "MeridianCatalog___hybrid_trip_search"
+LOYALTY = "MeridianHolds___loyalty_balance"
 BINDING = "meridian_traveler_binding"
 
 
@@ -197,3 +200,38 @@ def test_read_tools_are_unaffected_by_the_binding():
     }
     statements = "\n".join(policies("jwt").values())
     assert cedarpy.is_authorized(request, statements, entities).decision == ALLOW
+
+
+def _named(statement):
+    return {part.split('"')[1] for part in statement.split("AgentCore::Action::")[1:]}
+
+
+def test_the_read_permit_names_every_catalog_tool_the_details_tool_and_the_loyalty_read():
+    assert _named(policies("jwt")["meridian_read_tools"]) == (
+        {f"MeridianCatalog___{name}" for name in CATALOG_TOOLS}
+        | {"MeridianHolds___get_package_details", LOYALTY})
+
+
+def test_the_binding_covers_loyalty_balance_with_the_hold_and_the_booking():
+    assert _named(policies("jwt")[BINDING]) == {LOYALTY, HOLD, BOOKING}
+
+
+def test_the_loyalty_read_is_allowed_only_for_the_traveler_whose_token_it_is():
+    statements = policies("jwt")
+    assert decide(statements, tool=LOYALTY, arg="trv_demo_decoy") == ALLOW
+    assert decide(statements, tool=LOYALTY, arg="trv_meridian_demo") == DENY
+
+
+@pytest.mark.parametrize(("tag", "arg"), [(None, "trv_demo_decoy"), ("trv_demo_decoy", None)])
+def test_a_loyalty_read_without_a_claim_or_without_the_argument_is_denied(tag, arg):
+    assert decide(policies("jwt"), tool=LOYALTY, tag=tag, arg=arg) == DENY
+
+
+def test_without_the_binding_rule_a_decoy_could_read_jordans_balance():
+    statements = {k: v for k, v in policies("jwt").items() if k != BINDING}
+    assert decide(statements, tool=LOYALTY, arg="trv_meridian_demo") == ALLOW
+
+
+def test_the_retired_search_target_is_named_nowhere():
+    for mode in (None, "iam", "jwt"):
+        assert "SemanticTripSearchLambda" not in json.dumps(rendered(mode))

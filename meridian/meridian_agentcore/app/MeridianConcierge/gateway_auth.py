@@ -9,6 +9,8 @@ request carries the signed-in caller's access token, exactly as this runtime rec
 
 from __future__ import annotations
 
+import json
+
 import httpx
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
@@ -50,6 +52,64 @@ class GatewaySigV4(httpx.Auth):
         yield request
 
 
+GATEWAY_REJECTIONS = (401, 403)
+
+
+def is_tool_call(request: httpx.Request) -> bool:
+    """Whether ``request`` is the MCP ``POST`` that calls a tool.
+
+    The listening ``GET`` stream, the session ``DELETE`` and the other JSON-RPC posts
+    (``initialize``, ``tools/list``, notifications) go through the same auth, and a status
+    on them does not say that a tool call was rejected.
+    """
+    if request.method != "POST":
+        return False
+    try:
+        body = json.loads(request.content)
+    except (ValueError, httpx.RequestNotRead):
+        return False
+    return isinstance(body, dict) and body.get("method") == "tools/call"
+
+
+class RecordingAuth(httpx.Auth):
+    """Wrap the Gateway's auth and remember each 401 or 403 the Gateway answers a tool call with.
+
+    The MCP client turns an HTTP rejection into "Connection to the MCP server was closed", the
+    same text a dropped connection gets, so the status is the only thing that tells an expired
+    token or a denied ``InvokeGateway`` from a network failure. ``httpx.Auth`` sees every
+    response in both modes: ``inner`` is the SigV4 signer in ``iam`` mode and None in ``jwt``
+    mode, where the bearer token travels as a header. Only a ``tools/call`` post is recorded
+    (``is_tool_call``), so the body is always read. One instance serves one turn and one
+    Gateway client, so every status it holds came from the Gateway.
+    """
+
+    requires_request_body = True
+
+    def __init__(self, inner: httpx.Auth | None = None) -> None:
+        self.inner = inner
+        self.rejections: list[int] = []
+        self.requires_response_body = bool(inner and inner.requires_response_body)
+
+    @property
+    def rejected(self) -> bool:
+        """Whether the Gateway rejected any tool call of this turn with a 401 or a 403."""
+        return bool(self.rejections)
+
+    def auth_flow(self, request: httpx.Request):
+        flow = self.inner.auth_flow(request) if self.inner else None
+        request = next(flow) if flow else request
+        while True:
+            response = yield request
+            if response.status_code in GATEWAY_REJECTIONS and is_tool_call(response.request):
+                self.rejections.append(response.status_code)
+            if flow is None:
+                return
+            try:
+                request = flow.send(response)
+            except StopIteration:
+                return
+
+
 def gateway_client_arguments(mode: str, session, region: str, token: str | None) -> dict:
     """The authentication arguments for ``MCPClient`` in the given mode.
 
@@ -61,6 +121,17 @@ def gateway_client_arguments(mode: str, session, region: str, token: str | None)
     if not token:
         raise ValueError("jwt mode needs the caller's access token to call the gateway.")
     return {"headers": {"Authorization": f"Bearer {token}"}}
+
+
+def recording_arguments(arguments: dict) -> tuple[dict, RecordingAuth]:
+    """``arguments`` for ``MCPClient`` with its auth wrapped to record Gateway rejections.
+
+    Returns:
+        The new arguments (``auth_provider`` is always set) and the recorder, which the stop
+        hook reads.
+    """
+    recorder = RecordingAuth(arguments.get("auth_provider"))
+    return {**arguments, "auth_provider": recorder}, recorder
 
 
 def gateway_url(environ) -> str:

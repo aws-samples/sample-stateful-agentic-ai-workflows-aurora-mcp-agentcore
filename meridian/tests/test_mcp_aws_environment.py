@@ -11,7 +11,7 @@ from backend.mcp import concierge_mcp_client, memory_mcp_client
 
 
 @pytest.mark.parametrize("factory", [
-    concierge_mcp_client._server_params, memory_mcp_client._server_params,
+    concierge_mcp_client.concierge_server_parameters, memory_mcp_client._server_params,
 ])
 @pytest.mark.parametrize("provider", [
     {"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/test-role"},
@@ -44,7 +44,7 @@ def test_child_sdk_uses_container_role(factory, provider, monkeypatch, tmp_path)
 
 
 @pytest.mark.parametrize("factory", [
-    concierge_mcp_client._server_params, memory_mcp_client._server_params,
+    concierge_mcp_client.concierge_server_parameters, memory_mcp_client._server_params,
 ])
 def test_child_keeps_file_based_provider_references(factory):
     provider = {"AWS_CONTAINER_CREDENTIALS_FULL_URI": "http://127.0.0.1/test-role",

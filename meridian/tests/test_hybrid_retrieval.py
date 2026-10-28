@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.agents.phase_03_retrieval.search_agent import SearchAgent
+from backend.agents.phase_03_retrieval.tools import local_tools
 from backend.agents.phase_05_workflow import memory_recall
 from backend.config import config
 from backend.db.embedding_service import EmbeddingUnavailable
@@ -279,18 +279,17 @@ async def test_the_phase_3_tool_runs_the_shared_module_and_forwards_its_spans(mo
     embeddings = FakeEmbeddings()
     monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: db)
     monkeypatch.setattr(hybrid, "get_embedding_service", lambda: embeddings)
-    agent = SearchAgent.__new__(SearchAgent)
     spans = []
-    agent.activity_callback = spans.append
+    (search,) = [tool for tool in local_tools(spans) if tool.tool_name == "hybrid_trip_search"]
 
-    result = await agent.hybrid_search("quiet villa under $2,000", limit=3)
+    result = await search("quiet villa under $2,000", limit=3)
 
     assert [p["package_id"] for p in result["packages"]] == ["A"]
-    assert result["query"] == "quiet villa under $2,000"
+    assert result["candidates"] == {"semantic": 1, "lexical": 0, "merged": 1}
+    assert result["reranked"] is True
     assert embeddings.input_types == ["search_query"]
     assert "Hybrid candidates fetched" in titles(spans)
     assert {span.agent_name for span in spans} == {RETRIEVAL_CODE}
-    assert not hasattr(agent, "db") and not hasattr(agent, "embedding_service")
 
 
 def test_phase_5_and_phase_3_call_the_same_function():
@@ -305,8 +304,6 @@ MERIDIAN = Path(__file__).resolve().parents[1]
 VECTOR_FUNCTION_READERS = {
     "backend/retrieval/hybrid.py",
     "meridian_agentcore/agentcore/gateway_targets/meridian_catalog/lambda_function.py",
-    # The retired target's Lambda reads it too until Task 14 deletes that folder and this line.
-    "meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/lambda_function.py",
 }
 
 

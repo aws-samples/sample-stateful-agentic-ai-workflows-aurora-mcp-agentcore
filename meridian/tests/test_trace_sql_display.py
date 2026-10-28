@@ -140,7 +140,7 @@ async def test_availability_span_binds_the_package_id(monkeypatch):
     _products, activities, _message = await availability.retrieval_availability_search(
         "Which trip lengths are still available?", package_id="AML-002")
 
-    span = next(a for a in activities if a.title == "PackageAgent: Checking duration inventory")
+    span = next(a for a in activities if a.title == "Availability: Checking duration inventory")
     assert span.sql_query == (
         "SELECT package_places_left(package_id) AS availability, durations "
         "FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'AML-002'")

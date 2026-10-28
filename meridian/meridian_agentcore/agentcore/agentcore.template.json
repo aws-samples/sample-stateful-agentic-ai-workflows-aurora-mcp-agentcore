@@ -154,14 +154,6 @@
       "description": "Gateway for meridian-aurora",
       "targets": [
         {
-          "name": "SemanticTripSearchLambda",
-          "targetType": "lambdaFunctionArn",
-          "lambdaFunctionArn": {
-            "lambdaArn": "arn:aws:lambda:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:function:meridian-semantic-trip-search",
-            "toolSchemaFile": "./agentcore/gateway_targets/semantic_trip_search/tool-schema.json"
-          }
-        },
-        {
           "name": "MeridianCatalog",
           "targetType": "lambdaFunctionArn",
           "lambdaFunctionArn": {
@@ -395,9 +387,9 @@
       "policies": [
         {
           "name": "meridian_read_tools",
-          "description": "Any authenticated caller may search packages and read package details.",
+          "description": "Any authenticated caller may search packages, read package details and read a loyalty balance. In jwt mode the traveler binding below limits the loyalty read to the caller's own traveler.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "permit(principal, action in [AgentCore::Action::\"SemanticTripSearchLambda___semantic_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\");"
+          "statement": "permit(principal, action in [AgentCore::Action::\"MeridianCatalog___search_trips\", AgentCore::Action::\"MeridianCatalog___compare_packages\", AgentCore::Action::\"MeridianCatalog___price_range\", AgentCore::Action::\"MeridianCatalog___region_inventory\", AgentCore::Action::\"MeridianCatalog___currency_convert\", AgentCore::Action::\"MeridianCatalog___hybrid_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\", AgentCore::Action::\"MeridianHolds___loyalty_balance\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\");"
         },
         {
           "name": "meridian_hold_governance",
@@ -413,9 +405,9 @@
         },
         {
           "name": "meridian_traveler_binding",
-          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold or a booking runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
+          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold, a booking or a loyalty read runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
+          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___loyalty_balance\", AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
         }
       ]
     }

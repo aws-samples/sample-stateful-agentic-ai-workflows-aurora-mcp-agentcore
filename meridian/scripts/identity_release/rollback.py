@@ -9,8 +9,9 @@ Nothing is changed without ``--apply`` and the confirmation flag. The hops are r
 reverse of the release order (site, service, roles stack, Gateway, Runtimes, Cedar rules,
 Lambdas); after each write the hop is read back until it matches the snapshot, a bounded number
 of times. A failed hop is reported and the steps that do not depend on it still run; a step that
-needs a failed one (the Runtimes need the Gateway, the Lambdas need the secret parameter) is
-skipped and says so.
+needs a failed one (the Runtimes need the Gateway, the holds Lambda needs the secret parameter)
+is skipped and says so. The catalog Lambda needs neither, and is restored only when the snapshot
+saved it on the meridian_catalog login.
 The exit code is then 1. The roles stack, the Cedar rules and the distribution's behaviors cannot
 be restored through their APIs without deleting or bypassing CloudFormation, so they are checked
 and the commands to run from a checkout of the snapshot's commit are printed (exit 1 until they
@@ -248,7 +249,7 @@ def _open_session(deps: Any, env: Mapping[str, Any], region: str) -> Any:
 
 
 def _choose(deps: Any, env: Mapping[str, Any], account: str,
-            region: str) -> tuple[Path, list[str], Any]:
+            region: str) -> tuple[Path, list[tuple[str, str]], Any]:
     """The newest complete snapshot of the release that is not live; the session it needed.
 
     The local checks come first, so a missing or foreign snapshot builds no client.
@@ -256,7 +257,7 @@ def _choose(deps: Any, env: Mapping[str, Any], account: str,
     loaded, broken = snapshot.complete_snapshots(deps.release_dir)
     if not loaded:
         if broken:
-            snapshot.load(deps.release_dir / broken[0])
+            snapshot.load(deps.release_dir / broken[0][0])
         raise settings.ReleaseConfigError(
             "no complete snapshot to roll back from; run `python scripts/release_identity.py "
             "snapshot --service-arn <arn>` before the window")
@@ -272,7 +273,7 @@ def _choose(deps: Any, env: Mapping[str, Any], account: str,
             f"every complete snapshot is of the {live} release, which is the one live; a "
             "rollback does not choose that on its own. Name the snapshot you mean with "
             "--snapshot FILE")
-    return chosen, [name for name in broken if name > chosen.name], session
+    return chosen, [item for item in broken if item[0] > chosen.name], session
 
 
 def _record(directory: Path, name: str, results: list[Result], code: int | None,
@@ -307,15 +308,15 @@ def previous_pending(directory: Path, name: str) -> tuple[set[str], str | None]:
     return {item for item in pending if isinstance(item, str)}, None
 
 
-def announce(path: Path, saved: Mapping[str, Any], skipped: list[str],
+def announce(path: Path, saved: Mapping[str, Any], skipped: list[tuple[str, str]],
              say: Callable[[str], None]) -> None:
     """Say which snapshot is used; loudly when a newer file had to be skipped."""
     commit = restore_hops.printable_commit(str(saved["commit"]))
     if skipped:
         say(f"USING AN OLDER SNAPSHOT: {path.name} (taken {saved['takenAt']}, commit {commit}); "
             "newer files were not usable:")
-        for name in skipped:
-            say(f"  skipped {name}: it is newer but not a complete, intact snapshot")
+        for name, reason in skipped:
+            say(f"  skipped {name}: it is newer but cannot be used: {reason}")
     say(f"Rolling back from {path.name} (taken {saved['takenAt']}, commit {commit}, "
         f"mode {saved['mode']}).")
 

@@ -13,6 +13,7 @@ from backend.retrieval import hybrid
 from backend.search_utils import PACKAGE_COLUMNS, numbered_sql, results_to_packages
 
 MAX_LIMIT = 20
+MAX_QUERY_CHARS = 500
 TEXT_COLUMNS = ("name", "description", "operator", "destination", "trip_type")
 
 
@@ -88,6 +89,15 @@ ARGUMENT_BOUNDS: Dict[tuple, tuple] = {
     ("search_trips", "limit"): (1, MAX_LIMIT),
     ("hybrid_trip_search", "limit"): (1, MAX_LIMIT),
 }
+# Longest text the schema declares for a string argument; the code refuses anything longer.
+ARGUMENT_MAX_LENGTHS: Dict[tuple, int] = {
+    ("hybrid_trip_search", "query"): MAX_QUERY_CHARS,
+}
+
+
+def _refusal(message: str) -> Dict[str, Any]:
+    """The answer for unusable arguments, as the MeridianCatalog Lambda gives it."""
+    return {"error": message}
 
 # Static FX table: the point of the tool is its shape, not the rate accuracy.
 FX_PER_USD: Dict[str, float] = {
@@ -156,6 +166,9 @@ async def price_range(destination: str) -> Dict[str, Any]:
         FROM trip_packages
         WHERE destination ILIKE %s OR region ILIKE %s
     """
+    destination = (destination or "").strip()
+    if not destination:
+        return _refusal("destination is required")
     pattern = f"%{destination}%"
     row = await get_rds_data_client().execute_one(sql, (pattern, pattern))
     if not row or not row.get("sample_size"):
@@ -181,6 +194,9 @@ async def region_inventory(region: str, trip_type: Optional[str] = None) -> Dict
         region: region name (e.g. 'Europe', 'Asia', 'South America').
         trip_type: optional category filter ('City Breaks', 'Wellness & Luxury' ...).
     """
+    region = (region or "").strip()
+    if not region:
+        return _refusal("region is required")
     sql = """
         SELECT package_id, name, trip_type, package_places_left(package_id) AS availability
         FROM trip_packages
@@ -235,15 +251,29 @@ async def currency_convert(amount: float, from_ccy: str, to_ccy: str) -> Dict[st
     }
 
 
+def _query_refusal(query: Any) -> Optional[Dict[str, Any]]:
+    """The refusal for a blank or over-long query, or None; the length is that of the raw text."""
+    if not isinstance(query, str) or not query.strip():
+        return _refusal("query is required")
+    if len(query) > MAX_QUERY_CHARS:
+        return _refusal(f"query is longer than {MAX_QUERY_CHARS} characters")
+    return None
+
+
 async def hybrid_trip_search_with_spans(
     query: str, limit: int = 5
 ) -> tuple[Dict[str, Any], List[ActivityEntry]]:
     """Run hybrid search once and return the tool result with the spans that describe it.
 
-    The counts come from ``hybrid.retrieval_rows`` itself (Reconciliation 1), never from span
-    text, and each package is ``hybrid.package_payload``'s shape.
+    A blank query or one over ``MAX_QUERY_CHARS`` is refused with ``{"error": <message>}`` and
+    no spans, as the MeridianCatalog Lambda refuses it. The counts come from
+    ``hybrid.retrieval_rows`` itself (Reconciliation 1), never from span text, and each package
+    is ``hybrid.package_payload``'s shape.
     """
-    rows, spans, counts = await hybrid.retrieval_rows(query, _bounded(limit))
+    refusal = _query_refusal(query)
+    if refusal:
+        return refusal, []
+    rows, spans, counts = await hybrid.retrieval_rows(query.strip(), _bounded(limit))
     result = {
         "packages": [hybrid.package_payload(row) for row in rows],
         "candidates": {key: counts[key] for key in ("semantic", "lexical", "merged")},
@@ -258,7 +288,7 @@ async def hybrid_trip_search(query: str, limit: int = 5) -> Dict[str, Any]:
     Args:
         query: natural-language trip request. Name the destination and the qualities
             wanted. A price ceiling in the query ("under $2,500") is applied, and
-            sold-out packages are left out.
+            sold-out packages are left out. At most 500 characters.
         limit: maximum packages to return, 1 to 20.
 
     Embeds the query with Cohere Embed v4, takes pgvector and full-text candidates

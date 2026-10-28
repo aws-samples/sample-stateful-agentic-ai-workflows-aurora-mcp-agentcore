@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
-from tool_errors import ToolSetupError, is_setup_error, setup_error_message
+from tool_errors import ToolSetupError, is_setup_error, mask_account_ids, setup_error_message
 
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 BOOKING_TOOL = "MeridianHolds___confirm_booking"
@@ -66,7 +66,8 @@ def _platform_call(hooks, call_tool, tool_name: str, arguments: dict, prefix: st
     try:
         event.result = call_tool(event.tool_use["toolUseId"], tool_name, event.tool_use["input"])
     except Exception as error:
-        event.result = {"status": "error", "content": [{"text": f"Error: {error}"}]}
+        masked = mask_account_ids(str(error))
+        event.result = {"status": "error", "content": [{"text": f"Error: {masked}"}]}
         hooks.after(event)
         if is_setup_error(error):
             raise ToolSetupError(setup_error_message(tool_name, error)) from error

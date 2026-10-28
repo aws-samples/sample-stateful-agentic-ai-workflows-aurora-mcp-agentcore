@@ -26,7 +26,7 @@ from backend.mcp.subprocess_env import aws_subprocess_env
 logger = logging.getLogger(__name__)
 
 
-def _server_params() -> StdioServerParameters:
+def concierge_server_parameters() -> StdioServerParameters:
     """Launch the concierge server in-process via `python -m`."""
     env = {
         **aws_subprocess_env(),
@@ -56,7 +56,7 @@ class MeridianConciergeMCPClient:
     async def connect(self) -> None:
         if self._connected:
             return
-        params = _server_params()
+        params = concierge_server_parameters()
         self._exit_stack = AsyncExitStack()
         try:
             read, write = await self._exit_stack.enter_async_context(stdio_client(params))

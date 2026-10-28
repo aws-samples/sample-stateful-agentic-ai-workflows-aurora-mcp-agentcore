@@ -122,14 +122,14 @@ def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntr
     """Close the span trail for a package that no query matched."""
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent: Package not found",
+        title="Availability: Package not found",
         agent_name=AVAILABILITY_CODE,
-        agent_file="agents/phase_03_retrieval/package_agent.py"
+        agent_file="retrieval/availability.py"
     ))
 
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent: availability check complete",
+        title="Availability: check complete",
         details="No matching package found",
         agent_name=AVAILABILITY_CODE,
         agent_file="retrieval/availability.py"
@@ -156,7 +156,7 @@ def _availability_reply(
 
     activities.append(create_activity(
         activity_type="availability",
-        title="PackageAgent: Checking duration inventory",
+        title="Availability: Checking duration inventory",
         details=f"Package: {product['name']}",
         sql_query=display_sql(
             "SELECT package_places_left(package_id) AS availability, durations "
@@ -164,7 +164,7 @@ def _availability_reply(
             (product["package_id"],),
         ),
         agent_name=AVAILABILITY_CODE,
-        agent_file="agents/phase_03_retrieval/package_agent.py"
+        agent_file="retrieval/availability.py"
     ))
 
     # Calculate total stock
@@ -179,15 +179,15 @@ def _availability_reply(
     # Totalled in memory from the row read above; there is no call to time.
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent: Duration inventory verified",
+        title="Availability: Duration inventory verified",
         details=f"Total: {total_stock} places left across durations",
         agent_name=AVAILABILITY_CODE,
-        agent_file="agents/phase_03_retrieval/package_agent.py"
+        agent_file="retrieval/availability.py"
     ))
 
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent: availability check complete",
+        title="Availability: check complete",
         details=f"Availability check complete for {product['name']}",
         agent_name=AVAILABILITY_CODE,
         agent_file="retrieval/availability.py"
@@ -262,7 +262,7 @@ async def retrieval_availability_search(
 
     activities.append(create_activity(
         activity_type="search",
-        title="PackageAgent: Finding package",
+        title="Availability: Finding package",
         details=(
             f"Loading ranked package {package_id}"
             if package_id
@@ -270,7 +270,7 @@ async def retrieval_availability_search(
         ),
         execution_time_ms=search_time,
         agent_name=AVAILABILITY_CODE,
-        agent_file="agents/phase_03_retrieval/package_agent.py"
+        agent_file="retrieval/availability.py"
     ))
 
     if not results:

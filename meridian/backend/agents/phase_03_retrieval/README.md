@@ -8,9 +8,10 @@ Find candidates by meaning and keywords.
 
 | Source | Role |
 | --- | --- |
-| [`supervisor.py`](supervisor.py) | The running Strands supervisor delegates to read-only specialists. |
-| [`search_agent.py`](search_agent.py): `hybrid_search` | Calls the one hybrid search, [`retrieval/hybrid.py`](../../retrieval/hybrid.py): vector and full-text candidates, a price and places-left gate, and reranking. |
-| [`package_agent.py`](package_agent.py), [`booking_agent.py`](booking_agent.py) | Availability and price estimates. Despite its historical class name, BookingAgent does not create bookings. |
+| [`agent.py`](agent.py): `run_retrieval_turn` | One Strands agent loop over the cumulative tools. The agent's own reply is the visible reply. |
+| [`tools.py`](tools.py) | The two tools that run in process: `hybrid_trip_search`, which calls the one hybrid search in [`retrieval/hybrid.py`](../../retrieval/hybrid.py) (vector and full-text candidates, a price and places-left gate, and reranking), and `get_package_details`. |
+| [`mcp_session.py`](mcp_session.py) | The `meridian-concierge` stdio MCP client that serves the other Phase 2 tools. |
+| [`hooks.py`](hooks.py) | The trace spans and the packages a turn observed. |
 
 ## Live checkpoint
 

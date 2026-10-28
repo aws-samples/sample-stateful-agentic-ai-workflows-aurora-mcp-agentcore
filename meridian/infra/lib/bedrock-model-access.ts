@@ -5,10 +5,9 @@ import { Stack, Token, aws_iam as iam } from 'aws-cdk-lib';
  *
  * Inventory (each id is read from the App Runner environment, with the code's default):
  * - Chat, `BEDROCK_MODEL_ID` (default `global.anthropic.claude-sonnet-5-5`): ConverseStream from
- *   the Strands agents (`backend/bedrock_model.py`) and Converse from the reply polish
- *   (`backend/llm_polish.py`). Reached only through its global inference profile, with the
- *   three statements AWS documents under "IAM policy requirements for global cross-Region
- *   inference". Converse needs `bedrock:InvokeModel` and ConverseStream needs
+ *   the Strands agents (`backend/bedrock_model.py`). Reached only through its global inference
+ *   profile, with the three statements AWS documents under "IAM policy requirements for
+ *   global cross-Region inference". Converse needs `bedrock:InvokeModel` and ConverseStream needs
  *   `bedrock:InvokeModelWithResponseStream`.
  * - Embeddings, `EMBEDDING_MODEL` (default `cohere.embed-v4:0`), and rerank, `RERANK_MODEL`
  *   (default `cohere.rerank-v3-5:0`): InvokeModel in `backend/db/embedding_service.py`, by the

@@ -319,3 +319,14 @@ class TestWriteAudit:
             _run(s.write_audit(**{**self.AUDIT, "authorization_decision": decision},
                                tool_calls=calls))
         assert db.calls == []
+
+
+def test_recall_with_an_unavailable_embedding_model_returns_nothing_and_reads_nothing(store):
+    """A fast EmbeddingUnavailable skips semantic recall: no crash, no query, no vector."""
+    from backend.db.embedding_service import EmbeddingUnavailable
+
+    s, db = store
+    s.embeddings.generate_text_embedding.side_effect = EmbeddingUnavailable("no answer")
+
+    assert _run(s.recall_similar_interactions("traveler-1", "beach trips")) == []
+    assert db.calls == []

@@ -80,7 +80,7 @@ export function deriveRecoveryEvidence(
     searchObserved:
       recommendationCount > 0 ||
       texts.some((text) =>
-        /workflow node: search|semantic_trip_search|hybrid retrieval|catalog search|searchagent/.test(
+        /workflow node: search|semantic_trip_search|hybrid_trip_search|search_trips|hybrid retrieval|catalog search|searchagent/.test(
           text,
         ),
       ),

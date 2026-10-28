@@ -85,6 +85,15 @@ def test_hybrid_trip_search_schema_is_asserted_directly():
     assert schema["additionalProperties"] is False
 
 
+def test_the_query_cap_is_published_as_max_length():
+    tools = {t["name"]: t["inputSchema"]["properties"] for t in catalog_schema()}
+    assert tools["hybrid_trip_search"]["query"]["maxLength"] == catalog_tools.MAX_QUERY_CHARS
+    assert [
+        (name, argument) for name, properties in tools.items()
+        for argument, prop in properties.items() if "maxLength" in prop
+    ] == [("hybrid_trip_search", "query")]
+
+
 def test_a_required_argument_is_required_and_a_default_one_is_not():
     schema = {t["name"]: t for t in catalog_schema()}
     assert schema["hybrid_trip_search"]["inputSchema"]["required"] == ["query"]
@@ -105,7 +114,7 @@ def test_descriptions_come_from_the_docstring_and_args_block():
 
 
 def test_no_property_uses_a_keyword_the_gateway_schema_does_not_accept():
-    allowed = {"type", "description", "items", "minimum", "maximum", "default"}
+    allowed = {"type", "description", "items", "minimum", "maximum", "maxLength", "default"}
     for tool in catalog_schema():
         assert set(tool["inputSchema"]) <= {"type", "properties", "required",
                                             "additionalProperties"}

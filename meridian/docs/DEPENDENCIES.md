@@ -4,6 +4,25 @@ Application Python dependencies are hash-locked in `requirements.txt`, generated
 from `requirements.in`. Node projects keep their own `package-lock.json`; there
 is no Node package at `meridian/` itself.
 
+`requirements-runtime-tests.txt` (hash-locked from `requirements-runtime-tests.in`, built with
+`-c requirements.txt`) holds one package, `bedrock-agentcore`, at the version the Concierge
+Runtime pins. It is for tests only: CI installs it after the main lock with `--no-deps` so the
+Runtime tests that use its Memory session manager run instead of skipping, and the production
+backend image never installs it. A test fails when its version differs from the Runtime's pin,
+and when it lists any package that `requirements.txt` also locks, because the second install would
+move that package off the main lock. After any change to `requirements.txt`, compile the file again
+with the command in its header and keep only the packages the main lock does not have (today, only
+`bedrock-agentcore`). Audit it together with the main lock,
+`python -m pip_audit -r requirements.txt -r requirements-runtime-tests.txt`: on its own, pip-audit's
+hash check rejects `bedrock-agentcore`'s unpinned dependencies, which the main lock pins.
+
+The version match covers the SDK only. The Runtime tests still run on the main lock's `mcp`
+1.30.0 and `botocore` 1.43.72, while the Runtime ships `mcp` 2.3.0 and `botocore` 1.43.107
+(`meridian_agentcore/app/MeridianConcierge/pyproject.toml`, whose `constraint-dependencies` pin the
+rest of its set; there is no lock file with hashes). They cannot run on the Runtime's own set yet:
+the Runtime test modules import the backend (`fastapi`, and `backend.mcp`, which uses the `mcp` 1.x
+`FastMCP` that `mcp` 2.x removed).
+
 ## Audit status - October 22, 2026
 
 - Frontend: `npm audit --audit-level=high` reports 0 vulnerabilities after moving `vite` 7.3.6 to 7.3.7 and `vitest` 4.1.11 to 4.1.12, which moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12. Lint, typecheck, unit tests, build and the accessibility suite pass.

@@ -24,8 +24,14 @@ sys.path.insert(0, str(RUNTIME))
 from turn_trace import SPANS, short  # noqa: E402
 
 GOVERNED = [
-    "SemanticTripSearchLambda___semantic_trip_search",
+    "MeridianCatalog___search_trips",
+    "MeridianCatalog___compare_packages",
+    "MeridianCatalog___price_range",
+    "MeridianCatalog___region_inventory",
+    "MeridianCatalog___currency_convert",
+    "MeridianCatalog___hybrid_trip_search",
     "MeridianHolds___get_package_details",
+    "MeridianHolds___loyalty_balance",
     "MeridianHolds___create_courtesy_hold",
     "MeridianHolds___confirm_booking",
 ]
@@ -43,6 +49,7 @@ def listed(names):
 def runtime(monkeypatch):
     module = load_runtime_main(monkeypatch, "meridian_runtime_tools")
     module.SESSION = FakeSession(FakeClock())
+    module.memory_session = lambda: module.SESSION
     module.built = []
 
     class Gateway:
@@ -58,15 +65,16 @@ def runtime(monkeypatch):
         def list_tools_sync(self):
             return listed(LISTED)
 
-    class Agent:
-        def __init__(self, **kwargs):
-            module.built.append(kwargs)
-
+    class FakeAgent:
         async def stream_async(self, _prompt):
             yield {"data": "Two trips fit."}
 
+    def build_agent(**kwargs):
+        module.built.append(kwargs)
+        return FakeAgent()
+
     module.MCPClient = Gateway
-    module.Agent = Agent
+    module.build_agent = build_agent
     module.memory_manager = lambda *_args: None
     module.concierge_model = lambda: None
     return module

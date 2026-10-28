@@ -254,7 +254,7 @@ describe('TracePanel collapse behavior', () => {
       traceSpans: [
         span('s1', 'security', 'Workload traveler grant allowed'),
         span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),
-        span('s3', 'gateway', 'AgentCore Gateway · tools/call → semantic_trip_search'),
+        span('s3', 'gateway', 'AgentCore Gateway · tools/call → hybrid_trip_search'),
         span('s4', 'runtime', 'AgentCore Runtime · turn complete'),
         span('s5', 'synthesis', 'Memory-grounded reply ready'),
       ],
@@ -532,35 +532,32 @@ describe('TracePanel collapse behavior', () => {
     expect(eventMeta('Details call answered')).toHaveTextContent(/^tool, Failed, 180 ms$/);
     expect(screen.getByText('Details call answered').closest('details')).toHaveClass('is-failed');
   });
-  it('groups every Phase 3 event once, with searches and reranking under their actual responsibilities', () => {
+  it('groups every Phase 3 event once, with the agent, its tool calls and its reranking under their actual responsibilities', () => {
     const events = [
-      ['Processing with Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor', 'model', 'RetrievalAgent'],
-      ['RetrievalAgent invoked (Strands + Bedrock)', 'model', 'RetrievalAgent'],
-      ['Supervisor processing search request', 'orchestration', 'RetrievalAgent'],
-      ['Delegating to Search Agent', 'orchestration', 'RetrievalAgent'],
-      ['Generating text embedding', 'data', 'SearchAgent'],
-      ['Text embedding generated', 'data', 'SearchAgent'],
-      ["Semantic search: 'quiet romantic wine-country retreat with private villa'", 'orchestration', 'SearchAgent'],
-      ['Catalog card details hydrated', 'orchestration', 'SearchAgent'],
-      ['Lexical candidates merged', 'orchestration', 'SearchAgent'],
-      ['Cohere rerank applied', 'model', 'SearchAgent'],
-      ['Search Agent completed', 'orchestration', 'RetrievalAgent'],
-      ['Supervisor completed coordination', 'orchestration', 'RetrievalAgent'],
-      ['Supervisor returned 5 trips', 'synthesis', 'RetrievalAgent'],
-      ['Bedrock · concierge polish (global.anthropic.claude-sonnet-5)', 'model', 'RetrievalAgent'],
+      ['Processing with One Strands agent over the cumulative tools', 'model', 'RetrievalAgent'],
+      ['Retrieval agent: turn started', 'model', 'RetrievalAgent'],
+      ['Tool call: hybrid_trip_search', 'tool', 'RetrievalAgent'],
+      ['Generating query embedding', 'data', 'Hybrid retrieval (code)'],
+      ['Embedding generated', 'data', 'Hybrid retrieval (code)'],
+      ['Hybrid candidates fetched', 'data', 'Hybrid retrieval (code)'],
+      ['Cohere rerank applied', 'model', 'Hybrid retrieval (code)'],
+      ['Tool result: hybrid_trip_search', 'tool', 'RetrievalAgent'],
+      ['Tool call: get_package_details', 'tool', 'RetrievalAgent'],
+      ['Tool result: get_package_details', 'tool', 'RetrievalAgent'],
+      ['Retrieval agent: reply written', 'model', 'RetrievalAgent'],
     ];
     const { container } = render(<TracePanel state={makeState({ selectedPhase: 3, traceSpans: events.map(([name, category, agent], index) => ({
       ...traceSpan, id: `retrieval-${index}`, name, category, agent, sql: undefined, latencyMs: null,
     })) })} />);
-    expect(container.querySelectorAll('.mds-activity-event')).toHaveLength(14);
+    expect(container.querySelectorAll('.mds-activity-event')).toHaveLength(11);
     expect(container.querySelectorAll('.mds-span-list')).toHaveLength(0);
     expect(container.querySelectorAll('.mds-activity-group[open]')).toHaveLength(0);
     const search = screen.getByText('Querying live travel data').closest('li')!;
     expect(search).toHaveTextContent('Aurora');
     expect(search).toHaveTextContent('Bedrock');
-    for (const index of [4, 5, 6, 7, 8, 10]) expect(within(search).getByText(events[index][0])).toBeInTheDocument();
+    for (const index of [2, 3, 4, 5, 7, 8, 9]) expect(within(search).getByText(events[index][0])).toBeInTheDocument();
     expect(within(screen.getByText('Evaluating options').closest('li')!).getByText('Cohere rerank applied')).toBeInTheDocument();
-    expect(within(screen.getByText('Preparing response').closest('li')!).getByText(events[13][0])).toBeInTheDocument();
+    expect(within(screen.getByText('Preparing response').closest('li')!).getByText(events[10][0])).toBeInTheDocument();
     expect(screen.queryByText(/timing not recorded/)).not.toBeInTheDocument();
   });
 

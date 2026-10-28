@@ -82,6 +82,13 @@ def test_phase_four_adds_the_governed_write_rules():
     assert definition.PROMPT_CORE in text and definition.PROMPT_CORE in definition.system_prompt(3)
 
 
+@pytest.mark.parametrize("phase", [3, 4])
+def test_a_refusal_answer_is_final_in_both_prompts(phase):
+    text = " ".join(definition.system_prompt(phase).split())
+    assert "traveler_not_authorized" in text and '"final": true' in text
+    assert "do not call that tool again in this turn" in text
+
+
 def test_an_unknown_phase_is_refused_with_the_valid_ones():
     with pytest.raises(ValueError, match="phase 5.*3 or 4"):
         definition.system_prompt(5)

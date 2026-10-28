@@ -2,7 +2,7 @@
 
 The resource types, construct paths and logical ids below are the ones in the template the
 AgentCore CDK app synthesizes for the ``iam`` Gateway (``Mcp/GatewayMeridianAurora`` with the
-semantic target, the holds Lambda and its role, and the ``Application`` constructs for the Cedar
+catalog target, the holds Lambda and its role, and the ``Application`` constructs for the Cedar
 engine, its three rules and the Runtimes). The ``jwt`` ids are the same shape with the ``Jwt``
 construct id; their hashes are invented. No live ``agentcore deploy --diff`` has been seen: the
 line layout (``[+] type path logical-id`` and indented ``[~]`` property lines) is the CDK text
@@ -21,7 +21,7 @@ JWT_GATEWAY = ("Mcp/GatewayMeridianAuroraJwt", "McpGatewayMeridianAuroraJwt")
 ENGINE = ("Application/PolicyEngineMeridianGovernance", "ApplicationPolicyEngineMeridianGovernance")
 RULES = ("meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance")
 
-SEMANTIC_PARTS = [("AWS::BedrockAgentCore::GatewayTarget", "TargetSemanticTripSearchLambda")]
+CATALOG_PARTS = [("AWS::BedrockAgentCore::GatewayTarget", "TargetMeridianCatalog")]
 HOLDS_PARTS = [
     ("AWS::IAM::Role", "LambdaMeridianHolds/Role"),
     ("AWS::IAM::Policy", "LambdaMeridianHolds/Policy"),
@@ -74,9 +74,9 @@ def plan(*blocks: str) -> str:
 def first_stage(new: tuple[str, str] = JWT_GATEWAY, old: tuple[str, str] | None = IAM_GATEWAY,
                 ) -> str:
     """The plan of the first stage: the new Gateway, and the old one's constructs removed."""
-    blocks = construct_lines("+", new, *GATEWAY_PARTS, *SEMANTIC_PARTS) + [CONCIERGE]
+    blocks = construct_lines("+", new, *GATEWAY_PARTS, *CATALOG_PARTS) + [CONCIERGE]
     if old is not None:
-        blocks += construct_lines("-", old, *GATEWAY_PARTS, *SEMANTIC_PARTS, *HOLDS_PARTS)
+        blocks += construct_lines("-", old, *GATEWAY_PARTS, *CATALOG_PARTS, *HOLDS_PARTS)
         blocks += engine_lines("-")
     return plan(*blocks)
 

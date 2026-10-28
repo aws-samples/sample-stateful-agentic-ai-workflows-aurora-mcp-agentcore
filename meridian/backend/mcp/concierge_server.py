@@ -38,11 +38,18 @@ from mcp.server.fastmcp import FastMCP
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
+from backend.security.redaction import install_masking, install_record_factory
+
+install_record_factory()
 from backend.tools import catalog_tools
 
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("meridian-concierge")
+
+REFUSAL_MESSAGE = (
+    "This traveler is not authorized for this request. Asking again will not change the answer."
+)
 
 # The shared functions are registered as they are, so the schema FastMCP derives and the
 # schema the Gateway target publishes come from one signature.
@@ -130,16 +137,24 @@ async def loyalty_balance(travelerId: str, program: str) -> Dict[str, Any]:
             "traveler_id": travelerId,
             "program": program,
             "error": "traveler_not_authorized",
+            "final": True,
+            "message": REFUSAL_MESSAGE,
             "reason": str(exc),
             "source": "traveler_identity_bindings",
         }
     return loyalty_from_programs(travelerId, program, (row or {}).get("loyalty_programs"))
 
 
-if __name__ == "__main__":
+def configure_logging() -> None:
+    """Configure the root logger and mask every record each of its handlers writes."""
     logging.basicConfig(
         level=os.getenv("MCP_CONCIERGE_LOG_LEVEL", "WARNING"),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+    install_masking()
+
+
+if __name__ == "__main__":
+    configure_logging()
     logger.info("starting meridian-concierge MCP server (stdio)")
     mcp.run()

@@ -1,9 +1,9 @@
 """A tool that could not be set up ends the turn with that error; ordinary failures do not.
 
 Every test runs a real Strands ``Agent`` from the installed strands-agents with a scripted model,
-through the Phase 3 supervisor or the Concierge Runtime's own ``main.py``. A test that fired the
-hook through a ``HookRegistry`` alone could not see what the tool executor and the event loop do
-with it, so these tests pin the behavior of the installed version.
+through Phase 3's ``run_retrieval_turn`` or the Concierge Runtime's own ``main.py``. A test that
+fired the hook through a ``HookRegistry`` alone could not see what the tool executor and the
+event loop do with it, so these tests pin the behavior of the installed version.
 """
 
 import asyncio
@@ -28,17 +28,17 @@ from botocore.exceptions import (
     UnauthorizedSSOTokenError,
 )
 from strands import Agent, tool
-from strands.hooks import AfterToolCallEvent, HookProvider
 from strands.models import Model
 from strands.session.session_manager import SessionManager
 from strands.tools.executors import SequentialToolExecutor
 from strands.types.exceptions import MCPClientInitializationError, ToolProviderException
 
 from backend.agents import strands_hooks
-from backend.agents.phase_03_retrieval import supervisor
+from backend.agents.phase_03_retrieval import agent as phase3
 from backend.agents.phase_04_production import concierge as concierge_mod
 from backend.agents.strands_hooks import StopOnToolSetupError, ToolSetupError
 from backend.audit_vocabulary import ToolCall
+from backend.tools import catalog_tools
 from tests.runtime_support import load_runtime_main
 from tests.test_audit_outcome import RUNTIME_PATHS, committed, decision_with, runtime_streams
 from tests.test_production_transaction_boundaries import build_agent
@@ -61,7 +61,6 @@ DECLINE = "I am sorry, I could not look that up right now."
 STOPPED_REPLY = ("I could not complete that request because a service it needs is unavailable. "
                  "Please try again later.")
 STOPPED = ("assistant", [{"text": STOPPED_REPLY}])
-SEARCH = "_delegate_to_search"
 DETAILS = "MeridianHolds___get_package_details"
 
 
@@ -142,19 +141,6 @@ def spoken(message):
     return message["role"], message["content"]
 
 
-class Recorder(HookProvider):
-    """A trace hook: the exception class of every tool call it sees, None for none."""
-
-    def __init__(self):
-        self.seen = []
-
-    def register_hooks(self, registry, **kwargs) -> None:
-        registry.add_callback(AfterToolCallEvent, self.after)
-
-    def after(self, event) -> None:
-        self.seen.append(type(event.exception).__name__ if event.exception else None)
-
-
 def outcome_of(outcome):
     """Raise ``outcome`` when it is an exception, otherwise return it as the tool's result."""
     if isinstance(outcome, Exception):
@@ -162,92 +148,97 @@ def outcome_of(outcome):
     return outcome
 
 
-# ------------------------------------------------------------- the Phase 3 supervisor
+# ------------------------------------------------------------- the Phase 3 agent
 
-class SearchSpecialist:
-    """The supervisor's search specialist; each search raises or returns its next outcome."""
-
-    def __init__(self, *outcomes):
-        self.outcomes = list(outcomes)
-
-    async def hybrid_search(self, _query, limit=10):
-        return outcome_of(self.outcomes.pop(0))
+HYBRID = "hybrid_trip_search"
+NO_TRIPS = {"packages": [], "candidates": {"semantic": 0, "lexical": 0, "merged": 0},
+            "reranked": False}
 
 
-def supervisor_with(monkeypatch, outcomes, *replies):
-    """The real supervisor on a scripted model, with a trace hook added after its own hooks."""
-    model = ScriptedModel(*replies)
-    monkeypatch.setattr(supervisor, "bedrock_model", lambda: model)
-    built = supervisor.RetrievalAgent(
-        search_agent=SearchSpecialist(*outcomes), package_agent=None, booking_agent=None)
-    recorder = Recorder()
-    built.agent.hooks.add_hook(recorder)
-    return built, model, recorder
+class NoMcpTools:
+    """Phase 3's MCP pool with no MCP tools: the turn runs only its two in-process tools."""
+
+    def __init__(self):
+        self.releases, self.resets = [], []
+
+    def acquire(self):
+        return 1, []
+
+    def release(self, generation):
+        self.releases.append(generation)
+
+    def reset(self, generation):
+        self.resets.append(generation)
 
 
-# Each supervisor method that runs its Agent.
-PROCESSES = {
-    "process_search": lambda built: built.process_search("Tokyo culture trips"),
-    "process_message": lambda built: built.process_message("Tokyo culture trips", "trv_hook_test"),
-}
+def phase3_with(monkeypatch, outcomes, *replies):
+    """A scripted model and a pool for Phase 3 turns whose hybrid search raises or returns
+    each of ``outcomes`` in turn."""
+    remaining = list(outcomes)
+
+    async def search(_query, limit=5):
+        return outcome_of(remaining.pop(0)), []
+
+    monkeypatch.setattr(catalog_tools, "hybrid_trip_search_with_spans", search)
+    return ScriptedModel(*replies), NoMcpTools()
 
 
-@pytest.mark.parametrize("process", PROCESSES.values(), ids=PROCESSES)
+def phase3_turn(model, pool):
+    return asyncio.run(phase3.run_retrieval_turn(
+        "Tokyo culture trips", traveler_id="trv_hook_test", model=model, pool=pool))
+
+
 @pytest.mark.parametrize("failure", SETUP_FAILURES.values(), ids=SETUP_FAILURES)
-def test_a_tool_that_could_not_be_set_up_ends_the_supervisor_turn(monkeypatch, failure, process):
+def test_a_tool_that_could_not_be_set_up_ends_the_phase_3_turn(monkeypatch, failure):
     error = failure()
-    built, model, recorder = supervisor_with(
-        monkeypatch, [error], calls(SEARCH, query="Tokyo culture trips"), says(DECLINE))
+    model, pool = phase3_with(
+        monkeypatch, [error], calls(HYBRID, query="Tokyo culture trips"), says(DECLINE))
 
-    with pytest.raises(ToolSetupError) as stopped:
-        asyncio.run(process(built))
+    with pytest.raises(phase3.RetrievalTurnError) as stopped:
+        phase3_turn(model, pool)
 
     assert model.calls == 1
-    assert recorder.seen == [type(error).__name__]
-    assert str(stopped.value) == (
-        f"Tool {SEARCH} could not run ({type(error).__name__}): {error}")
-    assert stopped.value.__cause__ is error
+    cause = stopped.value.__cause__
+    assert isinstance(cause, ToolSetupError) and cause.__cause__ is error
+    assert str(cause) == f"Tool {HYBRID} could not run ({type(error).__name__}): {error}"
+    assert pool.releases == [1] and pool.resets == [], "a local tool's error says nothing of MCP"
 
 
 @pytest.mark.parametrize("failure", ORDINARY_FAILURES.values(), ids=ORDINARY_FAILURES)
-def test_an_ordinary_tool_failure_still_reaches_the_supervisor_model(monkeypatch, failure):
-    built, model, recorder = supervisor_with(
-        monkeypatch, [failure()], calls(SEARCH, query="Tokyo"), says("No trip fits."))
+def test_an_ordinary_tool_failure_still_reaches_the_phase_3_model(monkeypatch, failure):
+    model, pool = phase3_with(
+        monkeypatch, [failure()], calls(HYBRID, query="Tokyo"), says("No trip fits."))
 
-    _packages, reply = asyncio.run(built.process_search("Tokyo culture trips"))
+    turn = phase3_turn(model, pool)
 
     assert model.calls == 2
-    assert len(recorder.seen) == 1
-    assert reply.strip() == "No trip fits."
+    assert turn.message == "No trip fits." and pool.resets == []
 
 
-def test_the_stopped_turn_raises_the_masked_error_and_keeps_a_fixed_reply(monkeypatch):
+def test_a_stopped_phase_3_turn_raises_the_masked_error_and_shows_no_reply(monkeypatch):
     failure = client_error(
         "AccessDeniedException", f"not authorized on arn:aws:iam::{ACCOUNT}:role/x", "Converse")
-    built, _model, _recorder = supervisor_with(monkeypatch, [failure], calls(SEARCH, query="x"))
+    model, pool = phase3_with(monkeypatch, [failure], calls(HYBRID, query="x"))
 
-    with pytest.raises(ToolSetupError) as stopped:
-        asyncio.run(built.process_search("Tokyo culture trips"))
+    with pytest.raises(phase3.RetrievalTurnError) as stopped:
+        phase3_turn(model, pool)
 
-    assert "<acct>" in str(stopped.value) and ACCOUNT not in str(stopped.value)
-    assert spoken(built.agent.messages[-1]) == STOPPED
+    cause = str(stopped.value.__cause__)
+    assert "<acct>" in cause and ACCOUNT not in cause
+    assert ACCOUNT not in str(stopped.value) and STOPPED_REPLY not in str(stopped.value)
 
 
-def test_the_next_turn_on_the_same_supervisor_is_answered_and_the_roles_alternate(monkeypatch):
-    found = {"packages": [{"package_id": "CTY-002"}]}
-    built, model, _recorder = supervisor_with(
-        monkeypatch, [NoCredentialsError(), found],
-        calls(SEARCH, query="Tokyo"), calls(SEARCH, query="Tokyo"), says("One trip fits."))
+def test_the_next_phase_3_turn_after_a_stopped_one_is_answered(monkeypatch):
+    model, pool = phase3_with(
+        monkeypatch, [NoCredentialsError(), NO_TRIPS],
+        calls(HYBRID, query="Tokyo"), calls(HYBRID, query="Tokyo"), says("No trip fits."))
 
-    with pytest.raises(ToolSetupError):
-        asyncio.run(built.process_search("Tokyo culture trips"))
-    packages, reply = asyncio.run(built.process_search("Tokyo culture trips"))
+    with pytest.raises(phase3.RetrievalTurnError):
+        phase3_turn(model, pool)
+    turn = phase3_turn(model, pool)
 
     assert model.calls == 3
-    assert packages == found["packages"] and reply.strip() == "One trip fits."
-    # The stopped turn ended on an assistant message, so the next prompt follows one.
-    assert [message["role"] for message in built.agent.messages] == [
-        "user", "assistant", "user", "assistant"] * 2
+    assert turn.message == "No trip fits." and pool.releases == [1, 1] and pool.resets == []
 
 
 # ------------------------------------------------------------- the Concierge Runtime
@@ -272,7 +263,7 @@ class Gateway:
     def list_tools_sync(self):
         return self.tools
 
-    def call_tool_sync(self, tool_use_id, name, arguments):
+    def call_tool_sync(self, tool_use_id, name, arguments, read_timeout_seconds=None):
         return self.call(tool_use_id, name, arguments)
 
 
@@ -329,6 +320,7 @@ def run_concierge(monkeypatch, model, gateway, payload=TURN, *, memory=None):
     """
     runtime = load_runtime_main(monkeypatch, "meridian_runtime_tool_setup")
     runtime.SESSION = FakeSession(FakeClock())
+    runtime.memory_session = lambda: runtime.SESSION
     runtime.memory_manager = lambda *_args: memory
     runtime.concierge_model = lambda: model
     runtime.MCPClient = lambda **_kwargs: gateway

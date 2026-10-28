@@ -17,7 +17,8 @@ Gateway. Each stage must add its own resources:
 ``targets``     a GatewayTarget and a Lambda function
 ``governance``  a PolicyEngine and a Policy
 ``complete``    a Runtime updated, or the catalog release: the MeridianCatalog target added or a
-                Cedar rule updated. The retired SemanticTripSearchLambda target may be removed
+                Cedar rule updated. The retired SemanticTripSearchLambda target may be removed,
+                but only in a plan that also updates the Concierge Runtime
 
 The first stage may remove only what belongs to the replaced Gateway (every resource whose path
 or logical id carries its construct id) and the Cedar engine with its rules, which the first stage
@@ -47,6 +48,7 @@ EXPECTED = {
     stages.COMPLETE: ("~", (RUNTIME_TYPE,)),
 }
 CATALOG_TARGET = "MeridianCatalog"
+CONCIERGE_RUNTIME = "AgentMeridianConcierge"
 # A target a release replaced. Its removal is the one removal a complete-stage plan may carry.
 RETIRED_TARGETS = ("SemanticTripSearchLambda",)
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -181,6 +183,15 @@ def _names_target(change: Change, name: str) -> bool:
         rf"/Target{re.escape(name)}(?![A-Za-z0-9])", change.rest) is not None
 
 
+def _concierge_updated(changes: list[Change]) -> bool:
+    """Whether the plan updates the Concierge Runtime, the one that calls the retired target."""
+    return any(
+        c.kind == "~" and c.type == RUNTIME_TYPE
+        and re.search(rf"/{CONCIERGE_RUNTIME}/Runtime(?:\s|$)", c.rest) is not None
+        for c in changes
+    )
+
+
 def _is_catalog_release(changes: list[Change]) -> bool:
     """A complete-stage plan that adds the catalog target or updates a Cedar rule."""
     return any(
@@ -219,17 +230,18 @@ def _removal_findings(changes: list[Change], stage: str, mode: str,
                       replacing: bool) -> list[str]:
     replaced = _other(mode)
     allowed = stage == stages.GATEWAY and replacing
-    runtime_updated = any(c.kind == "~" and c.type == RUNTIME_TYPE for c in changes)
+    concierge_updated = _concierge_updated(changes)
     found = []
     for c in changes:
         if c.kind != "-":
             continue
         if stage == stages.COMPLETE and _retired_target(c):
-            if not runtime_updated:
+            if not concierge_updated:
                 found.append(
-                    f"the plan removes the retired target ({c.rest}) without updating a Runtime; "
-                    "the deployed Runtime still calls it, so the same plan must update a Runtime "
-                    f"({RUNTIME_TYPE}): deploy the new Runtime with it")
+                    f"the plan removes the retired target ({c.rest}) without updating the "
+                    "Concierge Runtime; the deployed Concierge Runtime still calls it, so the "
+                    f"same plan must update it ({RUNTIME_TYPE} {CONCIERGE_RUNTIME}): deploy the "
+                    "new Concierge Runtime with it")
             continue
         if allowed and _belongs_to_replaced(c, replaced):
             continue

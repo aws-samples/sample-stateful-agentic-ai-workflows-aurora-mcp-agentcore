@@ -8,7 +8,7 @@ from backend.tools.tool_names import bare_tool_name
 
 @pytest.mark.parametrize(("reported", "bare"), [
     ("MeridianHolds___create_courtesy_hold", "create_courtesy_hold"),
-    ("SemanticTripSearchLambda___semantic_trip_search", "semantic_trip_search"),
+    ("MeridianCatalog___hybrid_trip_search", "hybrid_trip_search"),
     ("Meridian-Catalog___hybrid_trip_search", "hybrid_trip_search"),
     ("MeridianHolds____leading_underscore", "_leading_underscore"),
 ])
@@ -21,7 +21,7 @@ def test_only_the_first_separator_is_a_prefix():
 
 
 @pytest.mark.parametrize("name", [
-    "create_courtesy_hold", "semantic_trip_search", "", "___create_courtesy_hold",
+    "create_courtesy_hold", "hybrid_trip_search", "", "___create_courtesy_hold",
     "MeridianHolds___",
 ])
 def test_a_name_without_a_whole_prefix_is_unchanged(name):

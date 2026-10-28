@@ -94,7 +94,7 @@ describe('stepSourceLabel', () => {
 
   it('reads the Cedar decision the gateway reported', () => {
     expect(label({
-      name: 'semantic_trip_search: result', category: 'gateway',
+      name: 'hybrid_trip_search: result', category: 'gateway',
       component: 'Bedrock AgentCore Gateway', latencyMs: 1143,
       fields: [{ label: 'cedar_decision', value: 'allow' }],
     })).toBe(nb('AgentCore Gateway, Cedar allow, 1.1 s'));
@@ -109,7 +109,7 @@ describe('stepSourceLabel', () => {
       fields: [{ label: 'refused_by', value: 'identity_check' }],
     })).toBe(nb('AgentCore Gateway, identity check refused, 95 ms'));
     expect(label({
-      name: 'AgentCore Gateway: tools/call → semantic_trip_search', category: 'gateway',
+      name: 'AgentCore Gateway: tools/call → hybrid_trip_search', category: 'gateway',
       component: 'Bedrock AgentCore Gateway',
     })).toBe('AgentCore Gateway');
   });
@@ -168,9 +168,21 @@ describe('stepSourceLabel', () => {
     for (const name of [
       'Processing with Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor',
       'Search Agent completed',
+      'Availability: Duration inventory verified',
       'PackageAgent: Duration inventory verified',
     ]) {
       expect(label({ name, agent: 'RetrievalAgent' })).toBe('Meridian app');
+    }
+  });
+
+  it('credits Amazon Aurora for the availability queries, under both the live and saved titles', () => {
+    for (const name of [
+      'Availability: Finding package',
+      'Availability: Checking duration inventory',
+      'PackageAgent: Finding package',
+      'PackageAgent: Checking duration inventory',
+    ]) {
+      expect(label({ name, latencyMs: 40 })).toBe(nb('Aurora Data API, 40 ms'));
     }
   });
 
@@ -178,5 +190,27 @@ describe('stepSourceLabel', () => {
     expect(label({
       name: 'Supervisor completed coordination', agent: 'RetrievalAgent', latencyMs: 10269,
     })).toBe(nb('Strands on Bedrock, 10.3 s'));
+  });
+
+  it('credits the Retrieval agent, which runs on a Bedrock model, for its own turn', () => {
+    expect(label({ name: 'Retrieval agent: turn started', agent: 'RetrievalAgent' }))
+      .toBe('Strands on Bedrock');
+    expect(label({ name: 'Retrieval agent: reply written', agent: 'RetrievalAgent', latencyMs: 4200 },
+      'Claude Sonnet 5.5')).toBe(nb('Strands on Bedrock, Claude Sonnet 5.5, 4.2 s'));
+  });
+
+  it('credits the meridian-concierge server for a tool it ran and the app for an in-process one', () => {
+    expect(label({
+      name: 'Tool call: price_range', component: 'meridian-concierge MCP server over stdio',
+      latencyMs: 425,
+    })).toBe(nb('MCP, meridian-concierge, 425 ms'));
+    expect(label({
+      name: 'Tool result: get_package_details', component: 'in-process', latencyMs: 40,
+    })).toBe(nb('Meridian app, 40 ms'));
+  });
+
+  it('credits no step to AgentCore Identity, which the backend no longer reports as a span', () => {
+    expect(label({ name: 'Workload access token issued', component: 'AgentCore Identity' }))
+      .toBe('Meridian app');
   });
 });

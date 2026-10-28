@@ -52,6 +52,9 @@ from mcp.server.fastmcp import FastMCP
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.memory.store import get_memory_store
+from backend.security.redaction import install_masking, install_record_factory
+
+install_record_factory()
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +252,14 @@ async def list_memory_tools() -> List[Dict[str, str]]:
     ]
 
 
-def main() -> None:
+def configure_logging() -> None:
+    """Configure the root logger and mask every record each of its handlers writes."""
     logging.basicConfig(level=os.getenv("MCP_MEMORY_LOG_LEVEL", "INFO"))
+    install_masking()
+
+
+def main() -> None:
+    configure_logging()
     logger.info("starting meridian-memory MCP server (stdio)")
     mcp.run()
 

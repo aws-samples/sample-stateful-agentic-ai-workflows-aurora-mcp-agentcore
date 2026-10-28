@@ -24,9 +24,11 @@ def _client_text(response) -> str:
 
 
 def _assert_logged_with_traceback(caplog, ref: str) -> None:
-    records = [r for r in caplog.records if ref in r.getMessage() and r.exc_info]
+    records = [r for r in caplog.records if ref in r.getMessage() and r.exc_text]
     assert records, "the reference must tie to a log record carrying the traceback"
-    assert SECRET in str(records[0].exc_info[1])
+    masked = "RuntimeError: arn:aws:rds:us-east-1:<acct>:cluster:secret-cluster password=<masked>"
+    assert masked in records[0].exc_text, "the traceback is kept, with its ids masked"
+    assert records[0].exc_info is None, "no handler can render the raw exception"
 
 
 def test_log_exception_returns_a_reference_and_logs_the_traceback(caplog):
@@ -63,17 +65,15 @@ async def test_a_failing_production_turn_does_not_leak_the_exception_text(monkey
 
 
 @pytest.mark.asyncio
-async def test_a_failing_package_agent_does_not_leak_the_exception_text(monkeypatch, caplog):
-    monkeypatch.setattr(
-        router, "retrieval_availability_search", AsyncMock(side_effect=RuntimeError(SECRET))
-    )
-    monkeypatch.setattr(router, "retrieval_supervisor_search", AsyncMock(return_value=([], [])))
+async def test_a_failing_retrieval_agent_does_not_leak_the_exception_text(monkeypatch, caplog):
+    monkeypatch.setattr(router, "run_retrieval_turn", AsyncMock(side_effect=RuntimeError(SECRET)))
     request = router.ChatRequest(message="Is TKY-003 available in June?", phase=3)
     with caplog.at_level(logging.ERROR):
         response = await router.chat(request, PRINCIPAL)
     text = _client_text(response)
     assert "hunter2" not in text
-    assert "availability lookup failed" in text
+    assert response.message == "I encountered an error. Please try again or browse featured trips."
+    assert "The request failed. Reference " in text
     _assert_logged_with_traceback(caplog, REFERENCE.search(text).group(1))
 
 

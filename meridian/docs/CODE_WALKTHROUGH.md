@@ -47,14 +47,19 @@ Currency conversion uses indicative rates.
 
 Prompt: `Find a quiet, romantic wine-country retreat with a private villa.`
 
-Open `retrieval_supervisor_search` in `backend/routers/chat.py`, then
-`SearchAgent.hybrid_search` in `backend/agents/phase_03_retrieval/search_agent.py`,
-which calls `retrieval_rows` in `backend/retrieval/hybrid.py`: query embedding,
-semantic and lexical candidates, deduplication by package ID, a price and
-places-left gate, and `rerank_documents`. The supervisor's model is Claude
+Open `retrieval_agent_search` in `backend/routers/chat.py`, then
+`run_retrieval_turn` in `backend/agents/phase_03_retrieval/agent.py`. The
+hybrid pipeline is `backend/retrieval/hybrid.py`: query embedding,
+semantic and lexical candidates (the vector arm is the SQL function
+`semantic_trip_search`), deduplication by package ID, a price and
+places-left gate, and `rerank_documents`. The agent's model is Claude
 Sonnet 5.5, built by `bedrock_model()` in `backend/bedrock_model.py`. The Bedrock adapters are in
 `backend/db/embedding_service.py`. A relevant result does not establish
-facts the catalog does not record, such as private occupancy.
+facts the catalog does not record, such as private occupancy. The trace shows
+`Retrieval agent: turn started`, one span for each tool call and
+`Retrieval agent: reply written`. The availability steps are titled
+`Availability: ...`. Journeys saved by an earlier release keep their Supervisor
+and PackageAgent titles, which the trace panel still reads.
 
 ## 04 - Production: identity, memory and policy
 

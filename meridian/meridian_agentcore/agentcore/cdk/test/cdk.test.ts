@@ -79,7 +79,6 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   expect(spec.memories[0].name).toBe('meridian_session');
   expect(spec.agentCoreGateways).toHaveLength(1);
   expect(spec.agentCoreGateways[0].targets.map((t: { name: string }) => t.name)).toEqual([
-    'SemanticTripSearchLambda',
     'MeridianCatalog',
     'MeridianHolds',
   ]);
@@ -96,7 +95,7 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   const resources = template.toJSON().Resources ?? {};
   const types = Object.values(resources).map(r => (r as { Type: string }).Type);
   expect(types).toContain('AWS::BedrockAgentCore::PolicyEngine');
-  expect(types.filter(t => t === 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(3);
+  expect(types.filter(t => t === 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(2);
   expect(types).toContain('AWS::Lambda::Function');
   const rendered = JSON.stringify(resources);
   const invokeGrants = JSON.stringify(
@@ -104,6 +103,7 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   );
   expect(invokeGrants).toContain('lambda:InvokeFunction');
   expect(invokeGrants).toContain('function:meridian-catalog-tools');
+  expect(rendered).not.toContain('SemanticTripSearch');
   expect(rendered).not.toContain('bedrock-agentcore:CheckAuthorizePermissions');
   for (const action of ['AuthorizeAction', 'PartiallyAuthorizeActions', 'GetPolicyEngine']) {
     expect(rendered).toContain(`bedrock-agentcore:${action}`);
@@ -236,7 +236,7 @@ test('the stack cannot hold the IAM Gateway and the token Gateway at once', () =
   expect(() => synthesize('both', both)).toThrow(/already a Construct|already exists/i);
 });
 
-test('the first stage synthesizes the Gateway and the external targets without the holds Lambda or the engine', () => {
+test('the first stage synthesizes the Gateway and one target without the holds Lambda or the engine', () => {
   const spec = jwtSpec();
   const gateway = spec.agentCoreGateways[0];
   gateway.targets = gateway.targets.filter((t: { name: string }) => t.name !== 'MeridianHolds');
@@ -246,7 +246,7 @@ test('the first stage synthesizes the Gateway and the external targets without t
   const template = synthesize('stage1', spec);
 
   expect(ofType(template, 'AWS::BedrockAgentCore::Gateway')).toHaveLength(1);
-  expect(ofType(template, 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(2);
+  expect(ofType(template, 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(1);
   expect(ofType(template, 'AWS::Lambda::Function')).toHaveLength(0);
   expect(ofType(template, 'AWS::BedrockAgentCore::PolicyEngine')).toHaveLength(0);
   expect(ofType(template, 'AWS::BedrockAgentCore::Policy')).toHaveLength(0);

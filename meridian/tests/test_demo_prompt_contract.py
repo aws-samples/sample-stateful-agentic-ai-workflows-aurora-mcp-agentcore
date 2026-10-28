@@ -8,12 +8,10 @@ from backend.http_auth import HttpPrincipal
 from backend.routers.chat import (
     _call_domain_tool,
     _format_domain_reply,
-    _is_availability_query,
     _is_memory_recall_query,
     _is_semantic_intent_query,
     _needs_checkpointed_workflow,
     _wants_domain_tool,
-    is_availability_query,
 )
 from scripts.travel_catalog import (
     DEMO_TRAVELER_ID,
@@ -68,10 +66,10 @@ def test_mcp_prompts_select_domain_tools() -> None:
 
 
 def test_early_phase_stretch_prompts_return_explicit_boundaries(monkeypatch) -> None:
-    async def unexpected_polish(*_args, **_kwargs):
-        raise AssertionError("Phase 1 and Phase 2 must not invoke Bedrock polish")
+    async def unexpected_agent(*_args, **_kwargs):
+        raise AssertionError("Phase 1 and Phase 2 must not run the retrieval agent")
 
-    monkeypatch.setattr(chat_router, "polish_concierge_reply", unexpected_polish)
+    monkeypatch.setattr(chat_router, "run_retrieval_turn", unexpected_agent)
 
     sql_response = asyncio.run(
         chat_router.chat(
@@ -116,10 +114,9 @@ def test_retrieval_memory_stretch_is_concise_and_honest() -> None:
     assert not response.products
 
 
-def test_retrieval_prompts_select_expected_special_paths() -> None:
-    assert _is_availability_query(TUSCANY_AVAILABILITY)
-    assert is_availability_query(TUSCANY_AVAILABILITY)
+def test_the_recall_prompt_is_the_only_retrieval_shortcut() -> None:
     assert _is_memory_recall_query(MEMORY_RECALL)
+    assert not _is_memory_recall_query(TUSCANY_AVAILABILITY)
 
 
 def test_production_stretch_requires_checkpointed_workflow() -> None:

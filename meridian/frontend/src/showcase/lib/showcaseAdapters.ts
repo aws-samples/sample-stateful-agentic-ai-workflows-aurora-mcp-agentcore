@@ -137,11 +137,11 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
   {
     label: 'Retrieval',
     phase: 3,
-    description: 'Hybrid retrieval and specialist routing',
+    description: 'Hybrid retrieval chosen by one agent',
     capability: 'Intent',
-    takeaway: 'Match traveler intent with vectors, text search, reranking, and specialist routing.',
+    takeaway: 'Match traveler intent with vectors, text search and reranking, chosen by one agent that also holds the earlier tools.',
     proofPoint: 'pgvector + rerank',
-    adds: 'Combines matches by meaning and keywords, then reranks the results.',
+    adds: 'One agent chooses among the earlier tools and a hybrid search that combines meaning and keywords, then reranks.',
     tech: 'Cohere Embed v4 + Rerank 3.5',
   },
   {

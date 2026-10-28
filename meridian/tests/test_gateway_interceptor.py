@@ -300,12 +300,6 @@ def template_tools() -> dict:
     return tools
 
 
-# Deploy A of Release 2 puts loyalty_balance on the Gateway before Cedar and the interceptor
-# name it, because a rule is validated against the tools that exist. Cedar denies the tool by
-# default until Deploy B. Task 14 deletes this set, and the test then holds for every tool.
-STAGED_UNPINNED = {"MeridianHolds___loyalty_balance"}
-
-
 def test_every_template_tool_that_takes_a_traveler_is_pinned_by_default():
     tools = template_tools()
     assert len(tools) >= 4
@@ -313,13 +307,34 @@ def test_every_template_tool_that_takes_a_traveler_is_pinned_by_default():
         name for name, tool in tools.items() if "travelerId" in tool["inputSchema"]["properties"]
     }
     assert takes_traveler
-    assert takes_traveler - STAGED_UNPINNED <= set(interceptor.DEFAULT_PINNED_TOOLS)
+    assert takes_traveler <= set(interceptor.DEFAULT_PINNED_TOOLS)
     assert set(interceptor.DEFAULT_PINNED_TOOLS) <= set(tools)
 
 
-def test_the_search_tool_takes_no_traveler_so_it_is_never_pinned():
-    schema = ROOT / "meridian_agentcore/agentcore/gateway_targets/semantic_trip_search"
+def test_no_catalog_tool_takes_a_traveler_so_none_is_pinned():
+    schema = ROOT / "meridian_agentcore/agentcore/gateway_targets/meridian_catalog"
     assert "travelerId" not in (schema / "tool-schema.json").read_text()
+
+
+ABSENT = object()
+
+
+@pytest.mark.parametrize(
+    "named",
+    [ABSENT, JORDAN, "", 42, [JORDAN], {"travelerId": JORDAN}, None],
+    ids=["absent", "decoy-string", "empty-string", "number", "list", "nested-object", "null"],
+)
+def test_loyalty_balance_is_pinned_to_the_token_traveler_for_every_input_shape(named):
+    event = load("documented_tools_call_hold", token_for(traveler_id=DECOY))
+    params = event["mcp"]["gatewayRequest"]["body"]["params"]
+    params["name"] = "MeridianHolds___loyalty_balance"
+    params["arguments"] = {"program": "Marriott Bonvoy"}
+    if named is not ABSENT:
+        params["arguments"]["travelerId"] = named
+
+    pinned = rewritten_body(interceptor.lambda_handler(event, None))
+
+    assert pinned["params"]["arguments"] == {"travelerId": DECOY, "program": "Marriott Bonvoy"}
 
 
 def test_a_token_without_a_usable_expiry_is_refused():

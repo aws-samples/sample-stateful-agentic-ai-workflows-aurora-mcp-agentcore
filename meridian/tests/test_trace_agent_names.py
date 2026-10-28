@@ -128,6 +128,26 @@ async def test_the_workflow_search_node_names_the_hybrid_retrieval_code_step():
     assert node["telemetry"]["component"] == f"Strands Graph → {RETRIEVAL_CODE}"
 
 
+async def test_the_workflow_availability_nodes_name_the_availability_code_step():
+    nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=GatewayFake())
+    prior = [{"product_id": f"pkg_{i}", "name": f"Trip {i}"} for i in range(3)]
+    states = [
+        {"query": "Is Tokyo available?", "intent": "availability", "activities": []},
+        {"query": "Rework my Tokyo trip.", "intent": "plan", "packages": prior, "activities": []},
+    ]
+    components = []
+    for state in states:
+        out = await nodes.availability(state)
+        (node,) = [span for span in out["activities"]
+                   if span["title"].startswith("Workflow node: availability")]
+        components.append(node["telemetry"]["component"])
+
+    assert components == [
+        f"Strands Graph → {AVAILABILITY_CODE}",
+        f"Strands Graph → {AVAILABILITY_CODE} fan-out",
+    ]
+
+
 # The audit row's `agent_name="ProductionAgent"` in concierge.py is a stored identifier that
 # older rows share, so that file is covered by the behavior test above instead.
 FORBIDDEN = {
@@ -136,6 +156,7 @@ FORBIDDEN = {
         "Concierge",
     ),
     "backend/retrieval/availability.py": ("PackageAgent",),
+    "backend/agents/phase_05_workflow/nodes.py": ("PackageAgent", "SearchAgent"),
     "backend/agents/phase_05_workflow/memory_recall.py": ("MemoryAgent",),
     "backend/agents/phase_05_workflow/state.py": ("OrchestrationAgent",),
     "backend/agents/phase_04_production/memory_agent.py": ("MemoryAgent",),

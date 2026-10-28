@@ -10,33 +10,67 @@ from scripts.identity_release import settings
 from tests import release_support as rs
 from tests.aws_recorders import client_error, violations
 from tests.lambda_release_support import (
-    GATEWAY, HOLDS_ARN, HOLDS_NAME, HOLDS_ROLE, MASTER, LambdaClient, World, policy)
+    CATALOG, CATALOG_ROLE, GATEWAY, HOLDS_ARN, HOLDS_NAME, HOLDS_ROLE, MASTER, LambdaClient, World,
+    policy)
 
 STAMP = "20261008T130000Z"
 WHERE = {"account": rs.ACCOUNT, "region": rs.REGION}
 
 
-def test_the_baseline_before_the_cutover_reads_the_master_secret_everywhere():
-    world = World(ssm=MASTER, holds_grants=(MASTER, GATEWAY), semantic_env=MASTER,
-                  semantic_grants=(MASTER,))
+HOLDS_AT = {
+    "master": {"ssm": MASTER, "holds_grants": (MASTER, GATEWAY)},
+    "gateway": {"holds_grants": (MASTER, GATEWAY)},
+    "tightened": {"holds_grants": (GATEWAY,)},
+}
+CATALOG_SUBJECT = f"Lambda {lambdas.CATALOG_FUNCTION}"
 
-    assert world.check("master") == []
+
+def test_the_baseline_before_the_cutover_reads_the_master_secret_on_the_holds_path():
+    assert World(**HOLDS_AT["master"]).check("master") == []
 
 
-def test_after_the_cutover_the_parameter_and_the_semantic_environment_name_the_gateway_secret():
-    world = World(holds_grants=(MASTER, GATEWAY), semantic_grants=(GATEWAY,))
+def test_after_the_cutover_the_parameter_names_the_gateway_secret():
+    assert World(**HOLDS_AT["gateway"]).check("gateway") == []
 
-    assert world.check("gateway") == []
+
+@pytest.mark.parametrize("stage", lambdas.STAGES)
+@pytest.mark.parametrize("other", [MASTER, GATEWAY])
+def test_the_catalog_lambda_runs_as_its_own_login_at_every_stage(stage, other):
+    found = World(**HOLDS_AT[stage], catalog_env=other).check(stage)
+
+    assert found == [
+        f"{CATALOG_SUBJECT}: AURORA_SECRET_ARN is not the meridian_catalog login's secret"]
+
+
+@pytest.mark.parametrize("stage", lambdas.STAGES)
+def test_a_catalog_role_without_its_own_secret_or_with_another_is_a_finding(stage):
+    found = World(**HOLDS_AT[stage], catalog_grants=(MASTER,)).check(stage)
+
+    assert found == [
+        f"{CATALOG_SUBJECT}: its role cannot read the meridian_catalog secret",
+        f"{CATALOG_SUBJECT}: its role can read the master login's secret, which it never needs"]
+    wildcard = World(**HOLDS_AT[stage], catalog_grants=("*",)).check(stage)
+    assert [line.split(": ", 1)[1] for line in wildcard] == [
+        "its role can read the master login's secret, which it never needs",
+        "its role can read the meridian_gateway login's secret, which it never needs"]
+
+
+def test_the_check_needs_the_catalog_login_secret():
+    world = World()
+
+    with pytest.raises(settings.ReleaseConfigError, match="AURORA_CATALOG_SECRET_ARN"):
+        lambdas.check(world.ssm, world.lam, world.iam, world.control, rs.GATEWAY_ID,
+                      lambdas.Secrets(master=MASTER, gateway=GATEWAY), "gateway")
 
 
 def test_after_the_cutover_a_stale_parameter_or_environment_is_a_finding_each():
-    world = World(ssm=MASTER, semantic_env=MASTER)
+    world = World(ssm=MASTER, catalog_env=MASTER)
 
     found = world.check("gateway")
 
     assert len(found) == 2
     assert any(line.startswith("SSM /meridian/aurora/secret_arn:") for line in found)
-    assert any("meridian-semantic-trip-search: AURORA_SECRET_ARN" in line for line in found)
+    assert any("meridian-catalog-tools: AURORA_SECRET_ARN" in line for line in found)
 
 
 def test_a_missing_parameter_is_a_finding_not_a_crash():
@@ -48,22 +82,22 @@ def test_a_missing_parameter_is_a_finding_not_a_crash():
 
 
 def test_a_role_that_cannot_read_the_gateway_secret_is_a_finding_before_anything_is_removed():
-    world = World(holds_grants=(MASTER,), semantic_grants=(MASTER,))
+    world = World(holds_grants=(MASTER,), catalog_grants=(MASTER,))
 
     found = world.check("gateway")
 
     assert any("MeridianHolds" in line and "cannot read the meridian_gateway secret" in line
                for line in found)
-    assert any(lambdas.SEMANTIC_FUNCTION in line and "cannot read" in line for line in found)
+    assert any(lambdas.CATALOG_FUNCTION in line and "cannot read" in line for line in found)
 
 
-def test_tightened_means_no_role_can_still_read_the_master_secret():
-    assert World(holds_grants=(GATEWAY,), semantic_grants=(GATEWAY,)).check("tightened") == []
-    loose = World(holds_grants=(GATEWAY, MASTER), semantic_grants=(GATEWAY, MASTER))
+def test_tightened_means_the_holds_role_can_no_longer_read_the_master_secret():
+    assert World(**HOLDS_AT["tightened"]).check("tightened") == []
+    loose = World(holds_grants=(GATEWAY, MASTER))
 
     found = loose.check("tightened")
 
-    assert len([line for line in found if "still can read the master login's secret" in line]) == 2
+    assert found == ["Lambda MeridianHolds: its role still can read the master login's secret"]
 
 
 @pytest.mark.parametrize("grant", [
@@ -73,7 +107,7 @@ def test_tightened_means_no_role_can_still_read_the_master_secret():
     f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:meridian-AbC12?",
 ])
 def test_a_wildcard_grant_counts_as_reading_the_master_secret(grant):
-    world = World(holds_grants=(grant,), semantic_grants=(GATEWAY,))
+    world = World(holds_grants=(grant,))
 
     found = world.check("tightened")
 
@@ -82,21 +116,21 @@ def test_a_wildcard_grant_counts_as_reading_the_master_secret(grant):
 
 def test_a_pattern_that_misses_the_master_secret_is_not_a_finding():
     world = World(holds_grants=(f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:"
-                                "meridian/aurora/*",), semantic_grants=(GATEWAY,))
+                                "meridian/aurora/*",))
 
     assert world.check("tightened") == []
 
 
 @pytest.mark.parametrize("action", ["secretsmanager:*", "secretsmanager:Get*", "*"])
 def test_a_wildcard_action_counts_as_reading_the_secret(action):
-    world = World(semantic_grants=(GATEWAY,))
+    world = World()
     world.roles["AgentCore-meridianv2-MeridianHoldsRole"] = policy(MASTER, action=action)
 
     assert any("MeridianHolds" in line for line in world.check("tightened"))
 
 
 def test_a_grant_for_another_action_is_not_a_read_of_the_secret():
-    world = World(semantic_grants=(GATEWAY,))
+    world = World()
     world.roles["AgentCore-meridianv2-MeridianHoldsRole"] = policy(
         MASTER, action="secretsmanager:DescribeSecret")
 
@@ -105,8 +139,7 @@ def test_a_grant_for_another_action_is_not_a_read_of_the_secret():
 
 def test_a_customer_managed_policy_attached_to_the_role_is_read_too():
     extra = f"arn:aws:iam::{rs.ACCOUNT}:policy/Extra"
-    world = World(holds_grants=(GATEWAY,), semantic_grants=(GATEWAY,),
-                  holds_attached=[{"PolicyArn": extra}])
+    world = World(holds_grants=(GATEWAY,), holds_attached=[{"PolicyArn": extra}])
 
     found = world.check("tightened")
 
@@ -183,18 +216,223 @@ def test_a_not_action_deny_is_not_a_grant():
     assert not any("still can read" in line for line in world.check("tightened"))
 
 
-def test_a_missing_semantic_function_is_a_finding_not_a_crash():
+def with_deny(allowed, denied, **deny):
+    """An Allow of the secret read on ``allowed`` and a Deny of it on ``denied``."""
+    read = "secretsmanager:GetSecretValue"
+    return {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": [read], "Resource": list(allowed)},
+        {"Effect": "Deny", "Action": deny.pop("action", [read]), "Resource": list(denied),
+         **deny}]}
+
+
+OWN_SECRET = "its role cannot read the meridian_catalog secret"
+READS_MASTER = "its role can read the master login's secret, which it never needs"
+READS_GATEWAY = "its role can read the meridian_gateway login's secret, which it never needs"
+
+
+def catalog_lines(world, stage="gateway"):
+    return [line.split(": ", 1)[1] for line in world.check(stage)
+            if line.startswith(CATALOG_SUBJECT)]
+
+
+@pytest.mark.parametrize("statement, expected", [
+    ({"Action": "secretsmanager:GetSecretValue", "NotResource": [MASTER, GATEWAY]}, []),
+    ({"Action": "secretsmanager:GetSecretValue", "NotResource": [CATALOG]},
+     [OWN_SECRET, READS_MASTER, READS_GATEWAY]),
+    ({"Action": "secretsmanager:*", "Resource": [CATALOG]}, []),
+    ({"Action": "secretsmanager:Get*", "Resource": [MASTER]}, [OWN_SECRET, READS_MASTER]),
+    ({"Action": "*", "Resource": "*"}, [READS_MASTER, READS_GATEWAY]),
+    ({"NotAction": ["iam:*"], "Resource": [CATALOG]}, []),
+])
+def test_the_catalog_role_is_read_like_the_holds_role_for_not_resource_and_wildcards(
+        statement, expected):
+    world = World()
+    world.roles[CATALOG_ROLE] = {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", **statement}]}
+
+    assert catalog_lines(world) == expected
+
+
+def test_a_customer_managed_policy_attached_to_the_catalog_role_is_read_too():
+    extra = f"arn:aws:iam::{rs.ACCOUNT}:policy/CatalogExtra"
+    world = World(catalog_attached=[{"PolicyArn": extra}], managed={extra: policy(MASTER)})
+
+    assert catalog_lines(world) == [READS_MASTER]
+    assert world.iam.args("get_policy") == [{"PolicyArn": extra}]
+
+
+def test_an_attached_policy_that_grants_the_catalog_secret_makes_up_for_a_missing_inline_one():
+    extra = f"arn:aws:iam::{rs.ACCOUNT}:policy/CatalogOwn"
+    world = World(catalog_grants=(), catalog_attached=[{"PolicyArn": extra}],
+                  managed={extra: policy(CATALOG)})
+
+    assert catalog_lines(world) == []
+
+
+def test_an_explicit_deny_on_the_catalog_secret_means_the_role_cannot_read_it():
+    world = World()
+    world.roles[CATALOG_ROLE] = with_deny((CATALOG,), (CATALOG,))
+
+    assert catalog_lines(world) == [OWN_SECRET]
+
+
+def test_an_explicit_deny_on_the_master_secret_clears_the_finding_for_it():
+    world = World()
+    world.roles[CATALOG_ROLE] = with_deny((CATALOG, MASTER), (MASTER,))
+
+    assert catalog_lines(world) == []
+    world.roles[CATALOG_ROLE] = with_deny(("*",), (MASTER, GATEWAY))
+    assert catalog_lines(world) == []
+
+
+@pytest.mark.parametrize("deny", [
+    {"action": ["secretsmanager:*"]},
+    {"action": ["secretsmanager:Get*"]},
+    {"action": ["*"]},
+    {"action": ["secretsmanager:getsecretvalue"]},
+])
+def test_a_deny_with_a_wildcard_action_counts(deny):
+    world = World()
+    world.roles[CATALOG_ROLE] = with_deny((CATALOG,), (CATALOG,), **deny)
+
+    assert catalog_lines(world) == [OWN_SECRET]
+
+
+@pytest.mark.parametrize("pattern", [
+    "*",
+    f"arn:aws:secretsmanager:{rs.REGION}:{rs.ACCOUNT}:secret:meridian/aurora/catalog-*",
+    "arn:aws:secretsmanager:*:*:secret:meridian/aurora/catalog-CtL78?",
+])
+def test_a_deny_on_a_resource_pattern_counts(pattern):
+    world = World()
+    world.roles[CATALOG_ROLE] = with_deny((CATALOG,), (pattern,))
+
+    assert catalog_lines(world) == [OWN_SECRET]
+
+
+def test_a_deny_of_another_action_or_another_secret_changes_nothing():
+    world = World()
+    world.roles[CATALOG_ROLE] = with_deny(
+        (CATALOG, MASTER), (CATALOG,), action=["secretsmanager:DescribeSecret"])
+    assert catalog_lines(world) == [READS_MASTER]
+    world.roles[CATALOG_ROLE] = with_deny((CATALOG,), (MASTER,))
+    assert catalog_lines(world) == []
+
+
+def test_a_deny_with_not_resource_denies_everything_but_the_listed_secrets():
+    world = World()
+    world.roles[CATALOG_ROLE] = {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": "*"},
+        {"Effect": "Deny", "Action": "secretsmanager:GetSecretValue", "NotResource": [CATALOG]}]}
+
+    assert catalog_lines(world) == []
+
+
+def test_a_deny_in_an_attached_policy_beats_an_allow_in_an_inline_one():
+    extra = f"arn:aws:iam::{rs.ACCOUNT}:policy/CatalogDeny"
+    deny = {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Deny", "Action": "secretsmanager:GetSecretValue", "Resource": [CATALOG]}]}
+    world = World(catalog_attached=[{"PolicyArn": extra}], managed={extra: deny})
+
+    assert catalog_lines(world) == [OWN_SECRET]
+
+
+def test_an_explicit_deny_on_the_gateway_secret_means_the_holds_role_cannot_read_it():
+    world = World(holds_grants=(GATEWAY,))
+    world.roles[HOLDS_ROLE] = with_deny((GATEWAY,), (GATEWAY,))
+
+    assert world.check("gateway") == [
+        "Lambda MeridianHolds: its role cannot read the meridian_gateway secret"]
+
+
+def test_an_explicit_deny_on_the_master_secret_satisfies_the_tightened_stage():
+    world = World()
+    world.roles[HOLDS_ROLE] = with_deny((GATEWAY, MASTER), (MASTER,))
+
+    assert world.check("tightened") == []
+
+
+CONDITION = {"StringNotEquals": {"aws:SourceVpce": "vpce-0abc"}}
+READ = "secretsmanager:GetSecretValue"
+
+
+def statements(*parts):
+    return {"Version": "2012-10-17", "Statement": list(parts)}
+
+
+def allow_read(resources, **extra):
+    return {"Effect": "Allow", "Action": READ, "Resource": list(resources), **extra}
+
+
+def deny_read(resources, **extra):
+    return {"Effect": "Deny", "Action": READ, "Resource": list(resources), **extra}
+
+
+def test_a_conditional_deny_does_not_clear_a_forbidden_grant_for_the_holds_role():
+    world = World()
+    world.roles[HOLDS_ROLE] = statements(
+        allow_read(("*",)), deny_read((MASTER,), Condition=CONDITION))
+
+    assert world.check("tightened") == [
+        "Lambda MeridianHolds: its role still can read the master login's secret"]
+    world.roles[HOLDS_ROLE] = statements(allow_read(("*",)), deny_read((MASTER,)))
+    assert world.check("tightened") == []
+
+
+def test_a_conditional_allow_of_the_master_secret_still_counts_as_reading_it():
+    world = World()
+    world.roles[HOLDS_ROLE] = statements(
+        allow_read((GATEWAY,)), allow_read((MASTER,), Condition=CONDITION))
+
+    assert world.check("tightened") == [
+        "Lambda MeridianHolds: its role still can read the master login's secret"]
+
+
+def test_a_required_gateway_secret_without_a_sure_grant_is_a_finding_for_the_holds_role():
+    finding = ["Lambda MeridianHolds: its role cannot read the meridian_gateway secret"]
+    world = World()
+    world.roles[HOLDS_ROLE] = statements(allow_read((GATEWAY,), Condition=CONDITION))
+    assert world.check("gateway") == finding
+    world.roles[HOLDS_ROLE] = statements(
+        allow_read((GATEWAY,)), deny_read((GATEWAY,), Condition=CONDITION))
+    assert world.check("gateway") == finding
+    world.roles[HOLDS_ROLE] = statements(allow_read((GATEWAY,)))
+    assert world.check("gateway") == []
+
+
+def test_a_conditional_deny_does_not_clear_a_forbidden_grant_for_the_catalog_role():
+    world = World()
+    world.roles[CATALOG_ROLE] = statements(
+        allow_read(("*",)), deny_read((MASTER, GATEWAY), Condition=CONDITION))
+
+    assert catalog_lines(world) == [READS_MASTER, READS_GATEWAY]
+    world.roles[CATALOG_ROLE] = statements(allow_read(("*",)), deny_read((MASTER, GATEWAY)))
+    assert catalog_lines(world) == []
+
+
+def test_the_catalog_role_own_secret_needs_a_sure_grant():
+    world = World()
+    world.roles[CATALOG_ROLE] = statements(allow_read((CATALOG,), Condition=CONDITION))
+    assert catalog_lines(world) == [OWN_SECRET]
+    world.roles[CATALOG_ROLE] = statements(
+        allow_read((CATALOG,)), deny_read((CATALOG,), Condition=CONDITION))
+    assert catalog_lines(world) == [OWN_SECRET]
+    world.roles[CATALOG_ROLE] = statements(allow_read((CATALOG,)))
+    assert catalog_lines(world) == []
+
+
+def test_a_missing_catalog_function_is_a_finding_not_a_crash():
     world = World()
     original = world.lam.answers["get_function_configuration"]
 
     def answer(FunctionName):
-        if FunctionName == lambdas.SEMANTIC_FUNCTION:
+        if FunctionName == lambdas.CATALOG_FUNCTION:
             raise client_error("ResourceNotFoundException")
         return original(FunctionName)
 
     world.lam.answers["get_function_configuration"] = answer
 
-    assert world.check("gateway") == [f"Lambda {lambdas.SEMANTIC_FUNCTION}: does not exist"]
+    assert world.check("gateway") == [f"Lambda {lambdas.CATALOG_FUNCTION}: does not exist"]
 
 
 def test_an_unknown_stage_is_refused():
@@ -264,15 +502,15 @@ def test_the_target_list_is_followed_across_pages():
 # ------------------------------------------------------------------ remedies
 
 
-def test_a_stale_semantic_environment_points_at_the_guarded_command():
-    steps = lambdas.remedies(World(semantic_env=MASTER).check("gateway"), "gateway")
+@pytest.mark.parametrize("stage", lambdas.STAGES)
+def test_a_catalog_lambda_off_its_login_gets_one_manual_step_at_every_stage(stage):
+    world = World(**HOLDS_AT[stage], catalog_env=GATEWAY)
 
-    assert len(steps) == 1 and steps[0].startswith("FIX semantic Lambda (ASK FIRST")
-    assert "release_identity.py semantic-lambda --to gateway --apply" in steps[0]
-    assert settings.CONFIRM_FLAG in steps[0]
-    master = lambdas.remedies(World(ssm=MASTER, semantic_env=GATEWAY).check("master"), "master")
-    assert len(master) == 1 and "semantic-lambda --to master" in master[0]
-    assert "grants" not in master[0]
+    steps = lambdas.remedies(world.check(stage), stage)
+
+    assert len(steps) == 1 and steps[0].startswith("MANUAL STEP (ASK FIRST")
+    assert "AURORA_CATALOG_SECRET_ARN" in steps[0] and "MeridianCatalogAuroraAccess" in steps[0]
+    assert settings.CONFIRM_FLAG not in steps[0]
 
 
 def test_a_stale_parameter_points_at_the_publisher_with_the_gateway_flag():
@@ -283,18 +521,14 @@ def test_a_stale_parameter_points_at_the_publisher_with_the_gateway_flag():
     assert all("--gateway-login" not in step for step in master)
 
 
-def test_the_semantic_search_role_findings_get_one_guarded_step_or_the_manual_removal():
-    world = World(semantic_grants=(MASTER,))
+def test_a_catalog_role_that_reads_another_login_gets_the_manual_removal():
+    extra = lambdas.remedies(World(catalog_grants=(CATALOG, MASTER, GATEWAY)).check("gateway"),
+                             "gateway")
 
-    missing = lambdas.remedies(world.check("gateway"), "gateway")
-
-    assert len(missing) == 1 and "semantic-lambda --to gateway --apply" in missing[0]
-    both = lambdas.remedies(World(semantic_env=MASTER, semantic_grants=(MASTER,)).check(
-        "gateway"), "gateway")
-    assert len(both) == 1
-    tightened = World(semantic_grants=(MASTER, GATEWAY))
-    still = lambdas.remedies(tightened.check("tightened"), "tightened")
-    assert len(still) == 1 and "remove" in still[0] and lambdas.SEMANTIC_FUNCTION in still[0]
+    assert len(extra) == 1 and "remove" in extra[0] and lambdas.CATALOG_FUNCTION in extra[0]
+    both = lambdas.remedies(
+        World(catalog_env=GATEWAY, catalog_grants=(GATEWAY,)).check("gateway"), "gateway")
+    assert len(both) == 2
 
 
 def test_nothing_to_fix_means_no_steps():

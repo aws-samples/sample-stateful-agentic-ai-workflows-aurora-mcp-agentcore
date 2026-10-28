@@ -30,10 +30,10 @@ def run_all(ports, design="both", only=None):
     return ctx, {spec.id: run_probe(spec, ports, ctx) for spec in chosen}
 
 
-def test_the_plan_has_seventeen_unique_probes_and_every_layer_has_both_kinds():
+def test_the_plan_has_nineteen_unique_probes_and_every_layer_has_both_kinds():
     ids = [spec.id for spec in PLAN]
 
-    assert len(ids) == 17 and len(set(ids)) == 17
+    assert len(ids) == 19 and len(set(ids)) == 19
     for layer in LAYERS:
         mine = [spec for spec in PLAN if spec.layer == layer]
         assert any(s.actor == DECOY and s.expected == REFUSED for s in mine), layer
@@ -44,7 +44,8 @@ def test_the_gateway_reads_the_package_before_any_hold_is_built():
     order = [spec.id for spec in PLAN if spec.layer == "gateway"]
 
     assert order == ["gateway.jordan_reads_package", "gateway.decoy_reads_package",
-                     "gateway.decoy_holds_for_jordan", "gateway.jordan_places_hold"]
+                     "gateway.decoy_holds_for_jordan", "gateway.jordan_places_hold",
+                     "gateway.decoy_reads_jordans_loyalty", "gateway.jordan_reads_own_loyalty"]
 
 
 def test_the_runtime_and_the_gateway_each_have_a_control_the_decoy_is_allowed():
@@ -78,13 +79,15 @@ def test_in_a_correct_system_every_probe_passes_and_each_refusal_names_its_layer
     assert outcomes["database.decoy_sees_jordan_rows"].refused_by == "database_rls"
     assert outcomes["gateway.decoy_holds_for_jordan"].evidence["deny_audit_rows"] == 1
     assert outcomes["gateway.decoy_holds_for_jordan"].evidence["shape"] == "result.isError"
+    assert outcomes["gateway.decoy_reads_jordans_loyalty"].refused_by == "gateway_workload_grant"
+    assert outcomes["gateway.decoy_reads_jordans_loyalty"].evidence["deny_audit_rows"] == 1
     assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-TEST0001")}
     assert any(t.startswith(THREAD_PREFIX + "abc12345") for t in ctx.threads)
 
 
 def test_jordan_only_selects_just_the_controls():
     assert {spec.actor for spec in select(jordan_only=True)} == {JORDAN}
-    assert len(select(jordan_only=True)) == 8 and len(select(jordan_only=False)) == 17
+    assert len(select(jordan_only=True)) == 9 and len(select(jordan_only=False)) == 19
 
 
 def test_rls_that_hides_nothing_fails_the_database_probe():
@@ -420,3 +423,103 @@ def test_a_decoy_package_read_the_gateway_refuses_does_not_pass():
 
     assert outcomes["gateway.decoy_reads_package"].result == REFUSED
     assert not outcomes["gateway.decoy_reads_package"].passed
+
+
+def test_a_gateway_that_hands_the_decoy_jordans_balance_fails_its_probe():
+    ports, database = good_world()
+
+    def leaky(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        if tool.endswith("loyalty_balance"):
+            return text_result({"traveler_id": arguments["travelerId"], "points_balance": 86240,
+                                "tier": "Platinum Elite"})
+        return text_result(lambda_hold("HLD-X"))
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": leaky})
+
+    _, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                        "gateway.decoy_reads_jordans_loyalty"})
+
+    assert outcomes["gateway.decoy_reads_jordans_loyalty"].result == ALLOWED
+    assert not outcomes["gateway.decoy_reads_jordans_loyalty"].passed
+
+
+def test_a_control_that_cannot_read_jordans_own_balance_is_an_error_not_a_pass():
+    ports, _ = good_world()
+
+    def refusing(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        return text_result({"error": "traveler_not_authorized"}, is_error=True)
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": refusing})
+
+    _, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                        "gateway.jordan_reads_own_loyalty"})
+
+    assert not outcomes["gateway.jordan_reads_own_loyalty"].passed
+
+
+def test_the_loyalty_decoy_probe_asks_for_the_other_travelers_balance_and_is_refused_for_it():
+    ports, _ = good_world()
+    calls = []
+
+    def recording(user, tool, arguments):
+        calls.append((user, tool, arguments["travelerId"] if "travelerId" in arguments else None))
+        return ports.gateway(user, tool, arguments)
+
+    spied = ports.__class__(**{**ports.__dict__, "gateway": recording})
+
+    _, outcomes = run_all(spied, only={"gateway.jordan_reads_package",
+                                       "gateway.decoy_reads_jordans_loyalty",
+                                       "gateway.jordan_reads_own_loyalty"})
+
+    loyalty = [(user, traveler) for user, tool, traveler in calls
+               if tool.endswith("loyalty_balance")]
+    assert loyalty == [(DECOY, JORDAN_TRAVELER), (JORDAN, JORDAN_TRAVELER)]
+    assert DECOY_TRAVELER != JORDAN_TRAVELER
+    assert outcomes["gateway.decoy_reads_jordans_loyalty"].refused_by == "gateway_workload_grant"
+    assert outcomes["gateway.jordan_reads_own_loyalty"].passed
+
+
+def test_the_fake_gateway_refuses_a_traveler_id_that_is_not_the_callers_and_allows_their_own():
+    ports, database = good_world()
+    tool = "MeridianHolds___loyalty_balance"
+
+    own = ports.gateway(DECOY, tool, {"travelerId": DECOY_TRAVELER, "program": "x"})
+    other = ports.gateway(DECOY, tool, {"travelerId": JORDAN_TRAVELER, "program": "x"})
+
+    assert "isError" not in own["result"]
+    assert other["result"]["isError"] is True
+    assert database.deny_rows == {DECOY_TRAVELER: 1}
+
+
+def test_deny_rows_are_counted_for_the_traveler_the_refused_caller_is():
+    ports, database = good_world()
+    tool = "MeridianHolds___loyalty_balance"
+
+    ports.gateway(DECOY, tool, {"travelerId": JORDAN_TRAVELER, "program": "x"})
+
+    assert database.deny_audit_count(DECOY_TRAVELER) == 1
+    assert database.deny_audit_count(JORDAN_TRAVELER) == 0
+
+
+def test_a_probe_that_counts_the_wrong_travelers_deny_rows_does_not_pass():
+    ports, database = good_world()
+
+    class CountsJordan:
+        def __getattr__(self, name):
+            return getattr(database, name)
+
+        def deny_audit_count(self, traveler_id):
+            return database.deny_audit_count(JORDAN_TRAVELER)
+
+    world = ports.__class__(**{**ports.__dict__, "database": CountsJordan()})
+
+    _, outcomes = run_all(world, only={"gateway.jordan_reads_package",
+                                       "gateway.decoy_reads_jordans_loyalty",
+                                       "gateway.decoy_holds_for_jordan"})
+
+    assert not outcomes["gateway.decoy_reads_jordans_loyalty"].passed
+    assert not outcomes["gateway.decoy_holds_for_jordan"].passed

@@ -31,12 +31,14 @@ from backend.agents.phase_04_production.write_outcome import (
     PlacedWriteUnfinished,
     WriteOutcomeUnknown,
 )
-from backend.audit_vocabulary import ToolCall, turn_error_problem
+from backend.agents.concierge_definition import CATALOG_TOOLS
+from backend.audit_vocabulary import CODE_CLASSES, ToolCall, turn_error_problem
 from backend.cognito_auth import CognitoVerifier
 from backend.http_auth import HttpPrincipal
 from backend.main import app
 from backend.memory.store import MemoryStore
 from tests.test_http_auth_cognito import CONFIG, token_for
+from tests.test_runtime_trace_hooks import _answer, _traced_turn
 from tests.test_production_transaction_boundaries import (
     FakeMemoryAgent,
     build_agent,
@@ -51,10 +53,15 @@ CEDAR_DENIAL = (
     "Tool execution failed: AuthorizeActionException - Tool Execution Denied: "
     "Tool call not allowed due to policy enforcement"
 )
-SEARCH = "SemanticTripSearchLambda___semantic_trip_search"
+SEARCH = "MeridianCatalog___hybrid_trip_search"
 DETAILS = "MeridianHolds___get_package_details"
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 BOOK_TOOL = "MeridianHolds___confirm_booking"
+
+
+def last_line_class(exc_text: str) -> str:
+    """The exception class the last line of a formatted traceback names, without its module."""
+    return exc_text.splitlines()[-1].split(":")[0].rsplit(".", 1)[-1]
 
 
 def span(status="ok", category="gateway", title="t", **fields):
@@ -106,7 +113,7 @@ def test_every_call_is_listed_once_in_start_order_without_the_target_prefix():
         *called("c1", SEARCH), *called("c2", DETAILS), *called("c3", DETAILS)))
 
     assert audit == TurnAudit([
-        ToolCall("semantic_trip_search", "allowed"),
+        ToolCall("hybrid_trip_search", "allowed"),
         ToolCall("get_package_details", "allowed"),
         ToolCall("get_package_details", "allowed"),
     ])
@@ -116,12 +123,12 @@ def test_every_call_is_listed_once_in_start_order_without_the_target_prefix():
 def test_parallel_calls_are_paired_by_call_id_and_kept_in_start_order():
     assert calls_of(
         before("c1", DETAILS), before("c2", DETAILS),
-        done("c2"), failed("c1", DETAILS, "Unknown package TKY-999"),
+        done("c2"), failed("c1", DETAILS, "Aurora statement timed out"),
     ) == [ToolCall("get_package_details", "error"), ToolCall("get_package_details", "allowed")]
 
 
 def test_a_turn_without_tools_records_an_empty_list_and_is_allowed():
-    runtime_span = span(category="runtime", tools="semantic_trip_search, get_package_details")
+    runtime_span = span(category="runtime", tools="hybrid_trip_search, get_package_details")
     audit = audit_from_decision(decision_with(runtime_span))
     assert audit == TurnAudit([]) and audit.decision == "allow"
 
@@ -144,7 +151,7 @@ def test_a_cedar_denied_hold_then_a_details_lookup_keeps_both_and_is_a_denial():
 
 def test_a_failed_call_the_model_recovered_from_keeps_its_own_error():
     audit = audit_from_decision(decision_with(
-        before("c1", DETAILS), failed("c1", DETAILS, "Unknown package TKY-999"),
+        before("c1", DETAILS), failed("c1", DETAILS, "Aurora statement timed out"),
         *called("c2", DETAILS)))
     assert audit.tool_calls == [
         ToolCall("get_package_details", "error"), ToolCall("get_package_details", "allowed")]
@@ -224,7 +231,7 @@ def test_a_named_error_keeps_its_code_and_names_no_layer(code):
 
 
 def test_free_text_is_never_stored_as_a_code():
-    (call,) = calls_of(before("c1", DETAILS), failed("c1", DETAILS, "Unknown package TKY-999"))
+    (call,) = calls_of(before("c1", DETAILS), failed("c1", DETAILS, "Aurora statement timed out"))
     assert call.refusal_code is None
 
 
@@ -321,7 +328,7 @@ def test_a_cedar_denial_stays_denied():
 
 
 @pytest.mark.parametrize("text", [
-    "execution_lease_lost", "Unknown package TKY-999", "traveler_not_authorized",
+    "execution_lease_lost", "Aurora statement timed out", "traveler_not_authorized",
 ])
 def test_an_error_stays_an_error(text):
     spans = traced(before("c1", HOLD_TOOL), failed("c1", HOLD_TOOL, text))
@@ -374,13 +381,13 @@ def test_an_error_and_a_cedar_denial_keep_their_titles():
 
 def test_the_row_and_the_trace_come_from_one_reading_of_the_spans(monkeypatch):
     decision = decision_with(*called("c1", SEARCH), *called("c2", DETAILS))
-    readings = iter([[(ToolCall("semantic_trip_search", "allowed"), 1)],
+    readings = iter([[(ToolCall("hybrid_trip_search", "allowed"), 1)],
                      [(ToolCall("get_package_details", "allowed"), 1)]])
     monkeypatch.setattr(audit_outcome, "_settled_calls", lambda _spans: next(readings))
 
     turn = read_turn(decision)
 
-    assert turn.audit.tool_calls == [ToolCall("semantic_trip_search", "allowed")]
+    assert turn.audit.tool_calls == [ToolCall("hybrid_trip_search", "allowed")]
     assert turn.spans == decision.activities
 
 
@@ -416,7 +423,7 @@ def test_a_signed_in_turn_names_the_cognito_subject_and_each_call(recorded):
 
     (row,) = recorded.rows
     assert row["authorization_subject"] == SUB and row["authorization_provider"] == "cognito"
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     assert row["authorization_decision"] == "allow"
     assert row["operation"] == "production_turn"
     assert row["iam_identity"] == "arn:aws:sts::123:assumed-role/demo/session"
@@ -439,7 +446,7 @@ def test_a_denied_hold_is_stored_as_a_denial_not_an_allow(recorded):
 
 def test_a_turn_still_writes_its_row_when_the_spans_are_read_twice_differently(
         recorded, monkeypatch):
-    readings = iter([[(ToolCall("semantic_trip_search", "allowed"), 1)],
+    readings = iter([[(ToolCall("hybrid_trip_search", "allowed"), 1)],
                      [(ToolCall("get_package_details", "allowed"), 1)]])
     monkeypatch.setattr(audit_outcome, "_settled_calls", lambda _spans: next(readings))
     agent = recorded(decision_with(*called("c1", SEARCH)))
@@ -448,7 +455,7 @@ def test_a_turn_still_writes_its_row_when_the_spans_are_read_twice_differently(
         "Find Tokyo trips", "trv_meridian_demo", None, 5, authorization_subject=SUB))
 
     (row,) = recorded.rows
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
 
 
 def test_a_confirmed_booking_records_its_operation(recorded):
@@ -699,7 +706,7 @@ def test_a_trace_that_fails_after_the_runtime_returned_writes_a_row_that_names_i
 
     (row,) = committed(agent, recorded.rows)
     assert row["operation"] == operation
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     # The trace failed before the row was written, so the row names that error.
     assert row["turn_error"] == f"TraceFailure: {raised[0]}"
     assert row["authorization_decision"] == "error"
@@ -740,13 +747,13 @@ def test_a_trace_failure_whose_text_cannot_be_read_writes_a_row_named_by_its_cla
 
     assert raised.value is failure
     (row,) = committed(agent, recorded.rows)
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     assert row["authorization_decision"] == "error" and row["turn_error"] == named
     assert errors_logged(caplog) == []
     (logged,) = warnings_logged(caplog)
     assert logged.getMessage().startswith(NAMED_BY_CLASS)
     assert "runtime_session=runtime-session-id" in logged.getMessage()
-    assert isinstance(logged.exc_info[1], ValueError)
+    assert last_line_class(logged.exc_text) == "ValueError", "the masked traceback is kept"
 
 
 @pytest.mark.parametrize(("operation", "paused_in"), [
@@ -774,7 +781,7 @@ async def test_a_turn_cancelled_after_the_runtime_returned_still_writes_its_row(
         await turn
     (row,) = committed(agent, recorded.rows)
     assert row["operation"] == operation
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     # A cancellation during the refresh precedes the row, which names it. One that arrives
     # during the write takes effect once the row is committed, so the row was built without it.
     assert row["turn_error"] == ("CancelledError" if paused_in == "trip refresh" else None)
@@ -942,7 +949,7 @@ def test_a_memory_insert_that_fails_leaves_the_audit_row_committed(recorded, ope
 
     (row,) = committed(agent, recorded.rows)
     assert row["operation"] == operation
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     assert remembered(agent) == []
 
 
@@ -955,7 +962,7 @@ def test_a_failed_trip_refresh_writes_a_row_that_names_it_and_stores_no_memory_f
         asyncio.run(RUNTIME_PATHS["production_turn"](agent))
 
     (row,) = committed(agent, recorded.rows)
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     # The refresh failed before the row was written, so the row names its error.
     assert row["authorization_decision"] == "error"
     assert row["turn_error"] == "CatalogUnavailable: pkg-1"
@@ -1022,7 +1029,7 @@ async def test_a_cancellation_is_never_replaced_by_a_failing_audit_write(
     message = logged.getMessage()
     assert message.startswith("The audit row was not written: its write failed")
     assert all(ids in message for ids in (f"operation={operation}", *TURN_IDS))
-    assert isinstance(logged.exc_info[1], AuditWriteFailed)
+    assert last_line_class(logged.exc_text) == "AuditWriteFailed", "the masked traceback is kept"
 
 
 async def test_a_turn_awaited_inside_a_cancellation_handler_still_fails_on_a_failed_audit_write(
@@ -1306,7 +1313,7 @@ def test_a_failing_audit_write_never_replaces_the_runtime_error(recorded, caplog
     assert all(ids in message for ids in (
         f"operation={operation}", "traveler=trv_meridian_demo", "conversation=conv-test",
         "runtime_session=rt-conv-test-"))
-    assert isinstance(logged.exc_info[1], AuditWriteFailed)
+    assert last_line_class(logged.exc_text) == "AuditWriteFailed", "the masked traceback is kept"
 
 
 @pytest.mark.parametrize("operation", RUNTIME_PATHS)
@@ -1383,7 +1390,7 @@ async def test_a_failing_audit_write_during_a_cancelled_runtime_call_is_logged_o
     assert logged.getMessage().startswith(
         "The audit row was not written: its write failed while the turn was cancelled")
     assert "runtime_session=unknown" in logged.getMessage()
-    assert isinstance(logged.exc_info[1], AuditWriteFailed)
+    assert last_line_class(logged.exc_text) == "AuditWriteFailed", "the masked traceback is kept"
 
 
 @pytest.mark.parametrize(("unreadable", "named"), UNREADABLE, ids=UNREADABLE_IDS)
@@ -1404,7 +1411,7 @@ def test_a_runtime_error_whose_text_cannot_be_read_writes_a_row_named_by_its_cla
     (logged,) = warnings_logged(caplog)
     assert logged.getMessage().startswith(NAMED_BY_CLASS)
     assert "runtime_session=unknown" in logged.getMessage()
-    assert isinstance(logged.exc_info[1], ValueError)
+    assert last_line_class(logged.exc_text) == "ValueError", "the masked traceback is kept"
 
 
 def test_a_runtime_error_with_a_lone_surrogate_writes_a_row_with_valid_utf8(recorded):
@@ -1465,7 +1472,7 @@ def test_a_failed_turn_whose_calls_were_all_allowed_is_an_error_that_names_it(
 
     assert isinstance(failure, RuntimeTurnError)
     (row,) = committed(agent, recorded.rows)
-    assert row["tool_calls"] == [ToolCall("semantic_trip_search", "allowed")]
+    assert row["tool_calls"] == [ToolCall("hybrid_trip_search", "allowed")]
     assert row["authorization_decision"] == "error"
     assert row["turn_error"] == f"ModelThrottledException: {THROTTLED}"
 
@@ -1722,3 +1729,75 @@ def test_a_shared_token_caller_cannot_put_a_subject_in_the_row(served, recorded,
     row = audited_turn(served, recorded, {"Authorization": "Bearer shared-token-for-test"})
 
     assert (row["authorization_provider"], row["authorization_subject"]) == WORKLOAD
+
+
+# ------------------------------------- the catalog tools' calls, read from the Runtime's spans
+# Each case runs the Runtime's own TraceHooks over the tool's answer, then reads the row the way
+# the backend does, so the answer codes are pinned from the Lambda payload to the audit row.
+
+
+ANSWER_CODES = {
+    "currency_convert": ("MeridianCatalog___currency_convert", "unsupported_currency"),
+    "get_package_details": ("MeridianHolds___get_package_details", "unknown_package"),
+    "loyalty_balance": ("MeridianHolds___loyalty_balance", "loyalty_balance_unavailable"),
+}
+
+
+@pytest.mark.parametrize("tool", CATALOG_TOOLS)
+def test_a_catalog_call_that_answers_is_allowed(monkeypatch, tool):
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        (f"MeridianCatalog___{tool}", _answer({"packages": [], "summary": "an answer"}))]))
+    assert audit.tool_calls == [ToolCall(tool, "allowed")] and audit.decision == "allow"
+
+
+@pytest.mark.parametrize(("tool", "code"), ANSWER_CODES.values(), ids=ANSWER_CODES)
+def test_a_factual_no_is_an_allowed_call_not_an_error(monkeypatch, tool, code):
+    audit = audit_from_decision(_traced_turn(monkeypatch, [(tool, _answer({"error": code}))]))
+    assert audit.tool_calls == [ToolCall(tool.split("___")[1], "allowed")]
+    assert audit.decision == "allow"
+
+
+@pytest.mark.parametrize("tool", ["create_courtesy_hold", "confirm_booking"])
+def test_a_governed_write_carrying_a_catalog_answer_is_an_error_in_the_audit_row(
+    monkeypatch, tool
+):
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        (f"MeridianHolds___{tool}", _answer({"error": "unknown_package", "package_id": "X"}))]))
+    assert audit.tool_calls == [ToolCall(tool, "error")] and audit.decision == "error"
+
+
+@pytest.mark.parametrize("tool", CATALOG_TOOLS)
+def test_a_catalog_tool_that_failed_is_an_error_with_no_code(monkeypatch, tool):
+    failed = {"error": "catalog_tool_failed", "tool": tool}
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        (f"MeridianCatalog___{tool}", _answer(failed))]))
+    assert audit.tool_calls == [ToolCall(tool, "error")] and audit.decision == "error"
+
+
+def test_a_failed_loyalty_read_is_an_error_in_the_audit_row(monkeypatch):
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        ("MeridianHolds___loyalty_balance", _answer({"error": "loyalty_balance_failed"}))]))
+    assert audit.tool_calls == [ToolCall("loyalty_balance", "error")] and audit.decision == "error"
+
+
+def test_an_argument_the_catalog_cannot_use_is_an_error(monkeypatch):
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        ("MeridianCatalog___hybrid_trip_search", _answer({"error": "query is required"}))]))
+    assert audit.tool_calls == [ToolCall("hybrid_trip_search", "error")]
+
+
+def test_a_loyalty_read_the_grant_refused_is_refused_by_the_workload_grant(monkeypatch):
+    refusal = {"error": "traveler_not_authorized",
+               "governance": {"allowed": False, "decision": "deny", "subject": "AROA1",
+                              "access_audit_id": "authz_0123456789ab"}}
+    audit = audit_from_decision(_traced_turn(monkeypatch, [
+        ("MeridianHolds___loyalty_balance", _answer(refusal))]))
+    assert audit.tool_calls == [ToolCall("loyalty_balance", "refused", "workload_grant",
+                                         "traveler_not_authorized", "authz_0123456789ab")]
+    assert audit.decision == "deny"
+
+
+def test_the_code_table_stays_the_holds_lambdas_codes():
+    answers_and_failures = {"unsupported_currency", "unknown_package",
+                            "loyalty_balance_unavailable", "catalog_tool_failed"}
+    assert not answers_and_failures & set(CODE_CLASSES)
