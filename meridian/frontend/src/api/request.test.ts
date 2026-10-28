@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { ApiError, requestJson, runWithDeadline } from './request';
+import {
+  ApiError, STREAM_HARD_CAP_MS, STREAM_IDLE_TIMEOUT_MS, requestJson, runWithDeadline,
+  runWithStreamDeadline,
+} from './request';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -62,4 +65,35 @@ it('rejects a 200 whose body is not JSON with an error that is not a server repl
   const failure = await requestJson('/hold').catch(error => error);
   expect(failure).toBeInstanceOf(SyntaxError);
   expect(failure).not.toBeInstanceOf(ApiError);
+});
+
+it('keeps waiting while the stream touches the idle timer, and stops at the hard ceiling', async () => {
+  vi.useFakeTimers();
+  let signal!: AbortSignal;
+  const waiting = runWithStreamDeadline((own, touch) => {
+    signal = own;
+    const keepalive = setInterval(touch, 10_000);
+    own.addEventListener('abort', () => clearInterval(keepalive));
+    return new Promise<never>(() => {});
+  });
+  const assertion = expect(waiting).rejects.toMatchObject({ name: 'TimeoutError' });
+  await vi.advanceTimersByTimeAsync(STREAM_HARD_CAP_MS - 1);
+  expect(signal.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  await assertion;
+  expect(signal.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('stops waiting after one idle limit without a chunk', async () => {
+  vi.useFakeTimers();
+  const waiting = runWithStreamDeadline(() => new Promise<never>(() => {}));
+  const assertion = expect(waiting).rejects.toMatchObject({ name: 'TimeoutError' });
+  await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS);
+  await assertion;
+});
+
+it('keeps the plain request limit at 55 s and the stream ceiling under the 120 s of App Runner', () => {
+  expect(STREAM_HARD_CAP_MS).toBeLessThan(120_000);
+  expect(STREAM_IDLE_TIMEOUT_MS).toBeGreaterThan(2 * 10_000);
 });

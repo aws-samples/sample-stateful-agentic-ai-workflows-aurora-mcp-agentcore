@@ -13,7 +13,7 @@ Run a governed concierge for an authorized traveler.
 | [`MeridianConcierge/main.py`](../../../meridian_agentcore/app/MeridianConcierge/main.py) | The deployed Strands loop, Gateway tools and AgentCore Memory. |
 | [`agentcore.template.json`](../../../meridian_agentcore/agentcore/agentcore.template.json) | Gateway targets and enforced Cedar policies. |
 
-## Live checkpoint
+## Live check
 
 > Find Tokyo trips that fit my saved preferences.
 

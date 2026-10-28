@@ -52,9 +52,18 @@ def test_explicit_overrides_are_honored(model_factory, monkeypatch):
         model_id, "us-east-1", 4096)
 
 
-@pytest.mark.parametrize("budget", ["0", "255", "16001", "not-a-number"])
+@pytest.mark.parametrize("budget", ["0", "255", "4095", "16001", "not-a-number"])
 def test_invalid_output_budget_fails_before_contacting_bedrock(model_factory, monkeypatch, budget):
     monkeypatch.setenv("BEDROCK_MAX_TOKENS", budget)
     with pytest.raises(ValueError):
         loader.load_model()
     model_factory.assert_not_called()
+
+
+def test_the_budget_floor_is_named_in_the_error_and_is_accepted_exactly(model_factory, monkeypatch):
+    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "4095")
+    with pytest.raises(ValueError, match=r"BEDROCK_MAX_TOKENS must be between 4096 and 16000"):
+        loader.load_model()
+    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "4096")
+    loader.load_model()
+    assert model_factory.call_args.kwargs["max_tokens"] == 4096

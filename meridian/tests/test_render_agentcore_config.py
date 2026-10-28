@@ -92,6 +92,7 @@ def test_complete_render_fills_every_account_and_deployment_value() -> None:
         "meridian_read_tools",
         "meridian_hold_governance",
         "meridian_booking_governance",
+        "meridian_release_governance",
     ]
     assert all(f'AgentCore::Gateway::"{GATEWAY_ARN}"' in p["statement"] for p in policies)
     assert "{{" not in json.dumps(spec) + json.dumps(targets)
@@ -126,7 +127,7 @@ def test_second_deployment_adds_policies_before_the_engine_id_exists() -> None:
 
     spec, _, notes = render_config.render(*templates(), values)
 
-    assert len(spec["policyEngines"][0]["policies"]) == 3
+    assert len(spec["policyEngines"][0]["policies"]) == 4
     assert runtime_env(spec)["MERIDIAN_GATEWAY_ID"] == GATEWAY_ID
     assert "MERIDIAN_POLICY_ENGINE_ID" not in runtime_env(spec)
     assert notes == [
@@ -643,7 +644,8 @@ def test_interceptor_only_enforcement_leaves_the_binding_rule_out() -> None:
     spec = jwt_spec(MERIDIAN_GATEWAY_ENFORCEMENT="interceptor")
 
     assert policy_names(spec) == [
-        "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance"]
+        "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance",
+        "meridian_release_governance"]
 
 
 def test_an_unknown_enforcement_design_is_a_render_error() -> None:

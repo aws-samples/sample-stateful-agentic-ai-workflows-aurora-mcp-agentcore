@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasLiveLease, hasVerifiedResume, parseDatabaseTime } from './evidence';
+import { hasLiveLease, hasVerifiedResume, parseDatabaseTime, workflowStillRunning } from './evidence';
 import type { JourneyDocument, JourneyExecution } from './types';
 
 const execution = { execution_id: 'exe-2', status: 'running', lease_expires_at: '2026-09-06 17:00:00+00' } as JourneyExecution;
@@ -27,5 +27,24 @@ describe('execution evidence', () => {
     expect(hasVerifiedResume(document)).toBe(true);
     document.executions.items.push({ ...execution, execution_id: 'exe-3', status: 'succeeded' });
     expect(hasVerifiedResume(document)).toBe(false);
+  });
+});
+
+describe('workflowStillRunning', () => {
+  const read = (items: JourneyExecution[]) => ({
+    observed_at: '2026-09-06T16:59:00Z', received_at: Date.parse('2026-09-06T17:30:00Z'),
+    executions: { status: 'observed', source: 'journey_executions', items },
+  }) as unknown as JourneyDocument;
+
+  it('is true while the latest execution holds a lease on the database clock', () => {
+    const now = Date.parse('2026-09-06T17:30:30Z');
+    expect(workflowStillRunning(read([execution]), now)).toBe(true);
+    expect(workflowStillRunning(read([execution]), Date.parse('2026-09-06T17:31:00Z'))).toBe(false);
+  });
+
+  it('is false for a finished execution and when executions are unavailable', () => {
+    const now = Date.parse('2026-09-06T17:30:10Z');
+    expect(workflowStillRunning(read([{ ...execution, status: 'succeeded' }]), now)).toBe(false);
+    expect(workflowStillRunning({ executions: { status: 'unavailable', reason: 'x' } } as JourneyDocument, now)).toBe(false);
   });
 });

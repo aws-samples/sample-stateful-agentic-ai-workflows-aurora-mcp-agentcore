@@ -1007,11 +1007,13 @@ class ProductionAgent:
     ) -> None:
         """Show a hold or booking turn's trace, then write its audit row and remember it.
 
-        Once the Runtime returned, the audit row is written whatever happens. When the trace
-        fails, only a placed write's turn is remembered: its write happened. A refused one did
-        not complete, so it is not stored. After a placed write, a failed audit row or memory
-        write raises ``PlacedWriteUnfinished`` for that step; the caller names a trace failure,
-        which reaches it unchanged.
+        Once the Runtime returned, the audit row is attempted whatever the trace or the later
+        steps do. It is best effort once the request has ended: App Runner guarantees no work
+        past a request, so a deploy or scale-in can drop it. A placed write is durable either
+        way. When the trace fails, only a placed write's turn is remembered: its write happened. A turn whose write
+        was refused or not placed is remembered only when its trace succeeds. After a placed
+        write, a failed audit row or memory write raises ``PlacedWriteUnfinished`` for that
+        step; the caller names a trace failure, which reaches it unchanged.
         """
         in_flight: Optional[BaseException] = None
         try:
@@ -1064,7 +1066,8 @@ class ProductionAgent:
             read, message, traveler_id, travelers_count, operation="production_turn")
         shown: List[Dict[str, Any]] = []
         in_flight: Optional[BaseException] = None
-        # The Runtime has acted, so the turn's audit row is written whatever happens next.
+        # The Runtime has acted, so the audit row is attempted whatever happens next (best effort
+        # once the request has ended; a placed write is durable regardless).
         try:
             self._forward_turn(decision, spans)
             emit_chat_event(

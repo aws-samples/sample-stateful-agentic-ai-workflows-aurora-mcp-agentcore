@@ -1,4 +1,4 @@
-import type { ChatResponse } from '../types';
+import { ApiError, isServerReply } from './request';
 
 export type ChatStreamEvent =
   | { type: 'delta' | 'status'; text: string }
@@ -21,20 +21,42 @@ export class SignInRequiredError extends Error {
   }
 }
 
-/** Read real server events; a closed connection is not a completed answer. */
-export async function readChatStream(
+/** The server ended the stream at its ceiling; the work goes on and Aurora holds the outcome. */
+export class ReadBackRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReadBackRequiredError';
+  }
+}
+
+/** What every streamed result carries: the words to show and the activity trace. */
+export interface StreamedResult {
+  message: string;
+  activities: unknown[];
+}
+
+/**
+ * Read real server events; a closed connection is not a completed answer. `onActivity` runs for
+ * every chunk that arrives, keepalive comments included, so the caller can tell a quiet stream
+ * from a live one. An error event that carries a status becomes an ApiError with that status, and
+ * the same `worded` rule as a plain reply.
+ */
+export async function readEventStream<T extends StreamedResult>(
   response: Response,
   onEvent: (event: ChatStreamEvent) => void,
   signal?: AbortSignal,
-): Promise<ChatResponse> {
+  onActivity?: () => void,
+): Promise<T> {
   if (!response.ok) {
     let detail = `Request failed (${response.status}).`;
+    let worded = false;
     try {
       const body = await response.json();
       if (typeof body.error === 'string') detail = body.error;
       else if (typeof body.detail === 'string') detail = body.detail;
+      worded = isServerReply(body, response.status);
     } catch { /* Keep the HTTP status. */ }
-    throw new Error(detail);
+    throw new ApiError(detail, response.status, worded);
   }
   if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) {
     throw new Error('The concierge did not return a live stream. Check the connection and try again.');
@@ -51,6 +73,7 @@ export async function readChatStream(
       signal?.throwIfAborted();
       const { done, value } = await reader.read();
       signal?.throwIfAborted();
+      onActivity?.();
       buffer += decoder.decode(value, { stream: !done });
       if (buffer.length > 2_000_000) throw new Error('The concierge response exceeded the stream limit.');
       let end: number;
@@ -62,13 +85,23 @@ export async function readChatStream(
           const event = JSON.parse(data.join('\n'));
           data = [];
           if (event.type === 'error' && event.code === 'sign_in_required') throw new SignInRequiredError();
+          if (event.type === 'error' && event.code === 'read_back') {
+            throw new ReadBackRequiredError(typeof event.message === 'string' ? event.message : 'The outcome is read back from Aurora.');
+          }
           if (event.type === 'error' && event.code === 'token_expired') throw new TokenExpiredError(contentDelivered);
-          if (event.type === 'error') throw new Error(typeof event.message === 'string' ? event.message : 'The response was interrupted.');
+          if (event.type === 'error') {
+            const message = typeof event.message === 'string' ? event.message : 'The response was interrupted.';
+            if (typeof event.status === 'number') {
+              throw new ApiError(message, event.status, isServerReply(
+                { error: message, ...(typeof event.code === 'string' ? { code: event.code } : {}) }, event.status));
+            }
+            throw new Error(message);
+          }
           if (event.type === 'complete') {
             if (typeof event.response?.message !== 'string' || !Array.isArray(event.response.activities)) {
               throw new Error('The concierge returned an incomplete result.');
             }
-            return event.response as ChatResponse;
+            return event.response as T;
           }
           if ((event.type === 'delta' || event.type === 'status') && typeof event.text === 'string') { contentDelivered = true; onEvent(event); }
           else if (event.type === 'conversation' && typeof event.conversation_id === 'string') onEvent(event);

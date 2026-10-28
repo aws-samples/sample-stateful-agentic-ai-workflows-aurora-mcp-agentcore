@@ -4,22 +4,30 @@ The resource types, construct paths and logical ids below are the ones in the te
 AgentCore CDK app synthesizes for the ``iam`` Gateway (``Mcp/GatewayMeridianAurora`` with the
 catalog target, the holds Lambda and its role, and the ``Application`` constructs for the Cedar
 engine, its three rules and the Runtimes). The ``jwt`` ids are the same shape with the ``Jwt``
-construct id; their hashes are invented. No live ``agentcore deploy --diff`` has been seen: the
-line layout (``[+] type path logical-id`` and indented ``[~]`` property lines) is the CDK text
-diff the CLI is documented to print, so these fixtures do not prove the real format.
+construct id; their hashes are invented. The line layout (``[+] type path logical-id`` and indented
+``[~]`` property lines) matches the live complete-stage plans in ``tests/fixtures/real_plans/``,
+but no live plan of stages 1 to 3 has been seen, so these fixtures do not prove the format there.
+Property lines in these fixtures carry no value lines; the live shape is covered by the real plans.
 """
 
 from __future__ import annotations
 
 import re
 
+FAKE_ACCOUNT_IDS = ("123456789012", "111122223333", "999999999999")
+FAKE_RESOURCE_SUFFIX = "abcde12345"
+FAKE_RESOURCE_SUFFIXES = (FAKE_RESOURCE_SUFFIX,)
+FAKE_HASH_LABELS = tuple(f"fixture-{number}" for number in range(32))
 STATUS = '{"success":true,"targetName":"default","stackName":"AgentCore-meridianv2-default"}'
 HEADER = "Stack AgentCore-meridianv2-default\nResources"
 GATEWAY = "AWS::BedrockAgentCore::Gateway"
 IAM_GATEWAY = ("Mcp/GatewayMeridianAurora", "McpGatewayMeridianAurora")
 JWT_GATEWAY = ("Mcp/GatewayMeridianAuroraJwt", "McpGatewayMeridianAuroraJwt")
 ENGINE = ("Application/PolicyEngineMeridianGovernance", "ApplicationPolicyEngineMeridianGovernance")
-RULES = ("meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance")
+RULES = (
+    "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance",
+    "meridian_release_governance",
+)
 
 CATALOG_PARTS = [("AWS::BedrockAgentCore::GatewayTarget", "TargetMeridianCatalog")]
 HOLDS_PARTS = [

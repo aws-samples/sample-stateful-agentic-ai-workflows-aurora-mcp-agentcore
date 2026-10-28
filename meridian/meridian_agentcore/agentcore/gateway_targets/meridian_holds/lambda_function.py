@@ -732,14 +732,29 @@ def _failure(tool: str, error: Exception, fixed_code: str) -> dict:
 
 ARN = re.compile(r"arn:[a-z0-9-]+:[^\s\"',)]*")
 ACCOUNT = re.compile(r"(?<![0-9A-Za-z])\d{12}(?![0-9A-Za-z])")
-CREDENTIAL = re.compile(r"(password|secret|token|key)=\S+", re.IGNORECASE)
+_TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
+CREDENTIAL = re.compile(
+    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
+    rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
+    r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",
+    re.IGNORECASE,
+)
+JWT = re.compile(r"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")
+BEARER = re.compile(r"""Bearer:?\s+['"]?[A-Za-z0-9._~+/=-]{8,}""", re.IGNORECASE)
+
+
+def _mask_credentials(text: str) -> str:
+    """Bearer tokens, credentials and JWTs masked, as backend/security/redaction.py does."""
+    bearer_masked = BEARER.sub("Bearer <token>", text)
+    return JWT.sub("<token>", CREDENTIAL.sub(r"\1\2<masked>", bearer_masked))
 DETAIL_CHARS = 120
 LOYALTY_FAILED = "loyalty_balance_failed"
 
 
 def _masked_detail(error: Exception) -> str:
     """The exception text for the log only: ARNs, account ids and credentials masked, cut short."""
-    text = CREDENTIAL.sub(r"\1=<masked>", str(error))
+    text = _mask_credentials(str(error))
     text = ACCOUNT.sub("<acct>", ARN.sub("<arn>", text))
     return text[:DETAIL_CHARS]
 

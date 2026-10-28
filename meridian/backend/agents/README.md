@@ -1,6 +1,6 @@
 # Meridian agents (Phases 1 to 5)
 
-Five capabilities, in talk order, on the **same Aurora travel schema**. Open each
+Five capabilities, in phase order, on the **same Aurora travel schema**. Open each
 numbered guide for the running code, sample prompt, evidence and takeaway.
 
 1. [01 - SQL](phase_01_sql/)
@@ -17,7 +17,7 @@ numbered guide for the running code, sample prompt, evidence and takeaway.
 | 4 | **Production Agent** | `phase_04_production/concierge.py` | Identity, traveler grant, RLS read and write around the managed runtime |
 | 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold and booking confirmation |
 | 4 | Traveler Memory Agent | `phase_04_production/memory_agent.py` | `@tool` recall / persist for Aurora memory |
-| 5 | **Orchestration Agent** | `phase_05_workflow/graph.py` | Strands `Graph` built by `GraphBuilder`, run by the `MeridianWorkflow` Runtime, with Aurora `workflow_snapshots`; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`) |
+| 5 | **Orchestration Agent** | `phase_05_workflow/graph.py` | Strands `Graph` built by `GraphBuilder`, run by the `MeridianWorkflow` Runtime, with Aurora `workflow_snapshots`; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`); the search node and the release step call Gateway tools the same way (`phase_05_workflow/governed_tools.py`) |
 
 ## Live API routing (`backend/routers/chat.py`)
 

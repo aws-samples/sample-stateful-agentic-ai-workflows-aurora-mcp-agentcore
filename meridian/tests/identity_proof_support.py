@@ -156,6 +156,11 @@ def fake_gateway(database: FakeDatabase):
                 database.deny_rows[TRAVELER_OF[user]] += 1
                 return text_result(lambda_refusal(), is_error=True)
             return text_result(lambda_loyalty())
+        if tool.endswith("release_hold"):
+            if arguments["travelerId"] != TRAVELER_OF[user]:
+                database.deny_rows[TRAVELER_OF[user]] += 1
+                return text_result(lambda_refusal(), is_error=True)
+            return text_result({"error": "hold_not_found"})
         if user == DECOY:
             database.deny_rows[TRAVELER_OF[user]] += 1
             return text_result(lambda_refusal(), is_error=True)

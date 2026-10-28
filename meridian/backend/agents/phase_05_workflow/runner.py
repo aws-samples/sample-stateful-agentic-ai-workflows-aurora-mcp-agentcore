@@ -521,8 +521,10 @@ class WorkflowRunner:
             await graph.invoke_async(self._task(command, journey_id, prior))
         except (ExecutionLeaseLostError, HoldOutcomeUnknown):
             raise
-        except Exception:
-            await self._compensate(graph, command.thread_id)
+        except Exception as exc:
+            note = await self._compensate(graph, command.thread_id, claim.execution_id)
+            if note is not None:
+                _attach_release_note(exc, note)
             raise
         previous = (
             await self._lease.previous_worker(
@@ -580,15 +582,26 @@ class WorkflowRunner:
             travelers_count=command.travelers_count,
         )
 
-    async def _compensate(self, graph: Any, thread_id: str) -> None:
-        """Give back a hold this run committed before it failed."""
+    async def _compensate(
+        self, graph: Any, thread_id: str, execution_id: str
+    ) -> Optional[str]:
+        """Give back a hold this run committed before it failed.
+
+        The release carries this run's execution id, so the holds Lambda refuses it, inside the
+        same transaction as the update, when another worker has taken the run over. Returns a
+        fixed phrase when a hold was left in place, else None.
+        """
         state = fold_state(graph.state)
         intent = state.get("hold_intent") or {}
         package, duration = state.get("hold_package"), state.get("hold_duration")
         expected = intent.get("booking_id") or (
             hold_key(thread_id, str(package), str(duration)) if package and duration else None
         )
-        await self._nodes.release_hold(state, expected_hold_id=expected)
+        self._nodes.release_note = None
+        await self._nodes.release_hold(
+            state, expected_hold_id=expected, execution_id=execution_id
+        )
+        return self._nodes.release_note
 
     def _outcome(
         self,
@@ -649,6 +662,14 @@ class WorkflowRunner:
                 "The summary below describes the whole journey.\n\n" + state.get("response", "")
             ),
         }
+
+
+def _attach_release_note(exc: BaseException, note: str) -> None:
+    """Carry the fixed phrase about a hold left in place on the run's own error."""
+    try:
+        exc.hold_release = note  # type: ignore[attr-defined]
+    except AttributeError:
+        logger.warning("could not attach the hold release note to %s", type(exc).__name__)
 
 
 def _paused_span(thread_id: str, pending: List[str]) -> Dict[str, Any]:

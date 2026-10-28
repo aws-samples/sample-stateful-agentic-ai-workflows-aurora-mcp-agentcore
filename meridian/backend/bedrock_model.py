@@ -25,11 +25,16 @@ from backend.config import BedrockConfig, config
 
 DEFAULT_MODEL_ID = BedrockConfig.DEFAULT_MODEL_ID
 
-# The model request fields beyond the Converse basics. Empty means no thinking field is sent,
-# which is the provider default. scripts/smoke_bedrock_model.py, run before each release,
-# says which thinking setting this model accepts; change this value, and the same constant in
-# the Runtime's load.py, only to what that smoke accepted.
-REQUEST_FIELDS: Dict[str, Any] = {}
+# The model request fields beyond the Converse basics: adaptive thinking at effort medium, the
+# owner's choice after a live measurement (3.97 s mean a turn against 4.85 s with no thinking
+# field, same tools and stop reasons). It is the "adaptive thinking, effort medium" candidate
+# of scripts/smoke_bedrock_model.py, which is run before each release; change this value, and
+# the same constant in the Runtime's load.py, only to what that smoke accepted. Thinking
+# tokens count against max_tokens, so the 16,000-token cap leaves room to think and answer.
+REQUEST_FIELDS: Dict[str, Any] = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "medium"},
+}
 
 # Throttling and transient errors are retried by botocore with client-side rate limiting, up to
 # MAX_ATTEMPTS attempts in all (botocore's total_max_attempts; its max_attempts counts retries

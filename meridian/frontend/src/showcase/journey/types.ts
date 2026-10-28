@@ -132,9 +132,9 @@ export type JourneyDocument = {
     prompt: string;
   }>;
   conversation: Evidence<{ messages: JourneyMessage[] }>;
-  /** Unavailable with `checkpoint_hold_id` when the checkpoint names a hold
-   *  whose booking Aurora no longer has (for example, a released demo hold). */
-  hold: (Unavailable & { checkpoint_hold_id?: string }) | Observed<JourneyHold>;
+  /** Unavailable with `snapshot_hold_id` when the snapshot names a hold
+   *  whose booking Aurora no longer has (for example, a released hold). */
+  hold: (Unavailable & { snapshot_hold_id?: string }) | Observed<JourneyHold>;
   authorization: Evidence<JourneyAuthorization>;
   rls: Evidence<Record<string, unknown>>;
 };

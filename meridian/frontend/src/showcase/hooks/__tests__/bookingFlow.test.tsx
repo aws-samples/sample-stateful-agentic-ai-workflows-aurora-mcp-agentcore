@@ -89,7 +89,7 @@ describe('Booking confirmation', () => {
     expect(confirmBooking).not.toHaveBeenCalled();
 
     await act(async () => { await result.current.confirmTrip(tokyo); });
-    expect(confirmBooking).toHaveBeenCalledWith({ booking_id: 'HLD-9', phase: 4, traveler_id: 'me', conversation_id: 'conv-1' }, expect.any(AbortSignal));
+    expect(confirmBooking).toHaveBeenCalledWith({ booking_id: 'HLD-9', phase: 4, traveler_id: 'me', conversation_id: 'conv-1' }, expect.any(AbortSignal), expect.any(Function));
     expect(result.current.bookingPrompt).toBeNull();
     expect(result.current.tripHolds[0].order.status).toBe('confirmed');
     expect(result.current.tripHolds[0].order.confirmed_at).toBe('2026-09-10 13:00:00+00');

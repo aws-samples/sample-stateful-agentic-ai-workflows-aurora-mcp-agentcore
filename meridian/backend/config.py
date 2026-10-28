@@ -68,6 +68,10 @@ class BedrockConfig:
     Concierge reads its own ``BEDROCK_MODEL_ID`` from the AgentCore deployment template, so
     changing the backend environment does not change that Runtime.
 
+    ``backend/bedrock_model.py`` also sends adaptive thinking at effort medium to whichever model
+    is named, so an override must be a model that accepts those fields, or ``REQUEST_FIELDS``
+    must change in both factories.
+
     Sonnet 5.5 rejects a ``temperature``, ``thinking: disabled`` and a forced tool choice, so
     none is sent; ``backend/bedrock_model.py`` builds the model. If you see::
 

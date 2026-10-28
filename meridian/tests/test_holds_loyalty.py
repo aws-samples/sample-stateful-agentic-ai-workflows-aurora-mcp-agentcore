@@ -142,3 +142,13 @@ def test_a_failed_read_returns_a_fixed_code_and_none_of_the_exception_text(monke
     assert failure["error_type"] == "ClientError"
     assert "123456789012" not in failure["detail"] and "arn:aws" not in failure["detail"]
     assert len(failure["detail"]) <= holds.DETAIL_CHARS
+
+
+@pytest.mark.parametrize("text", [
+    "key=abc", "key: abcdefghijklmnopqrstu", 'body {"authorization": "abc"}',
+    "failed eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhYmMifQ.c2ln",
+])
+def test_the_lambda_detail_masks_the_same_token_forms_as_the_backend(text):
+    detail = holds._masked_detail(RuntimeError(text))
+
+    assert "abc" not in detail and "eyJ" not in detail and "<" in detail

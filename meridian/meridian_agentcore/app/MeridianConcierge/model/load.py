@@ -7,10 +7,17 @@ from strands.models.bedrock import BedrockModel
 DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-5-5"
 
 # Repeats backend/bedrock_model.py, which this Runtime cannot import. Sonnet 5.5 rejects a
-# temperature, thinking disabled and a forced tool choice, so none is sent.
+# temperature, thinking disabled and a forced tool choice, so none is sent. Adaptive thinking
+# at effort medium is the owner's choice, the smoke's "adaptive thinking, effort medium".
 # tests/test_bedrock_model.py fails if the two files differ.
-REQUEST_FIELDS: dict = {}
+REQUEST_FIELDS: dict = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "medium"},
+}
 MAX_ATTEMPTS = 5
+# Adaptive thinking at effort medium spends output tokens before the answer. The smoke's 1024
+# fits a one-word reply only; the agents run on 16000 and reply with tool results and cards.
+MIN_MAX_TOKENS = 4096
 
 
 def load_model(model_id: str | None = None, region_name: str | None = None) -> BedrockModel:
@@ -19,8 +26,10 @@ def load_model(model_id: str | None = None, region_name: str | None = None) -> B
     if "openai.gpt-oss" in model_id:
         raise ValueError("Concierge requires a hosted model; GPT-OSS is not supported")
     max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "16000"))
-    if max_tokens < 256 or max_tokens > 16000:
-        raise ValueError("BEDROCK_MAX_TOKENS must be between 256 and 16000")
+    if max_tokens < MIN_MAX_TOKENS or max_tokens > 16000:
+        raise ValueError(
+            f"BEDROCK_MAX_TOKENS must be between {MIN_MAX_TOKENS} and 16000, got {max_tokens}: "
+            "thinking at effort medium shares this budget with the answer")
     options = {}
     if REQUEST_FIELDS:
         options["additional_request_fields"] = copy.deepcopy(REQUEST_FIELDS)

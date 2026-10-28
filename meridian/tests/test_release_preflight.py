@@ -747,8 +747,8 @@ def test_a_policy_summary_without_a_name_is_skipped_not_fatal():
 
 
 def test_a_log_only_rule_is_carried_with_its_mode_and_reported():
-    pages = [{"policies": rs.policies(rs.BASE_POLICIES[:2]) + rs.policies(
-        [rs.BASE_POLICIES[2], rs.BINDING_POLICY], "LOG_ONLY")}]
+    pages = [{"policies": rs.policies(rs.BASE_POLICIES[:3]) + rs.policies(
+        [rs.BASE_POLICIES[3], rs.BINDING_POLICY], "LOG_ONLY")}]
 
     state = preflight.read_state(fake_control(pages=pages), rs.GATEWAY_ID, rs.RUNTIME_IDS)
     found = preflight.hop_findings(state, rs.target())

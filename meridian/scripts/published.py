@@ -5,6 +5,7 @@ Run after publish.py --apply. Optionally pass MERIDIAN_HOSTED_AUTH as a JSON
 object with username and password for an authenticated reachability check.
 Credentials are neither printed, copied to the clipboard nor written to disk.
 A reachable URL alone does not prove source parity or a successful live demo.
+``record_verification`` is how ``warm_demo.py --hosted --verify`` writes the validation result.
 """
 from __future__ import annotations
 
@@ -12,14 +13,18 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import urllib.error
 import urllib.request
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 RECORD = Path(__file__).resolve().parents[1] / ".local" / "hosted-release.json"
 TIMEOUT_SECONDS = 15
+VERIFICATION_KEYS = ("verifiedAt", "verifiedCommit", "checks", "failedCheck")
+VERIFIABLE = ("deployed_pending_verification", "verified", "verification_failed")
 
 
 def load_record() -> dict:
@@ -34,6 +39,41 @@ def release_url(record: dict) -> str:
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Release record must contain a credential-free HTTPS site.SiteUrl")
     return url
+
+
+def head_commit() -> str:
+    """The Git HEAD sha of the tree that ran the validation."""
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=RECORD.parents[1], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def record_verification(passed: list[str], failed: str | None) -> dict:
+    """Write the result of the authenticated hosted validation into the release record.
+
+    A full pass sets ``status`` to ``verified`` with the time, the commit and the check names.
+    A failure sets ``verification_failed`` with the passed check names and the failing one.
+    The record keeps ``image`` and ``previousImage`` and gains no token, subject or address.
+
+    Raises:
+        SystemExit: When the record is missing or its release did not finish deploying.
+    """
+    record = load_record()
+    status = record.get("status")
+    if status not in VERIFIABLE:
+        raise SystemExit(
+            f"The release record says {status!r}; wait for publish.py --apply to finish "
+            "before recording a validation.")
+    for key in VERIFICATION_KEYS:
+        record.pop(key, None)
+    record["status"] = "verification_failed" if failed else "verified"
+    record["checks"] = passed
+    if failed:
+        record["failedCheck"] = failed
+    else:
+        record["verifiedAt"] = datetime.now(timezone.utc).isoformat()
+        record["verifiedCommit"] = head_commit()
+    RECORD.write_text(json.dumps(record, indent=2) + "\n")
+    return record
 
 
 def reachability(url: str) -> str:

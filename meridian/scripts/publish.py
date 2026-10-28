@@ -368,7 +368,8 @@ def deploy_release(client, args, env: dict, service: dict, release: Release) -> 
     receipt.update({"status": "deployed_pending_verification", "image": backend["ImageUri"], "site": site,
                     "finishedAt": datetime.now(timezone.utc).isoformat()})
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"Deployed. Non-secret release receipt: {receipt_path}. Run authenticated hosted validation next.")
+    print(f"Deployed. Non-secret release receipt: {receipt_path}. "
+          "Run authenticated hosted validation next: warm_demo.py --hosted --verify.")
 
 
 def publish(args) -> None:

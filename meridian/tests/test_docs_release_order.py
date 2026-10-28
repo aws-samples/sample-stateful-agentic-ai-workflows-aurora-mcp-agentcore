@@ -141,11 +141,13 @@ def test_the_plan_gate_table_names_what_the_code_expects_of_each_stage():
     assert stages.ENGINE_NAME in text and "no parsed resource line" in text
 
 
-def test_the_docs_say_the_first_live_plan_is_read_by_eye_and_no_real_plan_is_committed():
+def test_the_docs_say_the_complete_stage_plans_are_saved_and_the_earlier_ones_are_read_by_eye():
     text = flat(OPERATIONS)
 
-    assert "No live `agentcore deploy --diff --json` has been captured" in text
-    assert "Read the first live plan by eye" in text or "read the first live plan by eye" in text
+    assert "Two live plans of the `complete` stage are saved, masked, in" in text
+    assert "`tests/fixtures/real_plans/`" in text
+    assert "The plans of stages 1 to 3 have not been captured" in text
+    assert "Read the first live plan of each of those stages by eye" in text
 
 
 def test_the_rollback_documentation_names_the_snapshot_choice_and_the_file_flag():

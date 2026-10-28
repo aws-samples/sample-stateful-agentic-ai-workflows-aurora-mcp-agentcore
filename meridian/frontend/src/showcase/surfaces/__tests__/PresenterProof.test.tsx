@@ -65,7 +65,7 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
     hold: {
       status: 'held',
       source: 'hold_requests + bookings',
-      label: 'one hold for this request',
+      label: '1 hold record for this journey',
       hold_request_id: 'hrq_01',
       booking_id: 'BKG-1',
       created_by_execution_id: 'exe_02',
@@ -128,6 +128,42 @@ describe('Presenter proof', () => {
     expect(screen.getByText('worker_02')).toBeInTheDocument();
     expect(screen.getByText(/attempt 1, abandoned/)).toBeInTheDocument();
     expect(screen.getByText(/attempt 2, running/)).toBeInTheDocument();
+  });
+
+  it('names the original and the replacement microVM on the recovery cards', () => {
+    const doc = makeDocument();
+    if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+    doc.executions.items[0].microvm_id = 'vm-aaaaaaaaaaaa';
+    doc.executions.items[1].microvm_id = 'vm-bbbbbbbbbbbb';
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    expect(screen.getByText('Original microVM')).toBeInTheDocument();
+    expect(screen.getByText('Replacement microVM')).toBeInTheDocument();
+  });
+
+  it('calls journeys without microVM ids workers, not microVMs', () => {
+    const doc = makeDocument();
+    if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    expect(screen.getByText('Original worker')).toBeInTheDocument();
+    expect(screen.getByText('Replacement worker')).toBeInTheDocument();
+    expect(screen.queryByText(/microVM/)).not.toBeInTheDocument();
+  });
+
+  it('renders the hold sentence the document carries', () => {
+    const doc = makeDocument();
+    if (!('label' in doc.hold)) throw new Error('Missing fixture hold');
+    doc.hold.label = '3 hold records for this journey';
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    expect(screen.getByText(/3 hold records for this journey\./)).toBeInTheDocument();
+  });
+
+  it('calls a same-worker resume the latest execution, not a replacement microVM', () => {
+    const doc = makeDocument();
+    if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+    doc.executions.items[1].worker_id = doc.executions.items[0].worker_id;
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    expect(screen.getByText('Latest execution')).toBeInTheDocument();
+    expect(screen.queryByText('Replacement microVM')).not.toBeInTheDocument();
   });
 
   it('distinguishes a hold created after replacement from a surviving hold', () => {
@@ -335,7 +371,7 @@ it('says a checkpointed hold is no longer in Aurora instead of claiming none was
     hold: {
       status: 'unavailable',
       reason: 'the snapshot names hold HLD-gone, but Aurora has no booking for it',
-      checkpoint_hold_id: 'HLD-gone',
+      snapshot_hold_id: 'HLD-gone',
     },
   });
   render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);

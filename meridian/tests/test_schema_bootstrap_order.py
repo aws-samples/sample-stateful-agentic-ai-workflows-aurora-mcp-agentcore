@@ -131,7 +131,31 @@ def _audit_log_columns(sql: str) -> set[str]:
     body = re.search(r"CREATE TABLE IF NOT EXISTS agent_audit_log \((.*?)\n\);", sql, re.DOTALL)
     assert body, "examples/rls_for_agents.sql has no CREATE TABLE agent_audit_log"
     declared = set(re.findall(r"^\s*([a-z_]\w*)\s+[A-Z]", body.group(1), re.MULTILINE))
-    return declared | set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", sql))
+    code = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
+    alters = re.findall(r"ALTER TABLE agent_audit_log\s(.*?);", code, re.DOTALL)
+    added = {
+        name for alter in alters for name in re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", alter)
+    }
+    return declared | added
+
+
+def _split_top_level_commas(text: str) -> list[str]:
+    """Split on commas outside parentheses and single-quoted text."""
+    parts, depth, quoted, start = [], 0, False, 0
+    for index, character in enumerate(text):
+        if character == "'":
+            quoted = not quoted
+        elif quoted:
+            continue
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == "," and depth == 0:
+            parts.append(text[start:index])
+            start = index + 1
+    parts.append(text[start:])
+    return parts
 
 
 def _audit_view_columns(sql: str) -> set[str]:
@@ -139,7 +163,25 @@ def _audit_view_columns(sql: str) -> set[str]:
         r"CREATE VIEW agent_iam_audit AS\s+SELECT(.*?)FROM agent_audit_log", sql, re.DOTALL
     )
     assert view, "examples/rls_for_agents.sql has no CREATE VIEW agent_iam_audit"
-    return {column.strip() for column in view.group(1).split(",") if column.strip()}
+    return {column.strip() for column in _split_top_level_commas(view.group(1)) if column.strip()}
+
+
+def test_the_audit_log_column_collector_ignores_other_tables():
+    sql = (
+        "CREATE TABLE IF NOT EXISTS agent_audit_log (\n    id BIGINT\n);\n"
+        "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS agent_access TEXT;\n"
+        "ALTER TABLE agent_audit_log\n    ADD COLUMN IF NOT EXISTS turn_error TEXT;\n"
+    )
+    assert _audit_log_columns(sql) == {"id", "turn_error"}
+
+
+def test_the_view_column_parser_keeps_commas_inside_parentheses_and_quotes_together():
+    sql = (
+        "CREATE VIEW agent_iam_audit AS\n  SELECT id, COALESCE(tool_calls, '[]') AS calls,\n"
+        "         'a, b' AS label, turn_error\n  FROM agent_audit_log"
+    )
+    assert _audit_view_columns(sql) == {
+        "id", "COALESCE(tool_calls, '[]') AS calls", "'a, b' AS label", "turn_error"}
 
 
 def test_base_bootstrap_mirrors_every_column_migration_021_adds():

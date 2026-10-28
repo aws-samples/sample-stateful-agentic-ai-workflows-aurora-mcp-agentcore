@@ -264,7 +264,7 @@
 }
 
 /* Size recovery against its available workspace, not the screen behind the
-   continuity rail. Shared rows keep related cards aligned on stage. */
+   continuity rail. Shared rows keep related cards aligned. */
 .mds-root[data-audience-layout='true'] .mds-recovery-workspace {
   container: recovery-stage / inline-size;
 }

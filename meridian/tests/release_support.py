@@ -25,7 +25,10 @@ GATEWAY_ROLE = f"arn:aws:iam::{ACCOUNT}:role/AgentCore-meridianv2-gateway-role"
 RUNTIME_IDS = {"MeridianConcierge": "meridianv2_MeridianConcierge-abcde12345",
                "MeridianWorkflow": "meridianv2_MeridianWorkflow-fghij67890"}
 BINDING_POLICY = "meridian_traveler_binding"
-BASE_POLICIES = ["meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance"]
+BASE_POLICIES = [
+    "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance",
+    "meridian_release_governance",
+]
 MASTER_SECRET = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:master-XyZ987"
 BACKEND_SECRET = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:backend-AbC123"
 SHA = "0123456789abcdef0123456789abcdef01234567"

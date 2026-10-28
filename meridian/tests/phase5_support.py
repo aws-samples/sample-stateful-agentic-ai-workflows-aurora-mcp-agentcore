@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from backend.agents.phase_05_workflow.governed_hold import RELEASE_TOOL
 from backend.db.journey_store import ExecutionClaim
 
 TOKYO = {"product_id": "pkg_tokyo", "name": "Tokyo", "price": 100,
@@ -43,9 +44,18 @@ class GatewayFake:
     calls: List[Dict[str, Any]] = field(default_factory=list)
     denied: List[Dict[str, Any]] = field(default_factory=list)
     receipts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    releases: List[Dict[str, Any]] = field(default_factory=list)
+    refuse_release: bool = False
+    release_error: Optional[BaseException] = None
+    lapsed_leases: bool = False
+    journey_guard: bool = False
+    garbled_release: bool = False
+    replayed_releases: int = 0
 
     def __call__(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         self.calls.append({"tool": name, **arguments})
+        if name == RELEASE_TOOL:
+            return self._release(arguments)
         within_budget = arguments.get("totalCents", 0) <= arguments.get("budgetCeilingCents", 0)
         if arguments.get("travelerConfirmed") is not True or not within_budget:
             self.denied.append({"tool": name, **arguments})
@@ -60,6 +70,36 @@ class GatewayFake:
         })
         hold = {**receipt, "replayed": replayed, "seatsRemaining": None if replayed else 9}
         return {"result": {"content": [{"type": "text", "text": json.dumps({"hold": hold})}]}}
+
+    def _release(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Answer release_hold like Cedar and the holds Lambda do."""
+        self.releases.append(dict(arguments))
+        if self.release_error is not None:
+            raise self.release_error
+        if self.refuse_release:
+            return {"result": {"isError": True, "content": [
+                {"type": "text", "text": CEDAR_DENIAL},
+            ]}}
+        if self.garbled_release:
+            return {"result": {"content": [{"type": "text", "text": "not json"}]}}
+        receipt = self.receipts.get(arguments.get("holdRequestId"))
+        if self.lapsed_leases and arguments.get("executionId"):
+            body = {"error": "execution_lease_lost"}
+        elif self.journey_guard and arguments.get("executionId"):
+            body = {"error": "journey_not_owned"}
+        elif receipt is None:
+            body = {"error": "hold_not_found"}
+        elif receipt["status"] not in ("held", "released"):
+            body = {"error": "booking_not_held"}
+        else:
+            replayed = receipt["status"] == "released"
+            self.replayed_releases += int(replayed)
+            receipt["status"] = "released"
+            body = {"release": {
+                "bookingId": receipt["bookingId"], "status": "released", "replayed": replayed,
+                "holdRequestId": arguments["holdRequestId"], "journeyId": arguments["journeyId"],
+            }}
+        return {"result": {"content": [{"type": "text", "text": json.dumps(body)}]}}
 
     async def committed_hold(
         self, traveler_id: str, thread_id: str, journey_id: str, intent: Dict[str, Any]

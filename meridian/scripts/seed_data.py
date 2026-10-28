@@ -166,7 +166,7 @@ def require_empty_seed_tables():
     )
     if response["records"][0][0]["booleanValue"]:
         raise SystemExit(
-            "Seeding requires an empty demo database. Existing data was left unchanged. "
+            "Seeding requires an empty database. Existing data was left unchanged. "
             "Use --catalog-only to refresh package data, or release_demo_bookings.py "
             "to reset bookings without erasing journey history."
         )
@@ -618,7 +618,7 @@ def seed_decoy_traveler():
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Seed a new Meridian demo database.")
+    parser = argparse.ArgumentParser(description="Seed a new Meridian database.")
     parser.add_argument(
         "--catalog-only", action="store_true",
         help="refresh package descriptions, prices and vectors; preserve traveler and journey data",

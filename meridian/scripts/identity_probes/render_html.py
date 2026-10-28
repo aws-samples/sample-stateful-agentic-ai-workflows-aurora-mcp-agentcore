@@ -1,4 +1,4 @@
-"""HTML pages for a recorded receipt: a four-row summary for the slide and a full listing.
+"""HTML pages for a recorded receipt: a four-row summary and a full listing.
 
 The pages are self-contained (inline style, no script, no external request), so a screenshot of
 one is a faithful picture of the receipt and of nothing else.

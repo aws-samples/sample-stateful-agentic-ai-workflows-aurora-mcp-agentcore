@@ -129,13 +129,13 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
         <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>Strands Graph in its own AgentCore Runtime</strong><span>Saved steps in Amazon Aurora through the RDS Data API</span></p>
         <ol className="mds-brief-workflow-sequence" aria-label="Phase 5 durable workflow path">
           {[
-            ['Classify', 'Understand the disruption'], ['Search', 'Rank options, then pause'],
+            ['Classify', 'Understand the disruption'], ['Search', 'Gateway search, then pause'],
             ['Availability', 'Recheck stock'], ['Prepare hold', 'Save the write intent'],
             ['Hold', 'Gateway to Lambda'], ['Synthesize', 'Read the saved result'],
           ].map(([title, detail], index) => <li key={title}><span aria-hidden="true">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>)}
         </ol>
-        <p>After lease release or expiry, resume the same thread with the same request and booking IDs.</p>
-        <p className="mds-brief-phase-evidence">Check one hold, the same booking ID and the original expiry. Saved steps in Aurora restore work; AgentCore Memory carries conversation context.</p>
+        <p>After lease release or expiry, resume the same thread with the same request and booking IDs. If a later step fails, the runner releases the hold through the Gateway under Cedar, fenced by the run&rsquo;s lease and journey.</p>
+        <p className="mds-brief-phase-evidence">Check the hold record, the same booking ID and the original expiry. Saved steps in Aurora restore work; AgentCore Memory carries conversation context.</p>
       </Phase>
     </div>
     <p className="mds-brief-note">Fictional Meridian inventory. Holds and confirmations affect the sample catalog; no supplier is contacted and no payment is taken.</p>

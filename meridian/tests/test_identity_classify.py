@@ -212,3 +212,12 @@ def test_database_jordan_sees_his_rows_and_no_more_than_exist():
     assert classify_database_jordan(9, 9).result == "allowed"
     assert classify_database_jordan(0, 9).result == "refused"
     assert classify_database_jordan(12, 9).result == "error"
+
+
+def test_a_named_answer_the_control_expects_is_allowed_and_any_other_is_not():
+    expected = frozenset({"hold_not_found"})
+    raw = text_result({"error": "hold_not_found"})
+    assert classify_gateway(raw, deny_rows=0, design="both", answers=expected).result == "allowed"
+    assert classify_gateway(raw, deny_rows=0, design="both").result == "error"
+    other = text_result({"error": "hold_price_mismatch"})
+    assert classify_gateway(other, deny_rows=0, design="both", answers=expected).result == "error"

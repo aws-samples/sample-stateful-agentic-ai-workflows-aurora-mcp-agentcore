@@ -91,6 +91,7 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
     'meridian_read_tools',
     'meridian_hold_governance',
     'meridian_booking_governance',
+    'meridian_release_governance',
   ]);
   const resources = template.toJSON().Resources ?? {};
   const types = Object.values(resources).map(r => (r as { Type: string }).Type);
@@ -192,7 +193,7 @@ test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
 
   const policyNames = ofType(template, 'AWS::BedrockAgentCore::Policy').map(p => p.Properties.Name);
   expect(policyNames).toContain('meridian_traveler_binding');
-  expect(policyNames).toHaveLength(4);
+  expect(policyNames).toHaveLength(5);
 });
 
 test('the IAM Gateway is granted InvokeGateway and the token Gateway replaces it under another id', () => {

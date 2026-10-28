@@ -74,7 +74,8 @@ deployment steps. Each note names the code or step it explains.
 - **The holds role is new**, so the holds Lambda needs `bind_gateway_workload.py` again, and it reads the
   gateway secret from the moment stage two creates it; the SSM parameter moves after that stage.
 - **The deploy plan is text.** `agentcore deploy --diff --json` prints the CDK diff lines and then a JSON status
-  object; the plan gate reads the lines (read from the installed CLI source, not yet seen live).
+  object; the plan gate reads the lines (seen live for the complete stage, saved masked in
+  `tests/fixtures/real_plans/`; stages 1 to 3 not yet seen).
 
 ## Gateway identity: what the harness measured
 

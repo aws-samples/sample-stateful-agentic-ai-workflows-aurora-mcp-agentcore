@@ -5,10 +5,11 @@ icon set the repository owner supplied from the re:Invent 2025 reference
 materials. They are the purple `#7B27FF` set and are cleared for
 redistribution in this sample:
 
-- Un-suffixed files come from slide 3: black strokes for light backgrounds.
-- `-dark` files come from slide 4: white strokes for dark backgrounds.
+- Un-suffixed files come from the light entries of the source file: black strokes for light
+  backgrounds.
+- `-dark` files come from the dark entries: white strokes for dark backgrounds.
 
-| File | Service | Slide 3 entry | Slide 4 entry |
+| File | Service | Light entry | Dark entry |
 | --- | --- | --- | --- |
 | `agentcore.svg` | Amazon Bedrock AgentCore | `ppt/media/image27.svg` | `ppt/media/image47.svg` |
 | `runtime.svg` | AgentCore Runtime | `ppt/media/image37.svg` | `ppt/media/image63.svg` |

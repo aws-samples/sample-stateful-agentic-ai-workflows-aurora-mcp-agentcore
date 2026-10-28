@@ -6,5 +6,5 @@
 // that Aurora isn't responding, rather than masking the failure with mocks.
 
 // Empty initial prompt - the chat composer starts as a clean slate so the
-// presenter can type their own travel intent on stage.
+// presenter can type their own travel intent.
 export const SHOWCASE_INITIAL_PROMPT = '';

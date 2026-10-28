@@ -12,8 +12,9 @@ subprocess as the meridian_workflow login (their AURORA_SECRET_ARN becomes
 AURORA_WORKFLOW_SECRET_ARN). The driver keeps the master client for verification and
 cleanup, and fails unless every worker reports ``current_user`` as meridian_workflow.
 
-Creates isolated rehearsal rows and removes them in finally. No existing
-bookings, schema, permissions, or service configuration are changed.
+Creates isolated rehearsal rows and removes them in finally. It ends by releasing the
+committed hold through the Gateway's release_hold tool and reading the booking back as
+released. No existing bookings, schema, permissions, or service configuration are changed.
 """
 from __future__ import annotations
 
@@ -34,7 +35,8 @@ from scripts.kill_and_resume_proof import (  # noqa: E402
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
 from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
-    HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold,
+    HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold, release_arguments,
+    release_governed_hold,
 )
 from backend.agents.phase_05_workflow.graph import fold_snapshot  # noqa: E402
 from backend.agents.phase_05_workflow.service import workflow_store_status  # noqa: E402
@@ -96,6 +98,25 @@ def check_denials(intent: dict, thread_id: str) -> None:
         if result.policy_decision != "deny" or result.placed:
             raise AssertionError(f"{label}: expected a Cedar denial, got {result}")
         say("Cedar", f"{label}: denied by Gateway policy")
+
+
+async def check_release(client, journey_id: str, hold: dict, call_tool) -> None:
+    """Give the committed hold back through the same Gateway tool as the compensation step.
+
+    The call carries no execution id: the proof uses its own journey and holds no run lease.
+    """
+    arguments = release_arguments(
+        traveler_id=TRAVELER, hold_request_id=hold["hold_request_id"], journey_id=journey_id,
+    )
+    outcome = await asyncio.to_thread(release_governed_hold, call_tool, arguments)
+    if not outcome.released:
+        raise AssertionError(f"release_hold was not accepted: {outcome.error}")
+    rows = await client.execute(
+        "SELECT status FROM bookings WHERE booking_id = %s", (hold["booking_id"],)
+    )
+    if [row["status"] for row in rows] != ["released"]:
+        raise AssertionError(f"Aurora still shows the booking as {rows}")
+    say("release", f"{hold['booking_id']} released through the Gateway; Aurora shows released")
 
 
 async def main(worker_login: bool = False) -> int:
@@ -162,6 +183,7 @@ async def main(worker_login: bool = False) -> int:
         say("resume", f"same request and booking {after[0]['booking_id']}; one persisted hold")
         say("expiry", f"original expiry retained: {after[0]['hold_expires_at']}")
         say("workers", "review paused; confirmed run failed; replacement resumed and succeeded")
+        await check_release(client, journey_id, after[0], AgentCoreGatewayAdapter().call_tool)
         return 0
     finally:
         if child is not None and child.returncode is None:

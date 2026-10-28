@@ -11,8 +11,12 @@ Meridian is a sample travel concierge that stores its state in Amazon Aurora
 PostgreSQL. You learn how an agent application grows in five phases: from SQL
 queries to Model Context Protocol (MCP) tools, hybrid retrieval, a governed
 agent on Amazon Bedrock AgentCore, and a Strands Graph workflow in its own
-AgentCore Runtime that resumes after its session stops. Every screen shows the SQL, tool calls, authorization
-decisions and stored records behind each answer.
+AgentCore Runtime that resumes after its session stops. Every screen shows the SQL,
+tool calls, authorization decisions and stored records behind each answer.
+
+Two terms recur. Strands is the open-source agent SDK that runs the agents and the
+workflow graph. Cedar is the policy language that AgentCore Policy evaluates before a
+tool runs.
 
 The data is sample travel packages and one fictional traveler, Jordan Morgan.
 Holds and confirmations change rows in Meridian's own database only. There is
@@ -27,17 +31,17 @@ Each phase adds one capability and keeps the earlier ones.
 | Phase | Code | Adds |
 | --- | --- | --- |
 | 1. SQL | [phase_01_sql](meridian/backend/agents/phase_01_sql/) | Parameterized catalog queries through the RDS Data API |
-| 2. MCP | [phase_02_mcp](meridian/backend/agents/phase_02_mcp/) | Named tools for search, comparison, currency conversion and availability |
+| 2. MCP | [phase_02_mcp](meridian/backend/agents/phase_02_mcp/) | Named tools for search, package comparison, currency conversion, price range, region inventory and loyalty |
 | 3. Retrieval | [phase_03_retrieval](meridian/backend/agents/phase_03_retrieval/) | Cohere Embed v4, pgvector and full-text candidates, Cohere Rerank 3.5 |
 | 4. Production | [phase_04_production](meridian/backend/agents/phase_04_production/) | AgentCore Runtime, Gateway, Memory and Cedar policy, with traveler grants and row-level security (RLS) in Aurora |
-| 5. Workflow | [phase_05_workflow](meridian/backend/agents/phase_05_workflow/) | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, worker leases and idempotent holds |
+| 5. Workflow | [phase_05_workflow](meridian/backend/agents/phase_05_workflow/) | A Strands Graph in its own AgentCore Runtime that searches, holds and releases through the Gateway, with Aurora snapshots, worker leases, idempotent holds and one audit row per run |
 
 Each phase folder has a short guide with a sample prompt and the evidence to
 inspect. The sample keeps three kinds of state in Aurora or AgentCore:
 
 - **Traveler context:** profile, preferences and conversation history in Aurora. The agent session is in AgentCore Memory.
 - **Workflow progress:** Strands Graph snapshots in the Aurora table `workflow_snapshots`, appended after every node.
-- **Business results:** holds and bookings in Aurora. One idempotent SQL function handles each action, so a retried request returns the first result.
+- **Business results:** holds and bookings in Aurora. A SQL function or a guarded update handles each action, so a retried request returns the first result.
 
 ## Architecture
 
@@ -59,13 +63,18 @@ Browser (React, Vite)
        └─ AgentCore Runtime (MeridianWorkflow, Strands Graph)
             ├─ runs as the Aurora login meridian_workflow
             ├─ saves workflow_snapshots after every node
-            └─ places its hold through the same Gateway and Cedar policies
+            └─ searches, holds and releases through the same Gateway and Cedar policies
 ```
 
-Every hold and confirmation goes through the Gateway. Cedar checks each tool
+On your machine run the backend and the frontend. In your AWS account run Aurora, the two
+AgentCore Runtimes, the Gateway, Memory and the two Lambda functions.
+
+Every hold, confirmation and release goes through the Gateway. Cedar checks each tool
 call before a Lambda runs: the traveler must confirm, a hold lasts at most 12
-hours for at most 6 travelers, and the total must fit the saved budget. Aurora
-RLS limits each query to one traveler. Read
+hours for at most 6 travelers, the total must fit the saved budget, and a release
+must name a hold and a journey. When a workflow step fails after its hold, the
+workflow releases the hold through the Gateway, and the holds Lambda refuses the
+release if another worker owns the run. Aurora RLS limits each query to one traveler. Read
 [STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) for the
 state design and [meridian/README.md](meridian/README.md) for the API, schema
 and configuration.
@@ -87,7 +96,13 @@ agent; the managed Concierge runtime's model is set in
 ## Quick start
 
 These steps run the backend and frontend on your machine against Aurora in your
-account. Resources in your account incur charges while they exist.
+account. Resources in your account incur charges while they exist. What you can run depends
+on what you have deployed:
+
+| You have | You can run |
+| --- | --- |
+| Aurora and Amazon Bedrock access | The catalog, Phases 1 to 3, System evidence and Solution briefing |
+| Plus the AgentCore resources | The Concierge chat (Phase 4), the Phase 5 workflow, holds and confirmations |
 
 ### 1. Configure and prepare the database
 
@@ -108,7 +123,8 @@ python scripts/apply_migrations.py
 python scripts/seed_data.py
 ```
 
-`init_aurora_schema.py` and `seed_data.py` refuse to run if Meridian tables or
+`seed_data.py` calls Amazon Bedrock to embed the catalog, so the credentials need Cohere
+Embed v4 access. `init_aurora_schema.py` and `seed_data.py` refuse to run if Meridian tables or
 data already exist. For an existing database, run only `apply_migrations.py`.
 
 ### 2. Start the backend
@@ -122,21 +138,25 @@ The backend invokes it through `AGENTCORE_WORKFLOW_RUNTIME_ARN`, which
 `python scripts/sync_agentcore_env.py --write` sets after you deploy. The
 Runtime connects to Aurora as the `meridian_workflow` login created by
 `scripts/provision_workflow_login.py`. See the
-[deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md). Check the
-backend:
+[deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md).
+
+In a second terminal, check the backend:
 
 ```bash
 curl http://127.0.0.1:8013/api/health
 ```
 
-The response should include `"checkpoint_backend": "Aurora workflow_snapshots"`,
-`"checkpoint_durable": true` and `"workflow_runtime_configured": true`. Local requests need no API token. Read the
-[governance boundary](meridian/README.md#governance-boundary) before you expose
-the API to a network.
+The response has `"status": "healthy"` and `"aurora_reachable": true`. The snapshot
+store fields keep their original key names, which say checkpoint:
+`"checkpoint_backend": "Aurora workflow_snapshots"` and `"checkpoint_durable": true`.
+`"workflow_runtime_configured"` is `false` until you deploy the AgentCore resources and run
+`sync_agentcore_env.py --write`; that is expected for a local run. Local requests need no API
+token. Read the [governance boundary](meridian/README.md#governance-boundary) before you
+expose the API to a network.
 
 ### 3. Start the frontend
 
-In a second terminal, from the repository root:
+In another terminal, from the repository root:
 
 ```bash
 cd meridian/frontend
@@ -148,28 +168,29 @@ npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 Open <http://127.0.0.1:5176/showcase>. The header shows **Meridian live** when
 `/api/health` reports healthy and the catalog and traveler profile reads work.
 
-Without AgentCore resources, the catalog, Phases 1 to 3, System evidence and
-Solution briefing work. The Concierge chat, Phases 4 and 5 and all holds report
+Without AgentCore resources, the Concierge chat, Phases 4 and 5 and all holds report
 that AgentCore is not configured.
 
 ## Try the reference app
 
 The showcase has five views along the top of the page.
 
-1. **Concierge:** browse trips for Jordan and ask, for example,
+1. **Concierge:** browse trips for Jordan without AgentCore. The chat and the hold and
+   confirm buttons need AgentCore: ask, for example,
    `Find Tokyo trips that fit my saved preferences.` Open a trip, then use
    **Request 12-hour hold** and **Confirm this trip for Jordan**.
 2. **Capability ladder:** pick a phase and run its suggested prompts. Open the
    activity trace under a reply to see the SQL, tool calls, retrieval scores and
-   policy decisions. Turn on **Use traveler context** for Phase 4.
-3. **Recovery desk:** run the Phase 5 prompt
+   policy decisions. Turn on **Use traveler context** for Phase 4. Phases 4 and 5 need AgentCore.
+3. **Recovery desk** (needs AgentCore): run the Phase 5 prompt
    `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
    The workflow pauses after a saved step, with a snapshot in Aurora. Select
    **Continue at recovery desk**, choose **Stop runtime session** on the
    continuity rail, then select **Resume and request hold**. The next resume
    starts a new microVM on the same session and continues on the same thread.
 4. **System evidence:** read what Aurora recorded: snapshots, leases,
-   session stops, authorization decisions and the hold.
+   session stops, authorization decisions and the hold. It shows these after a Phase 5 run,
+   which needs AgentCore.
 5. **Solution briefing:** the architecture, phases, Gateway tools and Cedar
    policies. It calls no service.
 
@@ -220,7 +241,7 @@ The unit tests block network access and ignore `meridian/.env`. Tests marked
 | [`meridian/meridian_agentcore/`](meridian/meridian_agentcore/) | AgentCore project: runtime code, Gateway Lambdas, templates, CDK app |
 | [`meridian/infra/`](meridian/infra/) | CDK apps for Aurora and the hosted web app |
 | [`meridian/scripts/`](meridian/scripts/README.md) | Schema, seed, migration, AgentCore and recovery scripts |
-| [`meridian/examples/langgraph/`](meridian/examples/langgraph/) | The maintained LangGraph example. The application does not import it |
+| [`meridian/examples/langgraph/`](meridian/examples/langgraph/) | A maintained second implementation of the workflow on another graph framework. The application does not import it |
 | [`meridian/tests/`](meridian/tests/) | Pytest suite |
 | [`meridian/docs/`](meridian/docs/README.md) | Architecture, operations and runbooks |
 

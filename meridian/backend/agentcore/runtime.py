@@ -463,7 +463,8 @@ class AgentCoreRuntimeAdapter:
         progress: TurnProgress,
     ) -> dict[str, Any]:
         """Send the invoke, once more only when ``retry_allowed``; record a failure on progress."""
-        for attempt in range(2 if retry_allowed else 1):
+        attempt = 0
+        while True:
             try:
                 return self._invoke(arn, session_id, payload)
             except (ConnectionClosedError, ConnectionDropped):
@@ -475,6 +476,7 @@ class AgentCoreRuntimeAdapter:
                     "unconfirmed chat turn once"
                 )
                 time.sleep(0.25)
+                attempt += 1
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code", "Unknown")
                 logger.error("invoke_agent_runtime failed: %s", code)
@@ -485,7 +487,6 @@ class AgentCoreRuntimeAdapter:
                     logger.error("Runtime invocation failed: %s", exc.code)
                 progress.may_have_run = _may_have_reached_the_runtime(exc)
                 raise
-        raise AssertionError("the retry loop always returns or raises")
 
     def _decision(
         self, arn: str, session_id: str, events, progress: Optional[TurnProgress] = None,

@@ -124,10 +124,7 @@ def test_cedar_permits_the_reads_and_binds_the_traveler_tools():
                                                                 "release_hold")}
     assert named(statements["meridian_read_tools"]) == reads
     pinned = set(load_interceptor().DEFAULT_PINNED_TOOLS)
-    # Part I: the interceptor pins release_hold before the Cedar binding rule names it (the
-    # policy deploy, Task 8, restores `== pinned`).
-    bound = named(statements["meridian_traveler_binding"])
-    assert bound | {"MeridianHolds___release_hold"} == pinned
+    assert named(statements["meridian_traveler_binding"]) == pinned
 
 
 def test_the_runtime_traces_and_polices_exactly_the_deployed_tools():

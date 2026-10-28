@@ -30,10 +30,10 @@ def run_all(ports, design="both", only=None):
     return ctx, {spec.id: run_probe(spec, ports, ctx) for spec in chosen}
 
 
-def test_the_plan_has_nineteen_unique_probes_and_every_layer_has_both_kinds():
+def test_the_plan_has_twenty_one_unique_probes_and_every_layer_has_both_kinds():
     ids = [spec.id for spec in PLAN]
 
-    assert len(ids) == 19 and len(set(ids)) == 19
+    assert len(ids) == 21 and len(set(ids)) == 21
     for layer in LAYERS:
         mine = [spec for spec in PLAN if spec.layer == layer]
         assert any(s.actor == DECOY and s.expected == REFUSED for s in mine), layer
@@ -45,7 +45,9 @@ def test_the_gateway_reads_the_package_before_any_hold_is_built():
 
     assert order == ["gateway.jordan_reads_package", "gateway.decoy_reads_package",
                      "gateway.decoy_holds_for_jordan", "gateway.jordan_places_hold",
-                     "gateway.decoy_reads_jordans_loyalty", "gateway.jordan_reads_own_loyalty"]
+                     "gateway.decoy_reads_jordans_loyalty", "gateway.jordan_reads_own_loyalty",
+                     "gateway.decoy_releases_jordans_hold",
+                     "gateway.jordan_releases_unknown_hold"]
 
 
 def test_the_runtime_and_the_gateway_each_have_a_control_the_decoy_is_allowed():
@@ -87,7 +89,7 @@ def test_in_a_correct_system_every_probe_passes_and_each_refusal_names_its_layer
 
 def test_jordan_only_selects_just_the_controls():
     assert {spec.actor for spec in select(jordan_only=True)} == {JORDAN}
-    assert len(select(jordan_only=True)) == 9 and len(select(jordan_only=False)) == 19
+    assert len(select(jordan_only=True)) == 10 and len(select(jordan_only=False)) == 21
 
 
 def test_rls_that_hides_nothing_fails_the_database_probe():
@@ -523,3 +525,40 @@ def test_a_probe_that_counts_the_wrong_travelers_deny_rows_does_not_pass():
 
     assert not outcomes["gateway.decoy_reads_jordans_loyalty"].passed
     assert not outcomes["gateway.decoy_holds_for_jordan"].passed
+
+
+def test_a_gateway_that_lets_the_decoy_release_for_jordan_fails_its_probe():
+    ports, _ = good_world()
+
+    def leaky(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        return text_result({"release": {"status": "released", "replayed": False}})
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": leaky})
+
+    _, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                        "gateway.decoy_releases_jordans_hold"})
+
+    assert outcomes["gateway.decoy_releases_jordans_hold"].result == ALLOWED
+    assert not outcomes["gateway.decoy_releases_jordans_hold"].passed
+
+
+def test_the_release_decoy_probe_names_jordans_traveler_and_is_refused_at_the_grant():
+    ports, database = good_world()
+    calls = []
+
+    def recording(user, tool, arguments):
+        calls.append((user, tool, arguments.get("travelerId")))
+        return ports.gateway(user, tool, arguments)
+
+    spied = ports.__class__(**{**ports.__dict__, "gateway": recording})
+
+    _, outcomes = run_all(spied, only={"gateway.jordan_reads_package",
+                                       "gateway.decoy_releases_jordans_hold",
+                                       "gateway.jordan_releases_unknown_hold"})
+
+    releases = [(user, traveler) for user, tool, traveler in calls if tool.endswith("release_hold")]
+    assert releases == [(DECOY, JORDAN_TRAVELER), (JORDAN, JORDAN_TRAVELER)]
+    assert outcomes["gateway.decoy_releases_jordans_hold"].refused_by == "gateway_workload_grant"
+    assert outcomes["gateway.jordan_releases_unknown_hold"].passed

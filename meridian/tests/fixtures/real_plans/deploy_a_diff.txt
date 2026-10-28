@@ -1,0 +1,233 @@
+Stack AgentCore-meridianv2-default
+IAM Statement Changes
+┌───┬─────────────────────────────────────────────────────────────────────────────────────────────┬────────┬───────────────────────────────────────┬─────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   │ Resource                                                                                    │ Effect │ Action                                │ Principal                                                       │ Condition                                                                                                                      │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}                            │ Allow  │ lambda:InvokeFunction                 │ AWS:${Mcp/GatewayMeridianAuroraJwt/Role}                        │                                                                                                                                │
+│   │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}:*                          │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools                       │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools:*                     │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search                │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search:*              │        │                                       │                                                                 │                                                                                                                                │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ - │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}                            │ Allow  │ lambda:InvokeFunction                 │ AWS:${Mcp/GatewayMeridianAuroraJwt/Role}                        │                                                                                                                                │
+│   │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}:*                          │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search                │        │                                       │                                                                 │                                                                                                                                │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search:*              │        │                                       │                                                                 │                                                                                                                                │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ - │ arn:aws:bedrock:*:123456789012:inference-profile/*                                          │ Allow  │ bedrock:CountTokens                   │ AWS:${Application/AgentMeridianConcierge/Runtime/ExecutionRole} │                                                                                                                                │
+│   │ arn:aws:bedrock:*::foundation-model/*                                                       │        │ bedrock:InvokeModel                   │                                                                 │                                                                                                                                │
+│   │                                                                                             │        │ bedrock:InvokeModelWithResponseStream │                                                                 │                                                                                                                                │
+│ - │ arn:aws:bedrock:*:123456789012:inference-profile/*                                          │ Allow  │ bedrock:CountTokens                   │ AWS:${Application/AgentMeridianWorkflow/Runtime/ExecutionRole}  │                                                                                                                                │
+│   │ arn:aws:bedrock:*::foundation-model/*                                                       │        │ bedrock:InvokeModel                   │                                                                 │                                                                                                                                │
+│   │                                                                                             │        │ bedrock:InvokeModelWithResponseStream │                                                                 │                                                                                                                                │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ arn:aws:bedrock:::foundation-model/anthropic.claude-sonnet-5-5                              │ Allow  │ bedrock:InvokeModel                   │ AWS:${Application/AgentMeridianConcierge/Runtime/ExecutionRole} │ "StringEquals": {                                                                                                              │
+│   │                                                                                             │        │ bedrock:InvokeModelWithResponseStream │                                                                 │   "aws:RequestedRegion": "unspecified",                                                                                        │
+│   │                                                                                             │        │                                       │                                                                 │   "bedrock:InferenceProfileArn": "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5" │
+│   │                                                                                             │        │                                       │                                                                 │ }                                                                                                                              │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5 │ Allow  │ bedrock:InvokeModel                   │ AWS:${Application/AgentMeridianConcierge/Runtime/ExecutionRole} │ "StringEquals": {                                                                                                              │
+│   │                                                                                             │        │ bedrock:InvokeModelWithResponseStream │                                                                 │   "aws:RequestedRegion": "us-east-1"                                                                                           │
+│   │                                                                                             │        │                                       │                                                                 │ }                                                                                                                              │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5                     │ Allow  │ bedrock:InvokeModel                   │ AWS:${Application/AgentMeridianConcierge/Runtime/ExecutionRole} │ "StringEquals": {                                                                                                              │
+│   │                                                                                             │        │ bedrock:InvokeModelWithResponseStream │                                                                 │   "aws:RequestedRegion": "us-east-1",                                                                                          │
+│   │                                                                                             │        │                                       │                                                                 │   "bedrock:InferenceProfileArn": "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5" │
+│   │                                                                                             │        │                                       │                                                                 │ }                                                                                                                              │
+├───┼─────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────────────────────┼─────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0                               │ Allow  │ bedrock:InvokeModel                   │ AWS:${Application/AgentMeridianWorkflow/Runtime/ExecutionRole}  │                                                                                                                                │
+│   │ arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0                            │        │                                       │                                                                 │                                                                                                                                │
+└───┴─────────────────────────────────────────────────────────────────────────────────────────────┴────────┴───────────────────────────────────────┴─────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+(NOTE: There may be security-related changes not in this list. See https://github.com/aws/aws-cdk/issues/1299)
+
+Resources
+[+] AWS::BedrockAgentCore::GatewayTarget Mcp/GatewayMeridianAuroraJwt/TargetMeridianCatalog McpGatewayMeridianAuroraJwtTargetMeridianCatalog61571DDC
+[~] AWS::IAM::Policy Application/AgentMeridianConcierge/Runtime/ExecutionRole/DefaultPolicy ApplicationAgentMeridianConciergeRuntimeExecutionRoleDefaultPolicyEAD1A989
+ └─ [~] PolicyDocument
+     └─ [~] .Statement:
+         └─ @@ -1,18 +1,6 @@
+            [ ] [
+            [ ]   {
+            [ ]     "Action": [
+            [-]       "bedrock:CountTokens",
+            [-]       "bedrock:InvokeModel",
+            [-]       "bedrock:InvokeModelWithResponseStream"
+            [-]     ],
+            [-]     "Effect": "Allow",
+            [-]     "Resource": [
+            [-]       "arn:aws:bedrock:*:123456789012:inference-profile/*",
+            [-]       "arn:aws:bedrock:*::foundation-model/*"
+            [-]     ]
+            [-]   },
+            [-]   {
+            [-]     "Action": [
+            [ ]       "logs:DescribeLogGroups",
+            [ ]       "xray:PutTelemetryRecords",
+            [ ]       "xray:PutTraceSegments"
+            @@ -105,5 +93,46 @@
+            [ ]         "MemoryArn"
+            [ ]       ]
+            [ ]     }
+            [+]   },
+            [+]   {
+            [+]     "Action": [
+            [+]       "bedrock:InvokeModel",
+            [+]       "bedrock:InvokeModelWithResponseStream"
+            [+]     ],
+            [+]     "Condition": {
+            [+]       "StringEquals": {
+            [+]         "aws:RequestedRegion": "us-east-1"
+            [+]       }
+            [+]     },
+            [+]     "Effect": "Allow",
+            [+]     "Resource": "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5"
+            [+]   },
+            [+]   {
+            [+]     "Action": [
+            [+]       "bedrock:InvokeModel",
+            [+]       "bedrock:InvokeModelWithResponseStream"
+            [+]     ],
+            [+]     "Condition": {
+            [+]       "StringEquals": {
+            [+]         "aws:RequestedRegion": "us-east-1",
+            [+]         "bedrock:InferenceProfileArn": "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5"
+            [+]       }
+            [+]     },
+            [+]     "Effect": "Allow",
+            [+]     "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5"
+            [+]   },
+            [+]   {
+            [+]     "Action": [
+            [+]       "bedrock:InvokeModel",
+            [+]       "bedrock:InvokeModelWithResponseStream"
+            [+]     ],
+            [+]     "Condition": {
+            [+]       "StringEquals": {
+            [+]         "aws:RequestedRegion": "unspecified",
+            [+]         "bedrock:InferenceProfileArn": "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude-sonnet-5-5"
+            [+]       }
+            [+]     },
+            [+]     "Effect": "Allow",
+            [+]     "Resource": "arn:aws:bedrock:::foundation-model/anthropic.claude-sonnet-5-5"
+            [ ]   }
+            [ ] ]
+[~] AWS::BedrockAgentCore::Runtime Application/AgentMeridianConcierge/Runtime ApplicationAgentMeridianConciergeRuntimeC59BB6EB
+ ├─ [~] AgentRuntimeArtifact
+ │   └─ [~] .CodeConfiguration:
+ │       └─ [~] .Code:
+ │           └─ [~] .S3:
+ │               └─ [~] .Prefix:
+ │                   ├─ [-] 1bbcad29320f20847a515cc854063cda0ddaea20cdcff45eb6b5e0e9ee15fbd4.zip
+ │                   └─ [+] 042896dc1966b8a6214e5383aba5b8b931cfa049d17aafa37eb8a77c859b95da.zip
+ └─ [~] EnvironmentVariables
+     ├─ [~] .BEDROCK_MAX_TOKENS:
+     │   ├─ [-] 2048
+     │   └─ [+] 16000
+     ├─ [~] .BEDROCK_MODEL_ID:
+     │   ├─ [-] us.openai.gpt-6-sol
+     │   └─ [+] global.anthropic.claude-sonnet-5-5
+     └─ [-] Removed: .BEDROCK_REASONING_EFFORT
+[~] AWS::IAM::Policy Application/AgentMeridianWorkflow/Runtime/ExecutionRole/DefaultPolicy ApplicationAgentMeridianWorkflowRuntimeExecutionRoleDefaultPolicyD526FD73
+ └─ [~] PolicyDocument
+     └─ [~] .Statement:
+         └─ @@ -1,18 +1,6 @@
+            [ ] [
+            [ ]   {
+            [ ]     "Action": [
+            [-]       "bedrock:CountTokens",
+            [-]       "bedrock:InvokeModel",
+            [-]       "bedrock:InvokeModelWithResponseStream"
+            [-]     ],
+            [-]     "Effect": "Allow",
+            [-]     "Resource": [
+            [-]       "arn:aws:bedrock:*:123456789012:inference-profile/*",
+            [-]       "arn:aws:bedrock:*::foundation-model/*"
+            [-]     ]
+            [-]   },
+            [-]   {
+            [-]     "Action": [
+            [ ]       "logs:DescribeLogGroups",
+            [ ]       "xray:PutTelemetryRecords",
+            [ ]       "xray:PutTraceSegments"
+            @@ -105,5 +93,13 @@
+            [ ]         "MemoryArn"
+            [ ]       ]
+            [ ]     }
+            [+]   },
+            [+]   {
+            [+]     "Action": "bedrock:InvokeModel",
+            [+]     "Effect": "Allow",
+            [+]     "Resource": [
+            [+]       "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0",
+            [+]       "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0"
+            [+]     ]
+            [ ]   }
+            [ ] ]
+[~] AWS::BedrockAgentCore::Runtime Application/AgentMeridianWorkflow/Runtime ApplicationAgentMeridianWorkflowRuntimeB5D1714F
+ └─ [~] AgentRuntimeArtifact
+     └─ [~] .CodeConfiguration:
+         └─ [~] .Code:
+             └─ [~] .S3:
+                 └─ [~] .Prefix:
+                     ├─ [-] dba0082ec68e72d47fa926dcc91fb9b00961ceb4342554a0c2aa567144a5a6d3.zip
+                     └─ [+] dfd5922f5aa9441e95d21ed58bb9f2209a004912a1232e89f75f725bd37f3d4a.zip
+[~] AWS::IAM::Policy Mcp/GatewayMeridianAuroraJwt/Role/DefaultPolicy McpGatewayMeridianAuroraJwtRoleDefaultPolicy0319B3CF
+ └─ [~] PolicyDocument
+     └─ [~] .Statement:
+         └─ @@ -3,6 +3,8 @@
+            [ ] "Action": "lambda:InvokeFunction",
+            [ ] "Effect": "Allow",
+            [ ] "Resource": [
+            [+]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools",
+            [+]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools:*",
+            [ ]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search",
+            [ ]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search:*",
+            [ ]   {
+[~] AWS::Lambda::Function Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function McpGatewayMeridianAuroraJwtLambdaMeridianHoldsFunction0C6BCAE7
+ └─ [~] Code
+     └─ [~] .S3Key:
+         ├─ [-] 8c09b37123eb0d9dcec63788149e576b1614ed481ad002512d0a47a09cbf59fc.zip
+         └─ [+] c1db13ab836db24060490c83b83c089adb1ce9e6e1899d81e02d398cec22e6b1.zip
+[~] AWS::BedrockAgentCore::GatewayTarget Mcp/GatewayMeridianAuroraJwt/TargetMeridianHolds McpGatewayMeridianAuroraJwtTargetMeridianHolds572A7857
+ ├─ [~] Description
+ │   ├─ [-] Read one Meridian trip package with its live durations, availability and highlights.; Place a courtesy hold on one package duration for the authorized traveler. No payment. Cedar policy decides on the
+ │   └─ [+] Read one Meridian trip package with its live durations, availability and highlights.; Read the authorized traveler's loyalty points balance and tier for one program from the traveler's own saved profi
+ └─ [~] TargetConfiguration
+     └─ [~] .Mcp:
+         └─ [~] .Lambda:
+             └─ [~] .ToolSchema:
+                 └─ [~] .InlinePayload:
+                     └─ @@ -16,6 +16,27 @@
+                        [ ]   "Name": "get_package_details"
+                        [ ] },
+                        [ ] {
+                        [+]   "Description": "Read the authorized traveler's loyalty points balance and tier for one program from the traveler's own saved profile. The platform pins the traveler.",
+                        [+]   "InputSchema": {
+                        [+]     "Properties": {
+                        [+]       "travelerId": {
+                        [+]         "Description": "Traveler id. The platform pins this to the authorized traveler.",
+                        [+]         "Type": "string"
+                        [+]       },
+                        [+]       "program": {
+                        [+]         "Description": "Loyalty program name, for example Marriott Bonvoy.",
+                        [+]         "Type": "string"
+                        [+]       }
+                        [+]     },
+                        [+]     "Required": [
+                        [+]       "travelerId",
+                        [+]       "program"
+                        [+]     ],
+                        [+]     "Type": "object"
+                        [+]   },
+                        [+]   "Name": "loyalty_balance"
+                        [+] },
+                        [+] {
+                        [ ]   "Description": "Place a courtesy hold on one package duration for the authorized traveler. No payment. Cedar policy decides on the arguments before this runs.",
+                        [ ]   "InputSchema": {
+                        [ ]     "Properties": {
+
+Outputs
+[+] Output GatewayTargetMeridianCatalogIdOutput GatewayTargetMeridianCatalogIdOutput: {"Description":"Gateway Target ID for: MeridianCatalog (gateway: meridian-aurora-jwt)","Value":{"Fn::GetAtt":["McpGatewayMeridianAuroraJwtTargetMeridianCatalog61571DDC","TargetId"]},"Export":{"Name":"AgentCore-meridianv2-default-GatewayTarget-MeridianCatalog-Id"}}
+✨ Number of stacks with differences: 1
+{"success":true,"targetName":"default","stackName":"AgentCore-meridianv2-default","logPath":"agentcore/.cli/logs/deploy/deploy-20260101-000000.log","dependencySyncResult":{"outcome":"opted-out","optedOut":true,"checkOnly":true,"migratedFromCaret":false,"reinstalled":false,"skewWarning":true,"changes":[],"restored":[],"skipped":[],"warnings":["@aws/agentcore-cdk (0.1.0-alpha.47, CLI expects 0.1.0-alpha.45), aws-cdk-lib (~2.265.0, CLI expects ~2.261.0), @types/jest (~30.0.0, CLI expects ~29.5.14), jest (~30.5.2, CLI expects ~29.7.0) are newer than this CLI was tested with; deploy may fail — upgrade the CLI with `npm install -g @aws/agentcore@latest`. To manage these versions yourself: agentcore config disableDependencyManagement true"],"notice":null}}

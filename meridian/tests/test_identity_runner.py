@@ -22,20 +22,20 @@ def test_a_correct_system_gives_a_passing_receipt_and_a_clean_cleanup():
 
     receipt = run_proof(ports, cleanup, Context(run_id="abc12345", design="both"), HEADER)
 
-    assert receipt.ok is True and len(receipt.outcomes) == 19
+    assert receipt.ok is True and len(receipt.outcomes) == 21
     assert receipt.cleanup["leftovers"] == 0 and receipt.cleanup["problems"] == []
     assert cleanup.released == [("trv_meridian_demo", "HLD-TEST0001")]
     assert all(t.startswith(THREAD_PREFIX + "abc12345") for t in cleanup.purged)
     assert cleanup.prefix == THREAD_PREFIX + "abc12345"
 
 
-def test_jordan_only_runs_nine_probes_and_records_the_mode():
+def test_jordan_only_runs_ten_probes_and_records_the_mode():
     ports, _ = good_world()
 
     receipt = run_proof(ports, FakeCleanup(), Context(run_id="abc12345", design="both"),
                         Header(**{**HEADER.__dict__, "mode": "jordan-only"}), jordan_only=True)
 
-    assert len(receipt.outcomes) == 9 and {o.actor for o in receipt.outcomes} == {JORDAN}
+    assert len(receipt.outcomes) == 10 and {o.actor for o in receipt.outcomes} == {JORDAN}
     assert receipt.mode == "jordan-only" and receipt.ok is True
 
 

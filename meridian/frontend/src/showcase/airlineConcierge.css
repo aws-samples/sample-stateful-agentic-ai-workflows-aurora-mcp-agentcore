@@ -584,7 +584,7 @@
 
 .mds-root .mds-desktop-app.is-proof .mds-trace-tabs button.is-active { color: var(--mds-blue); background: var(--mds-blue-fill); }
 
-/* One typographic voice from the traveler experience through the chalk talk. */
+/* One typographic voice from the traveler experience through the presenter surfaces. */
 .mds-root[data-theme] :is(.mds-desktop-main, .mds-desktop-right) :is(h1, h2, h3, h4) {
   font-family: var(--mds-font);
   font-weight: var(--mds-weight-medium);

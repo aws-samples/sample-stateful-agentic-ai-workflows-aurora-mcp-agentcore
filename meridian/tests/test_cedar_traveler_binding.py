@@ -21,8 +21,6 @@ SEARCH = "MeridianCatalog___hybrid_trip_search"
 LOYALTY = "MeridianHolds___loyalty_balance"
 BINDING = "meridian_traveler_binding"
 RELEASE = "MeridianHolds___release_hold"
-# Pinned by the interceptor, but named by the Cedar binding rule only in the policy deploy.
-DEFERRED_BINDING = {RELEASE}
 
 
 def values(mode: str | None) -> dict[str, str]:
@@ -63,9 +61,10 @@ def test_every_rendered_statement_parses_as_cedar(mode):
         assert cedarpy.format_policies(statement), name
 
 
-def test_the_default_render_is_exactly_the_three_policies_deployed_today():
+def test_the_default_render_is_exactly_the_four_policies_of_this_release():
     assert list(policies(None)) == [
         "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance",
+        "meridian_release_governance",
     ]
     assert policies(None) == policies("iam")
 
@@ -94,7 +93,7 @@ def test_the_rule_names_exactly_the_tools_the_interceptor_pins():
     interceptor = load_interceptor()
     statement = policies("jwt")[BINDING]
     named = {part.split('"')[1] for part in statement.split("AgentCore::Action::")[1:]}
-    assert named | DEFERRED_BINDING == set(interceptor.DEFAULT_PINNED_TOOLS)
+    assert named == set(interceptor.DEFAULT_PINNED_TOOLS)
 
 
 def gateway_tool_schemas() -> dict[str, dict]:
@@ -215,8 +214,8 @@ def test_the_read_permit_names_every_catalog_tool_the_details_tool_and_the_loyal
         | {"MeridianHolds___get_package_details", LOYALTY})
 
 
-def test_the_binding_covers_loyalty_balance_with_the_hold_and_the_booking():
-    assert _named(policies("jwt")[BINDING]) == {LOYALTY, HOLD, BOOKING}
+def test_the_binding_covers_loyalty_balance_the_hold_the_booking_and_the_release():
+    assert _named(policies("jwt")[BINDING]) == {LOYALTY, HOLD, BOOKING, RELEASE}
 
 
 def test_the_loyalty_read_is_allowed_only_for_the_traveler_whose_token_it_is():
@@ -238,3 +237,40 @@ def test_without_the_binding_rule_a_decoy_could_read_jordans_balance():
 def test_the_retired_search_target_is_named_nowhere():
     for mode in (None, "iam", "jwt"):
         assert "SemanticTripSearchLambda" not in json.dumps(rendered(mode))
+
+
+RELEASE_POLICY = "meridian_release_governance"
+IDS = {"holdRequestId": "hrq_1", "journeyId": "jrn_1"}
+
+
+def test_the_release_permit_names_only_the_release_action():
+    statement = policies("iam")[RELEASE_POLICY]
+    assert statement.startswith("permit(")
+    named = {part.split('"')[1] for part in statement.split("AgentCore::Action::")[1:]}
+    assert named == {RELEASE}
+
+
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_a_release_naming_a_hold_and_a_journey_is_permitted(mode):
+    assert decide(policies(mode), tool=RELEASE, tag="trv_a", arg="trv_a", **IDS) == ALLOW
+
+
+@pytest.mark.parametrize("blank", ["holdRequestId", "journeyId"])
+def test_a_release_with_a_blank_identifier_is_denied(blank):
+    arguments = {**IDS, blank: ""}
+    assert decide(policies("iam"), tool=RELEASE, tag="trv_a", arg="trv_a", **arguments) == DENY
+
+
+def test_a_release_for_another_travelers_id_is_denied_by_the_binding():
+    assert decide(policies("jwt"), tool=RELEASE, tag="trv_a", arg="trv_b", **IDS) == DENY
+
+
+def test_a_release_without_a_traveler_argument_or_a_tag_is_denied():
+    assert decide(policies("jwt"), tool=RELEASE, tag="trv_a", arg=None, **IDS) == DENY
+    assert decide(policies("jwt"), tool=RELEASE, tag=None, arg="trv_a", **IDS) == DENY
+
+
+def test_the_release_permit_permits_nothing_else():
+    only_release = {RELEASE_POLICY: policies("iam")[RELEASE_POLICY]}
+    assert decide(only_release, tool=HOLD, tag="trv_a", arg="trv_a", **IDS) == DENY
+    assert decide(only_release, tool=BOOKING, tag="trv_a", arg="trv_a", **IDS) == DENY

@@ -41,7 +41,7 @@ def test_a_payload_is_masked_deeply_and_the_original_is_untouched():
     original = {
         "subject": f"arn:aws:sts::{ACCOUNT}:assumed-role/r/s",
         "fields": [{"label": "iam_identity", "value": f"arn:aws:iam::{OTHER}:role/x"}],
-        "pair": (f"{ACCOUNT}", 7),
+        "pair": (ACCOUNT, 7),
         "count": 12,
         "ok": True,
         "nothing": None,
@@ -70,6 +70,12 @@ def test_a_uuid_whose_last_group_is_twelve_digits_is_unchanged():
     assert mask_account_ids(f"span {uuid}.") == f"span {uuid}."
     upper = uuid.upper()
     assert mask_account_ids(f"/spans/{upper}/x") == f"/spans/{upper}/x"
+
+
+@pytest.mark.parametrize("tail", ["abc", "-x", " text", "_tail", ".log", ", then more"])
+def test_a_uuid_tail_followed_by_text_keeps_its_tail(tail):
+    uuid = "f29c6d37-e9b9-4e77-bba8-890123456789"
+    assert mask_account_ids(f"span {uuid}{tail}") == f"span {uuid}{tail}"
 
 
 @pytest.mark.parametrize("arn", [
@@ -235,3 +241,38 @@ def test_mask_secrets_masks_a_bearer_token_however_it_is_quoted(text):
 def test_mask_secrets_leaves_the_fixed_no_bearer_token_text_alone():
     text = "No signed-in caller: no bearer token was forwarded."
     assert mask_secrets(text) == text
+
+
+JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhYmMifQ.c2lnbmF0dXJl"
+
+
+@pytest.mark.parametrize("text, masked", [
+    (f"token invalid: {JWT}", "token invalid: <token>"),
+    (f"access_token: {JWT}", "access_token: <masked>"),
+    (f"authorization={JWT}", "authorization=<masked>"),
+    (f"Bearer: {JWT}", "Bearer <token>"),
+    (f'{{"token": "{JWT}"}}', '{"token": <masked>}'),
+])
+def test_mask_secrets_masks_the_measured_token_forms(text, masked):
+    assert mask_secrets(text) == masked
+    assert mask_secrets(masked) == masked
+
+
+@pytest.mark.parametrize("name", ["password", "secret", "key", "authorization"])
+def test_mask_secrets_masks_a_json_value_for_each_credential_name(name):
+    assert mask_secrets(f'{{"{name}": "hunter2"}}') == f'{{"{name}": <masked>}}'
+
+
+@pytest.mark.parametrize("text", [
+    "Rejected a Cognito token: expired",
+    "missing key: 'origin'",
+    "monkey: banana",
+    "token: expired for this traveler",
+])
+def test_mask_secrets_keeps_a_reason_or_an_ordinary_word_readable(text):
+    assert mask_secrets(text) == text
+
+
+def test_mask_secrets_masks_an_opaque_bearer_value_after_a_colon_or_authorization():
+    assert mask_secrets("Authorization: Bearer abcdefghijkl") == "Authorization: Bearer <token>"
+    assert mask_secrets("secret: abcdefghijklmnop1234") == "secret: <masked>"

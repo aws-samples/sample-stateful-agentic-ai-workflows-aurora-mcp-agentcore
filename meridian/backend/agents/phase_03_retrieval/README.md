@@ -13,7 +13,7 @@ Find candidates by meaning and keywords.
 | [`mcp_session.py`](mcp_session.py) | The `meridian-concierge` stdio MCP client that serves the other Phase 2 tools. |
 | [`hooks.py`](hooks.py) | The trace spans and the packages a turn observed. |
 
-## Live checkpoint
+## Live check
 
 > Find a quiet, romantic wine-country retreat with a private villa.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readChatStream } from './chatStream';
+import { readEventStream } from './chatStream';
 
 const encoder = new TextEncoder();
 const frame = (value: unknown) => `data: ${JSON.stringify(value)}\r\n\r\n`;
@@ -12,41 +12,41 @@ describe('live concierge stream', () => {
   it('decodes split Unicode and frames, and reconciles a single authoritative result', async () => {
     const bytes = encoder.encode(': heartbeat\r\n\r\n' + frame({ type: 'delta', text: 'Malé 東京' }) + frame(complete));
     const onEvent = vi.fn();
-    expect(await readChatStream(response([...bytes].map(byte => Uint8Array.of(byte))), onEvent)).toEqual(complete.response);
+    expect(await readEventStream(response([...bytes].map(byte => Uint8Array.of(byte))), onEvent)).toEqual(complete.response);
     expect(onEvent).toHaveBeenCalledExactlyOnceWith({ type: 'delta', text: 'Malé 東京' });
   });
   it('delivers text while the response is still open', async () => {
     let controller!: ReadableStreamDefaultController<Uint8Array>;
     const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
     const onEvent = vi.fn();
-    const pending = readChatStream(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }), onEvent);
+    const pending = readEventStream(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }), onEvent);
     controller.enqueue(encoder.encode(frame({ type: 'delta', text: 'First words' })));
     await vi.waitFor(() => expect(onEvent).toHaveBeenCalledOnce());
     controller.enqueue(encoder.encode(frame(complete)));
     expect(await pending).toEqual(complete.response);
   });
   it('keeps truncation and server errors distinct from completion', async () => {
-    await expect(readChatStream(response([encoder.encode(frame({ type: 'delta', text: 'Partial' }))]), vi.fn())).rejects.toThrow('interrupted');
-    await expect(readChatStream(response([encoder.encode(frame({ type: 'error', message: 'Unavailable' }))]), vi.fn())).rejects.toThrow('Unavailable');
+    await expect(readEventStream(response([encoder.encode(frame({ type: 'delta', text: 'Partial' }))]), vi.fn())).rejects.toThrow('interrupted');
+    await expect(readEventStream(response([encoder.encode(frame({ type: 'error', message: 'Unavailable' }))]), vi.fn())).rejects.toThrow('Unavailable');
   });
   it('cancels the reader when the user stops waiting', async () => {
     const cancel = vi.fn();
     const controller = new AbortController();
-    const pending = readChatStream(new Response(new ReadableStream({ cancel }), { headers: { 'Content-Type': 'text/event-stream' } }), vi.fn(), controller.signal);
+    const pending = readEventStream(new Response(new ReadableStream({ cancel }), { headers: { 'Content-Type': 'text/event-stream' } }), vi.fn(), controller.signal);
     controller.abort(new DOMException('Stopped', 'AbortError'));
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(cancel).toHaveBeenCalledOnce();
   });
   it('does not turn a proxy error into another model request', async () => {
-    await expect(readChatStream(new Response('{"detail":"Unavailable"}', { status: 503 }), vi.fn())).rejects.toThrow('Unavailable');
-    await expect(readChatStream(new Response('<html>proxy</html>'), vi.fn())).rejects.toThrow('live stream');
+    await expect(readEventStream(new Response('{"detail":"Unavailable"}', { status: 503 }), vi.fn())).rejects.toThrow('Unavailable');
+    await expect(readEventStream(new Response('<html>proxy</html>'), vi.fn())).rejects.toThrow('live stream');
   });
 });
 
 
 it('delivers candidate IDs without accepting malformed payloads as cards', async () => {
   const onEvent = vi.fn();
-  await readChatStream(response([encoder.encode(
+  await readEventStream(response([encoder.encode(
     frame({ type: 'candidates', package_ids: ['CTY-002', 'CTY-002'] })
     + frame({ type: 'candidates', package_ids: [42] }) + frame(complete),
   )]), onEvent);
@@ -57,20 +57,20 @@ it('reports the error field of a refused stream request', async () => {
   const refused = new Response(JSON.stringify({ error: 'Traveler not authorized' }), {
     status: 403, headers: { 'Content-Type': 'application/json' },
   });
-  await expect(readChatStream(refused, vi.fn())).rejects.toThrow('Traveler not authorized');
+  await expect(readEventStream(refused, vi.fn())).rejects.toThrow('Traveler not authorized');
 });
 
 describe('an expired token reported inside the stream', () => {
   const expired = frame({ type: 'error', code: 'token_expired', message: 'eyJ.secret.token' });
 
   it('is a typed failure that says no content was delivered yet', async () => {
-    const error = await readChatStream(response([encoder.encode(expired)]), vi.fn()).catch(e => e);
+    const error = await readEventStream(response([encoder.encode(expired)]), vi.fn()).catch(e => e);
     expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: false });
     expect(error.message).not.toContain('eyJ');
   });
   it('says content was delivered once the caller has seen a delta', async () => {
     const onEvent = vi.fn();
-    const error = await readChatStream(
+    const error = await readEventStream(
       response([encoder.encode(frame({ type: 'delta', text: 'Looking' }) + expired)]), onEvent,
     ).catch(e => e);
     expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: true });
@@ -81,7 +81,7 @@ describe('a missing sign-in reported inside the stream', () => {
   const signInRequired = frame({ type: 'error', code: 'sign_in_required', message: 'eyJ.secret.token' });
 
   it('is its own typed failure, not a token expiry', async () => {
-    const error = await readChatStream(response([encoder.encode(signInRequired)]), vi.fn()).catch(e => e);
+    const error = await readEventStream(response([encoder.encode(signInRequired)]), vi.fn()).catch(e => e);
     expect(error).toMatchObject({ name: 'SignInRequiredError' });
     expect(error.name).not.toBe('TokenExpiredError');
     expect(error.message).not.toContain('eyJ');

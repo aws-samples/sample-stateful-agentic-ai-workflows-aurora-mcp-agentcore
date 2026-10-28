@@ -3,10 +3,15 @@ r"""Read the ``agentcore deploy --diff --json`` plan and judge it for the stage 
 ``agentcore deploy --diff --json`` prints the CDK text diff and then a JSON status object. The
 installed CLI reads the diff itself with ``/^\[([+~-])\]\s+(\S+)\s+(\S+)/`` on ANSI-stripped
 lines: ``[+] AWS::BedrockAgentCore::Gateway <path> <logical id>`` for a resource, and indented
-``├─ [~] Property`` lines under it. This module parses that text. The format is read from the
-CLI's source, not yet from a live run, so the gate fails closed in two ways: a plan with no
-parsed resource line at all is a finding in every stage (with the masked tail of the output, so
-the real format can be read), and every stage must show the change it exists to make.
+``├─ [~] Property`` lines under it. This module parses that text. The format was read from the
+CLI's source and has since been checked against two live plans (Release 2 Deploy A and Deploy B,
+saved masked as ``tests/fixtures/real_plans/``). The gate fails closed in two ways: a plan with
+no parsed resource line at all is a finding in every stage (with the masked tail of the output,
+so the real format can be read), and every stage must show the change it exists to make.
+
+In the live format a changed field is a ``[~] .Field:`` line (leading dot, trailing colon) and its
+old and new values follow one level deeper as ``[-] old`` and ``[+] new`` lines. Those value lines
+belong to the field above them; they are not properties.
 
 The rules follow from what CloudFormation can do. It cannot change a Gateway's authorizer type, so
 a ``[~]`` Gateway entry that touches ``AuthorizerType`` always means the render did not rename the
@@ -17,8 +22,19 @@ Gateway. Each stage must add its own resources:
 ``targets``     a GatewayTarget and a Lambda function
 ``governance``  a PolicyEngine and a Policy
 ``complete``    a Runtime updated, or the catalog release: the MeridianCatalog target added or a
-                Cedar rule updated. The retired SemanticTripSearchLambda target may be removed,
-                but only in a plan that also updates the Concierge Runtime
+                Cedar rule updated, or the code-only Lambda hotfix. The retired
+                SemanticTripSearchLambda target may be removed, but only in a plan that also
+                updates the Concierge Runtime
+
+The code-only Lambda hotfix (``CODE_ONLY_RULE``) is the one narrow allowance beyond that table. A
+complete-stage plan passes it when every change line is a ``[~]`` ``AWS::Lambda::Function`` and
+each function's property lines are only ``Code`` (with its ``S3Key`` and ``S3Bucket``) and
+``Metadata``. A function with any other property line (``Environment``, ``Role``, ``Handler``,
+``Timeout`` and so on), or with no property lines to read, is not code-only. Nothing else may ride
+along: no ``[+]`` or ``[-]``, no Runtime, Gateway, Policy, engine, role, IAM policy, Lambda
+permission, log group or other resource, and no GatewayTarget: the construct builds a target from
+the function ARN and the inline tool definitions, so a target change is a schema or description
+change, never a code change. Every other stage is unchanged.
 
 The first stage may remove only what belongs to the replaced Gateway (every resource whose path
 or logical id carries its construct id) and the Cedar engine with its rules, which the first stage
@@ -30,7 +46,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.agentcore.auth_mode import IAM, JWT
 from scripts.identity_release import settings, stages
@@ -49,8 +65,11 @@ EXPECTED = {
 }
 CATALOG_TARGET = "MeridianCatalog"
 CONCIERGE_RUNTIME = "AgentMeridianConcierge"
+CODE_ONLY_RULE = "code-only Lambda hotfix"
 # A target a release replaced. Its removal is the one removal a complete-stage plan may carry.
 RETIRED_TARGETS = ("SemanticTripSearchLambda",)
+CODE_PROPERTIES = ("Code", "Metadata")
+CODE_FIELDS = ("S3Key", "S3Bucket")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 RESOURCE = re.compile(r"^\s*\[([+~-])\]\s+(AWS::\S+)\s*(.*)$")
 CHILD = re.compile(r"^[\s│├└─|`+-]*\[([+~-])\]\s+(.+?)\s*$")
@@ -77,28 +96,32 @@ class Change:
     type: str
     rest: str
     children: tuple[str, ...] = ()
+    tree: tuple[tuple[int, str, str], ...] = field(default=(), compare=False)
+    """The same lines as ``children`` with their column and kind: ``(column, kind, text)``."""
 
 
 def parse(output: str) -> list[Change]:
     """The resource changes in ``output``; ANSI colour, tree glyphs and the status line ignored."""
     changes: list[Change] = []
     children: list[str] = []
+    tree: list[tuple[int, str, str]] = []
 
     def close() -> None:
         if changes:
             last = changes[-1]
-            changes[-1] = Change(last.kind, last.type, last.rest, tuple(children))
+            changes[-1] = Change(last.kind, last.type, last.rest, tuple(children), tuple(tree))
 
     for raw in ANSI.sub("", output).splitlines():
         top = RESOURCE.match(raw)
         if top and not raw.startswith((" ", "│")):
             close()
-            children = []
+            children, tree = [], []
             changes.append(Change(top[1], top[2], top[3].strip()))
             continue
         child = CHILD.match(raw)
         if child and changes:
             children.append(child[2])
+            tree.append((child.start(1) - 1, child[1], child[2]))
     close()
     return changes
 
@@ -201,18 +224,82 @@ def _is_catalog_release(changes: list[Change]) -> bool:
     )
 
 
+def _property_name(text: str) -> str:
+    """The field a child line names: ``.S3Key:`` is ``S3Key``, ``Removed: .X`` is ``X``."""
+    words = text.split()
+    if words and words[0] in ("Added:", "Removed:"):
+        words = words[1:]
+    return (words[0] if words else text).lstrip(".").rstrip(":")
+
+
+def _is_value(kind: str, text: str, parent: str | None) -> bool:
+    """Whether a ``[-]``/``[+]`` line is the old or new value of the field above it."""
+    marker = text.split()[0] in ("Added:", "Removed:") if text.split() else False
+    return kind in "+-" and parent is not None and parent.rstrip().endswith(":") and not marker
+
+
+def _function_strays(change: Change) -> list[str]:
+    """The property lines of an updated function that are not a code change."""
+    strays: list[str] = []
+    open_fields: list[tuple[int, str, str]] = []
+    top_level = False
+    for column, kind, text in change.tree:
+        while open_fields and open_fields[-1][0] >= column:
+            open_fields.pop()
+        if _is_value(kind, text, open_fields[-1][2] if open_fields else None):
+            continue
+        name = _property_name(text)
+        path = [item[1] for item in open_fields] + [name]
+        top_level = top_level or len(path) == 1
+        if path[0] not in CODE_PROPERTIES or (
+                path[0] == "Code" and len(path) > 1
+                and (len(path) > 2 or name not in CODE_FIELDS)):
+            strays.append(".".join(path))
+        open_fields.append((column, name, text))
+    return strays if top_level else ["no property lines shown, so the change cannot be read"]
+
+
+def _code_only_refusal(changes: list[Change]) -> str | None:
+    """Why the code-only Lambda hotfix does not cover ``changes``; None when it does."""
+    stray = []
+    for c in changes:
+        if c.kind == "~" and c.type == FUNCTION_TYPE:
+            stray += [f"[~] {c.type} {c.rest} changes {name}" for name in _function_strays(c)]
+        elif c.type == TARGET_TYPE:
+            stray.append(f"[{c.kind}] {c.type} {c.rest}: a target change carries a tool schema "
+                         "or description change, not only code")
+        else:
+            stray.append(f"[{c.kind}] {c.type} {c.rest}")
+    return "; ".join(stray) or None
+
+
+def _updates_function(changes: list[Change]) -> bool:
+    return any(c.kind == "~" and c.type == FUNCTION_TYPE for c in changes)
+
+
 def _expected_findings(changes: list[Change], stage: str) -> list[str]:
     kind, wanted = EXPECTED[stage]
     present = {c.type for c in changes if c.kind == kind}
     missing = [resource for resource in wanted if resource not in present]
     if not missing or (stage == stages.COMPLETE and _is_catalog_release(changes)):
         return []
+    complete_stage = stage == stages.COMPLETE
+    refusal = _code_only_refusal(changes) if complete_stage else None
+    if complete_stage and _updates_function(changes) and refusal is None:
+        return []
     verb = {"+": "add", "~": "update"}[kind]
     alternatives = (f", or to add the {CATALOG_TARGET} target, or to update a Cedar rule "
-                    f"({POLICY_TYPE})") if stage == stages.COMPLETE else ""
+                    f"({POLICY_TYPE}), or to be a {CODE_ONLY_RULE} (only [~] "
+                    f"{FUNCTION_TYPE} changes whose properties are Code and Metadata)"
+                    if complete_stage else "")
+    reason = ""
+    if complete_stage and refusal and (_updates_function(changes) or any(
+            c.kind == "~" and c.type == TARGET_TYPE for c in changes)):
+        reason = (f"; the {CODE_ONLY_RULE} rule did not apply because the plan also has: "
+                  f"{refusal}")
     return [f"the {stage} stage expects the plan to {verb} {' and '.join(wanted)}"
-            f"{alternatives}, and it does not {verb} {' or '.join(missing)}; the render or the "
-            "deployed state is the wrong stage, run the render again"]
+            f"{alternatives}, and it does not {verb} {' or '.join(missing)}{reason}; the render "
+            "or the deployed state is the wrong stage, run the render again"]
 
 
 def _belongs_to_replaced(change: Change, replaced: str) -> bool:

@@ -13,9 +13,9 @@ import {
   sendChatMessage,
   updateMemoryFact,
 } from '../../api/client';
-import type { ChatStreamEvent } from '../../api/chatStream';
+import { ReadBackRequiredError, type ChatStreamEvent } from '../../api/chatStream';
 import { CURRENT_TRAVELER } from '../../api/currentTraveler';
-import { ApiError, NotSentError, runWithDeadline } from '../../api/request';
+import { ApiError, NotSentError, runWithDeadline, runWithStreamDeadline } from '../../api/request';
 import { useSession } from '../../auth/SessionContext';
 import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
@@ -210,6 +210,10 @@ export interface MeridianShowcaseState {
   clearError: () => void;
   clearChat: () => void;
   restoreJourney: (document: JourneyDocument) => void;
+  /** True while the page reads a recovery it stopped waiting for, until Aurora shows it finished. */
+  awaitingWorkflow: boolean;
+  /** Apply the finished recovery read from Aurora and stop reading. */
+  settleWorkflow: (document: JourneyDocument) => void;
   // True only when the latest bot reply's typewriter has finished
   // revealing. While false, downstream surfaces (recommendation grid)
   // wait so they don't appear before the message reads as complete.
@@ -296,10 +300,55 @@ function useTripWorkspace(travelerId: string | null) {
  * (a proxy page, a network error, a body that is not JSON, JSON of another shape) leaves the
  * outcome of the write unknown, so the message says only that.
  */
+function isUnknownWriteOutcome(err: unknown): boolean {
+  return !(err instanceof NotSentError || (err instanceof ApiError && err.worded));
+}
+
 function writeFailureMessage(err: unknown, done: 'hold was placed' | 'booking was confirmed'): string {
-  if (err instanceof NotSentError || (err instanceof ApiError && err.worded)) return err.message;
+  if (!isUnknownWriteOutcome(err)) return (err as Error).message;
   return `We could not confirm whether the ${done}. Check your trips before trying again.`;
 }
+
+const GAVE_UP_CHAT_MESSAGE = 'Stopped waiting for the response. The service may still be completing this request. Check the connection before trying again.';
+
+/** What a failed chat turn says. A recovery the page stopped waiting for is durable and keeps running. */
+function chatFailureMessage(
+  err: unknown, phase: Phase, aborted: boolean, keepsRunning: boolean,
+): string {
+  if (phase === 5) {
+    if (err instanceof ApiError && err.status === 409) return err.message;
+    return keepsRunning
+      ? WORKFLOW_STILL_RUNNING_MESSAGE
+      : 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.';
+  }
+  const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+  if (aborted || timedOut || err instanceof ReadBackRequiredError) return GAVE_UP_CHAT_MESSAGE;
+  return err instanceof Error ? err.message : 'The response was not received. Check the connection and try again.';
+}
+
+/** How long the read-back of a write's outcome waits once the page has given up on the write. */
+const READ_BACK_TIMEOUT_MS = 10_000;
+
+/**
+ * Reads a hold or booking back from Aurora after the page stopped waiting for its write. A read
+ * that fails or finds nothing returns null, and the traveler sees the message for an unknown
+ * outcome, which is true either way.
+ */
+async function readBackWrite(
+  read: (signal: AbortSignal) => Promise<OrderResponse>,
+): Promise<OrderResponse | null> {
+  try {
+    return await runWithDeadline(read, undefined, READ_BACK_TIMEOUT_MS);
+  } catch {
+    return null;
+  }
+}
+
+const WORKFLOW_STILL_RUNNING_MESSAGE = 'The recovery is taking longer than this page waits. '
+  + 'It keeps running, and this page reads its saved progress until it finishes.';
+
+/** How long the page keeps reading a recovery it stopped waiting for. */
+export const WORKFLOW_READ_BACK_LIMIT_MS = 5 * 60_000;
 
 export function useMeridianShowcase(): MeridianShowcaseState {
   const { traveler: signedIn, verifiedTravelerId } = useSession();
@@ -319,6 +368,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
   useEffect(() => invalidateChatRequest, [invalidateChatRequest]);
   const unresolvedWorkflow = useRef<string | null>(null);
+  const [awaitingWorkflow, setAwaitingWorkflow] = useState(false);
+  useEffect(() => {
+    if (!awaitingWorkflow) return undefined;
+    const timer = window.setTimeout(() => setAwaitingWorkflow(false), WORKFLOW_READ_BACK_LIMIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [awaitingWorkflow]);
   const conversationPhaseRef = useRef<Phase | null>(null);
   const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
   const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
@@ -637,6 +692,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     if (isLoading || (known && document.traveler_id !== travelerKey.current) || !isObserved(document.workflow)) return;
     const saved = document.workflow;
     unresolvedWorkflow.current = null;
+    setAwaitingWorkflow(false);
     if (!saved.conversation_id || saved.conversation_id !== document.active_thread_id) return;
     setError(null);
     setMessages([]);
@@ -661,6 +717,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     });
     setLatestStreamComplete(true);
   }, [applyChatResponse, isLoading]);
+
+  const settleWorkflow = useCallback((document: JourneyDocument) => {
+    setAwaitingWorkflow(false);
+    restoreJourney(document);
+  }, [restoreJourney]);
 
   const submitPrompt = useCallback(
     async (overridePrompt?: string, phaseOverride?: Phase, options?: PromptOptions) => {
@@ -775,7 +836,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         }
       };
       try {
-        const response = await runWithDeadline(signal => sendChatMessage({
+        const body = {
           message: decorated,
           phase: requestPhase,
           ...(phaseOverride === 4 ? { experience: 'concierge' as const } : {}),
@@ -799,7 +860,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(requestPhase === 5
             ? { resume: resumeRequested || undefined }
             : {}),
-        }, signal, ...(phaseOverride === 4 ? [onStreamEvent] : [])), controller.signal, phaseOverride === 4 ? 120_000 : undefined);
+        };
+        // Phases 4 and 5 can outlast a plain request. They stream, and the wait ends when the
+        // stream goes quiet or at the hard ceiling, not at a fixed 55 s.
+        const response = requestPhase === 4 || requestPhase === 5
+          ? await runWithStreamDeadline((signal, touch) => sendChatMessage(
+            body, signal, phaseOverride === 4 ? onStreamEvent : () => {}, touch,
+          ), controller.signal)
+          : await runWithDeadline(signal => sendChatMessage(body, signal), controller.signal);
         if (!isCurrent()) return;
         // One successful chat does not verify the catalog and traveler reads.
         // Only the readiness check may mark all of Meridian's live data ready.
@@ -816,11 +884,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!isCurrent()) return;
         setMessages(prior => prior.map(message => message.streaming ? { ...message, streaming: false, incomplete: true } : message));
         if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
-        setError(requestPhase === 5
-          ? 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.'
-          : controller.signal.aborted || (err instanceof DOMException && err.name === 'TimeoutError')
-            ? 'Stopped waiting for the response. The service may still be completing this request. Check the connection before trying again.'
-            : err instanceof Error ? err.message : 'The response was not received. Check the connection and try again.');
+        // A recovery the page stopped waiting for is durable. Unless the server refused the
+        // request, it may still be running, and the page reads its saved progress.
+        const refusedByServer = err instanceof ApiError && err.status !== 409;
+        const keepsRunning = requestPhase === 5 && !refusedByServer && !(err instanceof NotSentError);
+        if (keepsRunning) setAwaitingWorkflow(true);
+        setError(chatFailureMessage(err, requestPhase, controller.signal.aborted, keepsRunning));
       } finally {
         if (isCurrent()) {
           chatController.current = null;
@@ -868,6 +937,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     invalidateChatRequest();
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
+    setAwaitingWorkflow(false);
     setIsLoading(false);
     setPendingWrite(null);
     setChatProgress('');
@@ -1007,14 +1077,29 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setLatestStreamComplete(false);
       setError(null);
       const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
+      let sentIntent: SavedHoldIntent | undefined;
+      const showHold = (response: OrderResponse) => {
+        if (!mounted.current) return;
+        if (response.order) rememberOrder(product.product_id, response.order);
+        if (generation !== requestGeneration.current) return;
+        setMessages(prior => [...prior, { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order }]);
+        const nextTrace = chatResponseToTraceSpans(
+          { message: response.message, activities: response.activities, order: response.order }, prompt,
+        );
+        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
+        setExpandedSpanId(nextTrace[0]?.id ?? null);
+        setActionDrawer({ kind: 'hold', product, message: response.message, order: response.order, live: true });
+        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold recorded for ${product.name}.` : response.message);
+      };
       try {
-        const response = await runWithDeadline(async signal => {
+        const response = await runWithStreamDeadline(async (signal, touch) => {
           const saved = loadBookingRecovery(travelerKey.current);
           let intent: SavedHoldIntent | undefined = saved.intents[intentKey];
           if (intent) {
             // Read before every retry, including after refresh. A failed read
             // is not permission to create a replacement intent.
             const recorded = await readHold(intent, signal);
+            touch();
             signal.throwIfAborted();
             if (recorded.order) {
               rememberOrder(product.product_id, recorded.order);
@@ -1036,26 +1121,23 @@ export function useMeridianShowcase(): MeridianShowcaseState {
             try { saveBookingRecovery(travelerKey.current, saved); }
             catch { throw new NotSentError('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
           }
+          sentIntent = intent;
           return processOrder({
             product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
             phase: selectedPhase, traveler_id: CURRENT_TRAVELER, action: 'hold',
             conversation_id: intent.conversationId,
-          }, signal);
+          }, signal, touch);
         }, controller.signal);
-        if (!mounted.current) return;
-        if (response.order) rememberOrder(product.product_id, response.order);
-        if (generation !== requestGeneration.current) return;
-        setMessages(prior => [...prior, { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order }]);
-        const nextTrace = chatResponseToTraceSpans(
-          { message: response.message, activities: response.activities, order: response.order }, prompt,
-        );
-        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
-        setExpandedSpanId(nextTrace[0]?.id ?? null);
-        setActionDrawer({ kind: 'hold', product, message: response.message, order: response.order, live: true });
-        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold recorded for ${product.name}.` : response.message);
+        showHold(response);
       } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setError(writeFailureMessage(err, 'hold was placed'));
+        // The page gave up, but the hold is idempotent and may be committed: ask Aurora.
+        const intent = sentIntent;
+        const recorded = intent && isUnknownWriteOutcome(err)
+          ? await readBackWrite(signal => readHold(intent, signal)) : null;
+        if (!mounted.current || generation !== requestGeneration.current) return;
+        if (recorded?.order) showHold(recorded);
+        else setError(writeFailureMessage(err, 'hold was placed'));
       } finally {
         holdPending.current = false;
         if (writeController.current === controller) writeController.current = null;
@@ -1094,20 +1176,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setError(null);
       setRequestStartedAt(Date.now());
       const prompt = `Confirm the held trip: ${product.name}`;
-      try {
-        const response = await runWithDeadline(async signal => {
-          const recorded = await readBooking(hold.order.order_id, signal);
-          signal.throwIfAborted();
-          if (!recorded.order) throw new NotSentError('No booking receipt was returned.');
-          rememberOrder(product.product_id, recorded.order);
-          if (recorded.order.status !== 'held') return recorded;
-          return confirmBooking({
-          booking_id: hold.order.order_id,
-          phase: 4,
-          traveler_id: CURRENT_TRAVELER,
-          conversation_id: conversationId ?? undefined,
-        }, signal);
-        }, controller.signal);
+      let confirmSent = false;
+      const showBooking = (response: OrderResponse) => {
         if (!mounted.current) return;
         if (response.order) {
           rememberOrder(product.product_id, response.order);
@@ -1132,9 +1202,32 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           live: true,
         });
         setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed${firstName ? ` for ${firstName}` : ''}.` : response.message);
+      };
+      try {
+        const response = await runWithStreamDeadline(async (signal, touch) => {
+          const recorded = await readBooking(hold.order.order_id, signal);
+          touch();
+          signal.throwIfAborted();
+          if (!recorded.order) throw new NotSentError('No booking receipt was returned.');
+          rememberOrder(product.product_id, recorded.order);
+          if (recorded.order.status !== 'held') return recorded;
+          confirmSent = true;
+          return confirmBooking({
+          booking_id: hold.order.order_id,
+          phase: 4,
+          traveler_id: CURRENT_TRAVELER,
+          conversation_id: conversationId ?? undefined,
+        }, signal, touch);
+        }, controller.signal);
+        showBooking(response);
       } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setError(writeFailureMessage(err, 'booking was confirmed'));
+        // The page gave up, but the confirmation is idempotent and may be committed: ask Aurora.
+        const recorded = confirmSent && isUnknownWriteOutcome(err)
+          ? await readBackWrite(signal => readBooking(hold.order.order_id, signal)) : null;
+        if (!mounted.current || generation !== requestGeneration.current) return;
+        if (recorded?.order?.status === 'confirmed') showBooking(recorded);
+        else setError(writeFailureMessage(err, 'booking was confirmed'));
       } finally {
         bookingPending.current = false;
         if (writeController.current === controller) writeController.current = null;
@@ -1276,6 +1369,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     invalidateChatRequest();
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
+    setAwaitingWorkflow(false);
     setIsLoading(false);
     setPendingWrite(null);
     setChatProgress('');
@@ -1431,6 +1525,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     clearError: () => setError(null),
     clearChat,
     restoreJourney,
+    awaitingWorkflow,
+    settleWorkflow,
     latestStreamComplete,
     markLatestStreamComplete,
   };

@@ -325,7 +325,7 @@ async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(
 # --------------------------------------------------------------------- hold
 
 
-async def test_the_hold_is_reported_as_one_hold_for_this_request(
+async def test_the_hold_is_reported_with_a_count_of_its_records(
     journey: Fixture,
 ) -> None:
     from backend.agents.phase_05_workflow.hold_intent import (
@@ -364,10 +364,10 @@ async def test_the_hold_is_reported_as_one_hold_for_this_request(
     doc = await _document(journey)
     hold = doc["hold"]
     assert hold["status"] == "held"
-    assert hold["label"] == "one hold for this request"
+    assert hold["label"] == "1 hold record for this journey"
     assert hold["hold_request_id"] == request_id
     assert hold["booking_id"] == journey.booking_id
-    assert hold["hold_records"] == 1, "the claim the demo makes is exactly one"
+    assert hold["hold_records"] == 1
     assert hold["hold_expires_at"]
 
 

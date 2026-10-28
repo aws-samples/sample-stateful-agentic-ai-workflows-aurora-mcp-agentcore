@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from backend import main
 from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
+from backend.agentcore.runtime import AgentCoreRuntimeAdapter
 from backend.agents.phase_04_production import concierge as concierge_mod
 from backend.http_auth import HttpPrincipal, require_http_principal
 from backend.main import http_exception_handler
@@ -245,6 +247,36 @@ def test_the_journeys_route_answers_the_sign_in_body(client, monkeypatch, error,
     monkeypatch.setattr(journeys, "get_workflow_runtime", lambda: Runtime())
     response = client.post("/api/journeys/jrn_x/stop-session")
     assert_sign_in_response(response, code, message, challenge)
+
+
+def test_a_token_expired_event_from_the_runtime_reaches_the_order_route_as_the_expiry_401(
+        client, monkeypatch):
+    body = MagicMock()
+    body.read.side_effect = [
+        b'data: {"type": "error", "code": "token_expired", "message": "secret-detail"}\n\n', b""]
+    boto_client = MagicMock()
+    boto_client.invoke_agent_runtime.return_value = {
+        "response": body, "ResponseMetadata": {"RequestId": "r"}}
+    adapter = AgentCoreRuntimeAdapter(
+        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/x",
+        region="us-east-1")
+    adapter._client = boto_client
+
+    class Agent:
+        async def process_hold(self, *args, **kwargs):
+            await asyncio.to_thread(
+                adapter.invoke_turn, "conv-1", "trv_meridian_demo", "hold it", "",
+                budget_ceiling_cents=700000, travelers_count=2)
+
+    async def package(product_id):
+        return {"available_sizes": ["7 nights"]}, {"product_id": "CTY-002", "price": 1000.0}
+
+    monkeypatch.setattr(chat_mod, "_package_for_hold", package)
+    monkeypatch.setattr(chat_mod, "_requested_duration", lambda row, size: "7 nights")
+    monkeypatch.setattr(concierge_mod, "create_production_agent", lambda: Agent())
+    response = client.post("/api/chat/order", json={
+        "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4})
+    assert_sign_in_response(response, "token_expired", MESSAGE, CHALLENGE)
 
 
 def test_a_credential_error_never_echoes_its_text():

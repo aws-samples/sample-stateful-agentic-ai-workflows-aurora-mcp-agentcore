@@ -1796,7 +1796,7 @@
 }
 
 /* Larger trace-action buttons (Replay trace / Rerun query) so they read
-   from across the room on stage screens. */
+   from across the room on a large display. */
 .mds-trace-actions button {
   min-height: 38px;
   padding: 0 14px;

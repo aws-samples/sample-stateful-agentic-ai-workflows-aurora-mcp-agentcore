@@ -8,15 +8,20 @@ export function parseDatabaseTime(value?: string | null): number {
   return Date.parse(/[zZ]$|[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : `${normalized}Z`);
 }
 
+/** The database clock at `now` on this browser's clock, when the document says when it was read. */
+function databaseNow(document: JourneyDocument | null, now: number): number {
+  const observed = parseDatabaseTime(document?.observed_at);
+  return Number.isFinite(observed) && document?.received_at != null
+    ? observed + Math.max(0, now - document.received_at) : now;
+}
+
 export function useEvidenceClock(document: JourneyDocument | null): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const observed = parseDatabaseTime(document?.observed_at);
-  return Number.isFinite(observed) && document?.received_at != null
-    ? observed + Math.max(0, now - document.received_at) : now;
+  return databaseNow(document, now);
 }
 
 export function hasLiveLease(execution: JourneyExecution | null | undefined, now: number): boolean {
@@ -33,4 +38,11 @@ export function hasVerifiedResume(document: JourneyDocument): boolean {
     && workflow.conversation_id === document.active_thread_id
     && Boolean(latest) && latest.status === 'succeeded'
     && workflow.execution_id === latest.execution_id;
+}
+
+/** Whether the journey's latest execution still holds a live lease, so its worker is running. */
+export function workflowStillRunning(document: JourneyDocument, now = Date.now()): boolean {
+  if (!isObserved(document.executions)) return false;
+  const items = document.executions.items;
+  return hasLiveLease(items[items.length - 1], databaseNow(document, now));
 }

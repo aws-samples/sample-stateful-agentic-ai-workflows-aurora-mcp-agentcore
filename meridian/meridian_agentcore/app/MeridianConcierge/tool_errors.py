@@ -74,7 +74,24 @@ UUID_PREFIX = r"(?<![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 ACCOUNT_ID = re.compile(rf"{BOUNDARY_BEFORE}{UUID_PREFIX}\d{{12}}(?![0-9A-Za-z])")
 
 
-CREDENTIAL = re.compile(r"(password|secret|token|key)=\S+", re.IGNORECASE)
+_TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
+CREDENTIAL = re.compile(
+    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
+    rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
+    r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",
+    re.IGNORECASE,
+)
+JWT = re.compile(r"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")
+BEARER = re.compile(r"""Bearer:?\s+['"]?[A-Za-z0-9._~+/=-]{8,}""", re.IGNORECASE)
+
+
+def _mask_credentials(text: str) -> str:
+    """Bearer tokens, credentials and JWTs masked, as backend/security/redaction.py does."""
+    bearer_masked = BEARER.sub("Bearer <token>", text)
+    return JWT.sub("<token>", CREDENTIAL.sub(r"\1\2<masked>", bearer_masked))
+
+
 LOG_HANDLER_MARK = "meridian_runtime_log_handler"
 
 
@@ -175,7 +192,7 @@ class StopOnToolSetupError(HookProvider):
 
 def mask_log_text(text: str) -> str:
     """``text`` with credential assignments masked first, then account ids."""
-    return mask_account_ids(CREDENTIAL.sub(r"\1=<masked>", text))
+    return mask_account_ids(_mask_credentials(text))
 
 
 STANDARD_RECORD_ATTRIBUTES = frozenset(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}

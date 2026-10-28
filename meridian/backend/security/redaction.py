@@ -14,12 +14,12 @@ and the RLS probe response. Error text is masked before it is stored or shown:
 ``agent_audit_log.turn_error``, tool setup errors and retrieval failure notes. The Concierge
 Runtime repeats the pattern in ``tool_errors.py``.
 
-Text written to the backend log is also stripped of ``password=``, ``secret=``, ``token=``
-and ``key=`` assignments (``mask_credentials``), because an exception text can echo a
-connection string. ``install_record_factory`` applies both masks to every record when it is
-created, whoever logged it and whichever handler a library adds later, so a library logger's
-traceback is masked too. ``MaskingFilter`` repeats the masks on each Meridian handler and
-covers the ``extra=`` attributes the factory cannot see.
+Text written to the backend log is also stripped of ``password``, ``secret``, ``token``,
+``key`` and ``authorization`` values and of bare JWTs (``mask_credentials``), because an
+exception text can echo a connection string. ``install_record_factory`` applies both masks to
+every record when it is created, whoever logged it and whichever handler a library adds later,
+so a library logger's traceback is masked too. ``MaskingFilter`` repeats the masks on each
+Meridian handler and covers the ``extra=`` attributes the factory cannot see.
 """
 
 import logging
@@ -39,12 +39,30 @@ _BOUNDARY_BEFORE = r"(?:(?<![0-9A-Za-z])|(?<=%3[Aa]|%2[Ff]))"
 _UUID_PREFIX = r"(?<![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-)"
 ACCOUNT_ID_PATTERN = re.compile(rf"{_BOUNDARY_BEFORE}{_UUID_PREFIX}\d{{12}}(?![0-9A-Za-z])")
 PLACEHOLDER = "<acct>"
-CREDENTIAL_PATTERN = re.compile(r"(password|secret|token|key)=\S+", re.IGNORECASE)
+# Credential values, for password, secret, token, key (so ``access_token`` and ``api_key`` too)
+# and authorization. The name must not follow a letter (``monkey`` is not ``key``). Three forms:
+# the JSON field (``"token": "v"``, a quote right after the name), masked whatever the value
+# because a quoted field is never a sentence; the assignment ``name=value``, masked whatever the
+# value; and ``name: value``, masked only when the value looks like a secret (a JWT, or 16 or more
+# token characters with no space), so a reason such as ``token: expired`` stays readable. A value
+# that is already a placeholder, or starts a ``Bearer <token>`` pair, is left alone so masking
+# twice changes nothing. A quoted value is taken whole, quotes included.
+_TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
+CREDENTIAL_PATTERN = re.compile(
+    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
+    rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
+    r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",
+    re.IGNORECASE,
+)
+# A bare JWT: three base64url segments, the first starting ``eyJ`` (the encoded ``{"``).
+JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")
+JWT_PLACEHOLDER = "<token>"
 # A token of at least 8 characters, optionally quoted. The 8-character floor keeps the fixed
 # text "no bearer token was forwarded" readable; a real token (a JWT, an opaque key) is longer.
 # Prose such as "bearer authentication failed" is masked too, because exempting words would let
 # an alphabetic token through.
-BEARER_PATTERN = re.compile(r"""Bearer\s+['"]?[A-Za-z0-9._~+/=-]{8,}""", re.IGNORECASE)
+BEARER_PATTERN = re.compile(r"""Bearer:?\s+['"]?[A-Za-z0-9._~+/=-]{8,}""", re.IGNORECASE)
 BEARER_PLACEHOLDER = "Bearer <token>"
 MAX_TRACEBACK_CHARS = 4000
 _CUT = "\n...\n"
@@ -66,20 +84,26 @@ def mask_account_ids(text: str) -> str:
 
 
 def mask_credentials(text: str) -> str:
-    """Replace the value of ``password=``, ``secret=``, ``token=`` and ``key=`` with ``<masked>``.
+    """Mask bearer tokens, credential values and bare JWTs.
 
-    The MeridianCatalog Lambda (``meridian_agentcore/agentcore/gateway_targets/meridian_catalog/
-    lambda_function.py``) ships as one file and cannot import the backend, so it repeats this
-    exact pattern; keep the two in step.
+    ``Bearer <value>`` becomes ``Bearer <token>``. The value of ``password``, ``secret``,
+    ``token``, ``key`` and ``authorization`` becomes ``<masked>`` after ``=``, after a secret-
+    looking ``:`` or in a JSON field (see ``CREDENTIAL_PATTERN``), and a bare JWT becomes
+    ``<token>``. The
+    MeridianCatalog and MeridianHolds Lambdas (``meridian_agentcore/agentcore/gateway_targets/``)
+    each ship as one file and cannot import the backend, so they repeat these patterns, and
+    the Concierge Runtime repeats them in ``tool_errors.py``; keep them in step.
 
     Args:
         text: Any text, such as an exception message.
 
     Returns:
-        The text with each match's value (up to the next whitespace) replaced. The name is
-        kept, case included. Masking a masked string changes nothing.
+        The text with each match's value (up to the next whitespace, or the closing quote of
+        a quoted value) replaced. The name and separator are kept, case included. Masking a
+        masked string changes nothing.
     """
-    return CREDENTIAL_PATTERN.sub(r"\1=<masked>", text)
+    bearer_masked = BEARER_PATTERN.sub(BEARER_PLACEHOLDER, text)
+    return JWT_PATTERN.sub(JWT_PLACEHOLDER, CREDENTIAL_PATTERN.sub(r"\1\2<masked>", bearer_masked))
 
 
 def mask_secrets(text: str) -> str:
@@ -89,7 +113,7 @@ def mask_secrets(text: str) -> str:
     keeps its partition, service and resource name, as the backend log keeps them; only the
     account id in it is masked. Each caller applies its own length limit.
     """
-    return mask_account_ids(mask_credentials(BEARER_PATTERN.sub(BEARER_PLACEHOLDER, text)))
+    return mask_account_ids(mask_credentials(text))
 
 
 def mask_log_text(text: str) -> str:

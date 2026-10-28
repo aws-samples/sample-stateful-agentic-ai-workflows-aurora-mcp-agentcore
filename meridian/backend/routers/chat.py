@@ -27,7 +27,7 @@ import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Literal, Optional, List, Any, Dict
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
@@ -1516,72 +1516,102 @@ def _is_workflow_resume_query(query: str) -> bool:
     }
 
 
-# Retain disconnected read-only chat turns until memory persistence finishes.
-# Disconnecting never retries a request or claims to cancel an in-flight tool.
+# Retain streamed work until it finishes, even after the page has gone. A placed hold or booking
+# is durable in Aurora whether or not anything is still listening. The audit row and the Memory
+# unit that follow it run on a best-effort basis once the request has ended: App Runner gives no
+# guarantee to work that outlives its request, so a scale-in or deploy in that window can lose
+# them. The traveler's state stays true because the app reads what was committed. Disconnecting
+# never retries a request, and the work is never cancelled: cancelling in the middle of a
+# governed write could leave it half done.
 _stream_tasks: set[asyncio.Task] = set()
+
+# One keepalive comment every 10 s keeps CloudFront (60 s between packets) and the browser's idle
+# timer (30 s) satisfied. App Runner still ends a request at 120 s in total.
+STREAM_KEEPALIVE_SECONDS = 10
+
+# The server ends a stream at the same ceiling as the browser (STREAM_HARD_CAP_MS), under App
+# Runner's 120 s. It then tells the page to read the outcome back from Aurora; the work goes on.
+STREAM_CEILING_SECONDS = 110
+READ_BACK_CODE = "read_back"
 
 
 def _stream_error_event(error: HTTPException) -> dict:
-    """The terminal SSE error event; the code is how the browser tells refresh from sign-in."""
+    """The terminal SSE error event.
+
+    A sign-in failure carries only its ``code``, which is how the browser tells a token refresh
+    from a sign-in. Any other failure carries the HTTP ``status`` the plain route gives, and a
+    hold or booking reply the route worded carries ``code: governed_write``, which is how the
+    browser tells it from an error page.
+    """
     code = error_code(error)
-    return {"type": "error", "message": str(error.detail), **({"code": code} if code else {})}
+    if code:
+        return {"type": "error", "message": str(error.detail), "code": code}
+    worded = getattr(error, "code", None)
+    return {
+        "type": "error", "message": str(error.detail), "status": error.status_code,
+        **({"code": worded} if worded else {}),
+    }
 
 
-@router.post("/stream")
-async def stream_chat(
-    request: ChatRequest,
-    principal: HttpPrincipal = Depends(require_http_principal),
-) -> StreamingResponse:
-    if request.phase != 4:
-        raise HTTPException(status_code=422, detail="Streaming is available for the concierge.")
-    # Authorize before sending headers, including when context is disabled.
-    await authorize_traveler(principal, request.customer_id)
-    queue: asyncio.Queue = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-    connected = True
-    started = clock()
-    first_delta = False
+async def _terminal_event(
+    run: Callable[[Callable[[dict], None]], Awaitable[dict]], publish: Callable[[dict], None],
+) -> dict:
+    """Run the work and return its terminal event; a failure becomes an ``error`` event."""
+    try:
+        return await run(publish)
+    except HTTPException as exc:
+        return _stream_error_event(exc)
+    except CallerCredentialError as exc:
+        logger.info("Streamed request refused: %s", exc.__class__.__name__)
+        return _stream_error_event(credential_error(exc))
+    except Exception:
+        logger.exception("Streamed request failed")
+        return {
+            "type": "error",
+            "message": "The response was interrupted. Check the connection before trying again.",
+        }
 
-    def enqueue(event):
-        nonlocal first_delta
-        if event.get("type") == "delta" and not first_delta:
-            first_delta = True
-            logger.info("Concierge first text received in %s ms", elapsed_ms(started))
-        if connected:
-            queue.put_nowait(event)
 
-    def publish(event):
-        loop.call_soon_threadsafe(enqueue, event)
+_READ_BACK_EVENT = {
+    "type": "error", "code": READ_BACK_CODE,
+    "message": "This is taking longer than the page can wait. "
+               "The service keeps working; the outcome is read back from Aurora.",
+}
 
-    async def produce():
-        token = chat_event_sink.set(publish)
-        try:
-            response = await chat(request, principal)
-            if any(entry.activity_type == "error" for entry in response.activities):
-                publish({"type": "error", "message": response.message})
-            else:
-                publish({"type": "complete", "response": response.model_dump()})
-        except HTTPException as exc:
-            publish(_stream_error_event(exc))
-        except CallerCredentialError as exc:
-            logger.info("Concierge stream refused: %s", exc.__class__.__name__)
-            publish(_stream_error_event(credential_error(exc)))
-        except Exception:
-            logger.exception("Concierge stream failed")
-            publish({"type": "error", "message": "The response was interrupted. Check the connection before trying again."})
-        finally:
-            chat_event_sink.reset(token)
 
-    async def events():
-        nonlocal connected
-        task = asyncio.create_task(produce())
-        _stream_tasks.add(task)
-        task.add_done_callback(_stream_tasks.discard)
+class _Listener:
+    """The page reading one stream. Events queue up only while it is still connected."""
+
+    def __init__(self, observe: Callable[[dict], None] | None) -> None:
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.connected = True
+        self._observe = observe
+
+    def deliver(self, event: dict) -> None:
+        if self._observe:
+            self._observe(event)
+        if self.connected:
+            self.queue.put_nowait(event)
+
+    async def frames(self):
+        """Server-sent frames up to the terminal event, a keepalive in every quiet gap.
+
+        At ``STREAM_CEILING_SECONDS`` it sends a final ``read_back`` error event and stops,
+        unless a finished reply is already queued, which it delivers instead. It does not touch
+        the work task.
+        """
+        loop = asyncio.get_running_loop()
+        ceiling = loop.time() + STREAM_CEILING_SECONDS
         try:
             yield 'data: {"type":"status","text":"Connecting to your concierge…"}\n\n'
             while True:
+                remaining = ceiling - loop.time()
+                if remaining <= 0 and self.queue.empty():
+                    yield f"data: {json.dumps(_READ_BACK_EVENT)}\n\n"
+                    break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=10)
+                    event = self.queue.get_nowait() if remaining <= 0 else await asyncio.wait_for(
+                        self.queue.get(), timeout=min(STREAM_KEEPALIVE_SECONDS, remaining))
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
@@ -1589,11 +1619,75 @@ async def stream_chat(
                 if event["type"] in ("complete", "error"):
                     break
         finally:
-            connected = False
+            self.connected = False
+
+
+def _event_stream(
+    run: Callable[[Callable[[dict], None]], Awaitable[dict]],
+    observe: Callable[[dict], None] | None = None,
+) -> StreamingResponse:
+    """Answer with server-sent events while ``run`` works, with a keepalive in every quiet gap.
+
+    ``run`` receives a thread-safe ``publish`` and returns the terminal event (``complete`` or
+    ``error``). The work runs as its own retained task, so it finishes when the caller
+    disconnects. Failures become terminal ``error`` events with the same status and wording the
+    plain route gives.
+    """
+    listener = _Listener(observe)
+    loop = asyncio.get_running_loop()
+
+    def publish(event):
+        loop.call_soon_threadsafe(listener.deliver, event)
+
+    async def produce():
+        publish(await _terminal_event(run, publish))
+
+    async def events():
+        task = asyncio.create_task(produce())
+        _stream_tasks.add(task)
+        task.add_done_callback(_stream_tasks.discard)
+        async for frame in listener.frames():
+            yield frame
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
     })
+
+
+@router.post("/stream")
+async def stream_chat(
+    request: ChatRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> StreamingResponse:
+    """Stream a Concierge, ladder Phase 4 or Phase 5 turn, with keepalives while it works."""
+    if request.phase not in (4, 5):
+        raise HTTPException(status_code=422, detail="Streaming is available for phases 4 and 5.")
+    # Authorize before sending headers, including when context is disabled.
+    await authorize_traveler(principal, request.customer_id)
+    started = clock()
+    first_delta = False
+
+    def observe(event):
+        nonlocal first_delta
+        if event.get("type") == "delta" and not first_delta:
+            first_delta = True
+            logger.info("Concierge first text received in %s ms", elapsed_ms(started))
+
+    async def run(publish):
+        token = chat_event_sink.set(publish)
+        try:
+            response = await chat(request, principal)
+        finally:
+            chat_event_sink.reset(token)
+        # Only the Concierge turns an error activity into a failure; the ladder and the
+        # workflow answer with the response, as the plain route does.
+        if request.experience == "concierge" and any(
+            entry.activity_type == "error" for entry in response.activities
+        ):
+            return {"type": "error", "message": response.message}
+        return {"type": "complete", "response": response.model_dump(mode="json")}
+
+    return _event_stream(run, observe)
 
 
 @router.post("", response_model=ChatResponse)
@@ -2500,3 +2594,36 @@ async def process_order(
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
     return await production_hold(request, authorization_subject=_audit_subject(principal))
+
+
+@router.post("/order/stream")
+async def stream_order(
+    request: OrderRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> StreamingResponse:
+    """The hold of ``/order``, streamed so a long Runtime turn never leaves the page waiting."""
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
+    request = request.model_copy(update={"traveler_id": traveler_id})
+
+    async def run(_publish):
+        response = await production_hold(request, authorization_subject=_audit_subject(principal))
+        return {"type": "complete", "response": response.model_dump(mode="json")}
+
+    return _event_stream(run)
+
+
+@router.post("/book/stream")
+async def stream_book(
+    request: BookingRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> StreamingResponse:
+    """The confirmation of ``/book``, streamed like ``/order/stream``."""
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
+    request = request.model_copy(update={"traveler_id": traveler_id})
+
+    async def run(_publish):
+        response = await production_booking(
+            request, authorization_subject=_audit_subject(principal))
+        return {"type": "complete", "response": response.model_dump(mode="json")}
+
+    return _event_stream(run)

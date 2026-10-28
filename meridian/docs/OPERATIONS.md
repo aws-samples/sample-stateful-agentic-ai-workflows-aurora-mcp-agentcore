@@ -206,6 +206,7 @@ the write idempotent and the execution resumable:
 | A second worker while the lease is live | The second execution is refused | HTTP 409 and one running execution |
 | Runtime session stopped by the presenter | The next resume starts a new microVM on the same session and restores the newest snapshot | A `workflow_session_stops` row, a new execution attempt and the same hold |
 | Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
+| A step fails after the hold | The runner releases the hold through the Gateway's `release_hold` tool, for the hold this run placed only, with the run's execution ID | The booking reads `released` and its places count again. The Runtime's error event carries a `hold_release` phrase when the hold was left in place; read it in the Runtime output or log, because the backend log and the traveler see only the fixed reference message. `lost_response_proof.py` ends by doing this |
 
 **Stop the session from the browser.** Run the canceled-flight prompt in the
 Workflow phase; it pauses after `search`. Choose **Stop runtime session** on the
@@ -256,6 +257,26 @@ bookings, list them first:
 python scripts/release_demo_bookings.py --dry-run
 python scripts/release_demo_bookings.py --booking-id <booking-id>
 ```
+
+## Governed tools and the workflow audit row
+
+The workflow searches the catalog, places holds and gives holds back through the Gateway, as the signed-in caller:
+
+| Step | Gateway tool | Decided by |
+| --- | --- | --- |
+| `search` | `MeridianCatalog___hybrid_trip_search` | Cedar `meridian_read_tools`, then the catalog Lambda |
+| `hold` | `MeridianHolds___create_courtesy_hold` | Cedar `meridian_hold_governance`, then the holds Lambda |
+| compensation | `MeridianHolds___release_hold` | Cedar `meridian_release_governance`, then the holds Lambda, which checks the hold belongs to the pinned traveler and the run's lease is live |
+
+The availability, memory recall and read-back reads are scoped Aurora reads under the workflow login, not Gateway calls. A failed Gateway call fails the run with a code or a fixed phrase, never the Gateway's text. Each run that starts writes one `agent_audit_log` row (`operation = 'workflow_run'`) with `tool_calls` and `turn_error`; a malformed request and a busy thread write none. `tests/test_workflow_audit_aurora.py` shows the row the workflow login writes.
+
+### Add a Gateway tool and its policy in `jwt` mode
+
+A policy is validated against the Gateway's tool schema, so a tool and its policy ship in two deploys through `release_identity.py deploy`. The `complete` stage accepts a plan that updates a Runtime, adds the `MeridianCatalog` target or updates a Cedar rule, so a plan that changes only the holds target and Lambda is refused: the tool deploy carries a changed Runtime bundle.
+
+1. If the interceptor's pin list changed: `python scripts/release_identity.py interceptor` (dry run), then with `--apply --i-understand-this-changes-aws`.
+2. Deploy the tool: `python scripts/render_agentcore_config.py`, then `python scripts/release_identity.py deploy` (dry run: a changed Lambda, target and Runtime, no policy), then with `--apply --i-understand-this-changes-aws`. `python scripts/smoke_gateway_tools.py --probe-release` fails here by design: the tool is denied by default.
+3. Deploy the policy the same way. The plan adds the policy and updates the binding rule. The probe now exits 0.
 
 ## Service logins
 
@@ -534,7 +555,11 @@ the access token. A user with no active binding cannot sign in.
    ```
 
    The stack uses the Essentials plan and the V2_0 pre-token-generation
-   trigger, which the account accepted. The client allows the authorization code
+   trigger, which the account accepted. Amazon Cognito allows a trigger 5
+   seconds, and the function times out at 4. The trigger retries its Aurora
+   lookup once after a dropped connection (never after an answer from the Data
+   API or a read timeout), and only while the second attempt can end 0.3 s
+   before the function does. The client allows the authorization code
    flow only for browsers, with the openid, profile and email scopes, no client
    secret, a one-hour access and ID token and a 24-hour refresh token. It also
    enables `ADMIN_USER_PASSWORD_AUTH`, which only a caller with IAM permission
@@ -911,13 +936,15 @@ hosted-UI host masked. Each stage must also show its own change:
 | 1 `gateway` | add exactly one Gateway, the mode's, and, when the other mode's Gateway is live, remove exactly one Gateway, that one | Only resources whose path or logical id carries the replaced Gateway's construct id (`GatewayMeridianAurora` or `GatewayMeridianAuroraJwt`; the first is a prefix of the second and is told apart) and the `MeridianGovernance` engine with its rules. Any other removal, a Runtime or the Memory included, refuses the deploy |
 | 2 `targets` | add a `GatewayTarget` and a `Lambda::Function` | None allowed |
 | 3 `governance` | add a `PolicyEngine` and a `Policy` | None allowed |
-| 4 `complete` | update a `Runtime`, or add the `MeridianCatalog` target, or update a Cedar rule (`Policy`) | Only a target named in `RETIRED_TARGETS` (`SemanticTripSearchLambda`), and only when the same plan updates a `Runtime`; nothing else |
+| 4 `complete` | update a `Runtime`, or add the `MeridianCatalog` target, or update a Cedar rule (`Policy`), or be a code-only Lambda hotfix: every change an update (`[~]`) of a `Lambda::Function` whose changed properties are only `Code` and `Metadata`, and nothing else | Only a target named in `RETIRED_TARGETS` (`SemanticTripSearchLambda`), and only when the same plan updates a `Runtime`; nothing else |
 
-No live `agentcore deploy --diff --json` has been captured, so the repository holds no sample of a real plan. The
-test fixtures use the resource types, construct paths and logical ids of the template the CDK app synthesizes,
-with the line layout the CLI is documented to print; they show the gate's logic, not the live format. Read the
-first live plan by eye (with approval, since `agentcore deploy --diff` calls AWS) and expect the gate
-to refuse it with the masked output tail if the layout differs.
+Two live plans of the `complete` stage are saved, masked, in `tests/fixtures/real_plans/` (Release 2 Deploy A and
+Deploy B, 28 October 2026), and the gate's tests run against them. In that format a changed field is a
+`[~] .Field:` line (leading dot, trailing colon) with its old and new values one level deeper as `[-]` and `[+]`
+lines. The plans of stages 1 to 3 have not been captured; the other tests use fixtures built from the resource
+types, construct paths and logical ids of the synthesized template, which show the gate's logic. Read the first
+live plan of each of those stages by eye (with approval, since `agentcore deploy --diff` calls AWS) and expect
+the gate to refuse it with the masked output tail if the layout differs.
 
 After stage 4 the interceptor is attached with `release_identity.py gateway`. The template cannot declare it,
 and a deploy that updates the Gateway can detach it, so `check` is the drift read after any later deploy.
@@ -1032,7 +1059,7 @@ What is verified and what is assumed:
 | Two Gateways with the same target names cannot be synthesized; the holds Lambda name is the same in both modes | Verified by the CDK tests, against `@aws/agentcore-cdk` 0.1.0-alpha.47 |
 | The CDK wires `AGENTCORE_GATEWAY_<NAME>_URL` on every Runtime and adds `InvokeGateway` only for `AWS_IAM` | Verified in the installed construct code |
 | The CLI rebuilds `deployed-state.json` from the stack outputs, so the replaced Gateway's entry disappears | Read in the installed CLI source; not yet seen after a real deploy. The render ignores a stale engine id before the last stage, but read the file after stage 1 |
-| `agentcore deploy --diff --json` prints CDK diff lines (`[+] AWS::BedrockAgentCore::Gateway ...`) before the JSON status | Read in the installed CLI source; not yet seen live, and no real plan is committed. The plan gate fails closed in every stage and prints the masked output tail, so read the first live plan by eye |
+| `agentcore deploy --diff --json` prints CDK diff lines (`[+] AWS::BedrockAgentCore::Gateway ...`) before the JSON status | Seen live for the `complete` stage (Release 2 Deploy A and Deploy B, saved masked in `tests/fixtures/real_plans/`); not yet seen for stages 1 to 3. The plan gate fails closed in every stage and prints the masked output tail, so read the first live plan of those stages by eye |
 | A Cedar rule is validated against the tools that exist, so the tool precedes the rule | Documented in the runbook from the first deployment (two deploys for a tool and its rule) |
 | CloudFormation can fail to delete a role that carries an inline policy it did not create | Assumed, not observed; the pre-clean costs one idempotent command |
 | The new Gateway can be created with `CUSTOM_JWT` through the stack, and the engine attaches in `ENFORCE` mode in stage 3 | Assumed: the CDK synthesizes it, no deploy has done it |
@@ -1253,8 +1280,15 @@ stack and the Cedar rules. It restores no Lambda function code (the holds, inter
 and no Gateway target.
 
 To revert the holds function code, deploy a new commit that reverts it and keeps the catalog target. The plan
-gate accepts that plan only if the same plan also updates a Runtime or a Cedar rule, because a plan that only
-updates a function is refused at the complete stage. Do not redeploy a tree from before the catalog target:
+gate passes that plan as a code-only Lambda hotfix: at the complete stage it accepts a plan whose every change
+is an update (`[~]`) of an `AWS::Lambda::Function` whose changed properties are only `Code` and `Metadata`. A
+function that also changes `Environment` (the hold budget ceiling is there), `Role`, `Handler`, `Timeout` or
+any other property, or whose property lines the plan does not show, is not a code-only update. Any other line
+in the plan takes the hotfix away: an add, a removal, a Runtime, the Gateway, the engine or a rule, a role, an
+IAM policy, a Lambda permission, a log group, or a Gateway target, because a target change carries a tool schema
+or description change, not code. The normal expectations then apply, so the plan needs a Runtime or Cedar rule
+update or the catalog target add.
+Do not redeploy a tree from before the catalog target:
 it removes the `MeridianCatalog` target, and the gate refuses that removal on purpose (it allows only the
 retired `SemanticTripSearchLambda`).
 
@@ -1271,7 +1305,7 @@ Amazon Cognito access token and a real traveler row. Run it in `jwt` mode (see
 [Switch the AgentCore identity mode](#switch-the-agentcore-identity-mode)), from a clean checkout of the
 released commit. In `iam` mode, the default, the command refuses to run. It signs in as both users
 with tokens minted in memory from Secrets Manager, so it prints and stores no token and no password.
-It passed 17 of 17 probes against the hosted site on 2026-10-08, and the plan has 19 probes since Release 2.
+It passed 17 of 17 probes against the hosted site on 2026-10-08, and the plan has 21 probes since Release 3.
 
 ```bash
 python scripts/identity_proof.py                                              # the plan only, no AWS call
@@ -1281,7 +1315,7 @@ python scripts/identity_proof.py --render .local/identity-proof/latest.json   # 
 ```
 
 `--base-url` names the hosted site (the default comes from the release record) and `--output-dir` names a folder
-inside `.local/`. The plan has 19 probes, in the order they run. Each row has an expectation: a probe that aims the
+inside `.local/`. The plan has 21 probes, in the order they run. Each row has an expectation: a probe that aims the
 decoy at Jordan's data must end `refused`, and every other probe must end `allowed`. Two probes are decoy controls
 (`runtime.decoy_pings_workflow` and `gateway.decoy_reads_package`): they send the decoy's own valid token with no
 traveler named, so the decoy must be let in. They show that a refusal at the same layer came from the traveler check
@@ -1308,6 +1342,8 @@ and not from a layer that turns the decoy away for any request.
 | `gateway.jordan_places_hold` | Gateway | Jordan | `create_courtesy_hold`, released afterwards |
 | `gateway.decoy_reads_jordans_loyalty` | Gateway | decoy | `loyalty_balance` with `travelerId` set to Jordan |
 | `gateway.jordan_reads_own_loyalty` | Gateway | Jordan | `loyalty_balance` |
+| `gateway.decoy_releases_jordans_hold` | Gateway | decoy | `release_hold` with `travelerId` set to Jordan, for a hold that does not exist |
+| `gateway.jordan_releases_unknown_hold` | Gateway | Jordan | `release_hold` for a hold that does not exist, answered `hold_not_found` |
 
 The database probe opens its own Data API transaction. It does not use the workload grant, so a zero count is
 row-level security's answer and nothing else. No probe depends on the decoy being refused its own records at the
@@ -1405,8 +1441,24 @@ Secrets Manager secret `meridian/web/api-token`. The release record is written
 to `.local/hosted-release.json` (gitignored). `python scripts/published.py`
 reads that record and checks reachability; `--url` prints just the URL. Set
 `MERIDIAN_HOSTED_AUTH` at runtime for an authenticated check. The helper never
-copies or persists credentials. Confirm current asset hashes, image identity
-and a streamed turn through CloudFront before marking a release verified.
+copies or persists credentials. After `--apply`, record the authenticated hosted
+validation:
+
+```bash
+MERIDIAN_HOSTED_AUTH='{"username": "...", "password": "..."}' python scripts/warm_demo.py --hosted --verify
+```
+
+It runs the hosted warm-up (health and Amazon Aurora, catalog, traveler profile under
+row-level security, one read-only turn for each of phases 1 to 4, saved journeys). When every
+step passes it sets `status` to `verified` in the release record and adds `verifiedAt`,
+`verifiedCommit` (the Git HEAD of the tree that ran it) and `checks` (the step names). When a
+step fails it sets `verification_failed` with `failedCheck` (the first failing step) and the
+`checks` that passed, and exits 1. Exit codes: 0 verified, 1 a failed step or an unfinished
+release record, 2 a usage error (`--verify` without `--hosted`, or with `--as` other than the default
+user, because the verdict is for the default traveler). A network error part-way through is a failed step. The record keeps `image` and
+`previousImage` and never holds credentials or tokens. Without `--verify` the warm-up writes
+nothing. Confirm current asset hashes and image identity separately; the warm-up does not
+check them.
 [App Runner no longer accepts new customers](https://aws.amazon.com/apprunner/),
 so this path applies to accounts that already use it; a new account needs a
 different container host for the backend, such as Amazon ECS.
@@ -1440,9 +1492,12 @@ a chat `BEDROCK_MODEL_ID` that is not a global inference profile id.
 Before a release, run `python scripts/smoke_bedrock_model.py`. It is a dry run unless
 given `--apply` and `--i-understand-this-changes-aws`; with them it sends one small
 Converse request for each thinking and effort setting and reports each as `USABLE`,
-`ACCEPTED`, `REJECTED` or `INCONCLUSIVE`. Until a run shows which setting to keep,
-`REQUEST_FIELDS` in `backend/bedrock_model.py` and in the Runtime's `model/load.py` stays
-empty, so no thinking field is sent.
+`ACCEPTED`, `REJECTED` or `INCONCLUSIVE`. `REQUEST_FIELDS` in
+`backend/bedrock_model.py` and in the Runtime's `model/load.py` holds adaptive thinking at
+effort medium, the `adaptive thinking, effort medium` candidate. Run the smoke before each
+deploy and confirm that candidate is `USABLE`; change both constants only to a setting the
+smoke accepted. Thinking tokens count against the 16,000-token output budget. A `BEDROCK_MODEL_ID` override still
+sends these fields, so it must name a model that accepts them.
 
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
 resources.
@@ -1479,7 +1534,7 @@ explains why App Runner needs this.
 | `AgentCore platform not configured` | The backend has no runtime, gateway or memory ID. Run `python scripts/sync_agentcore_env.py --write` and restart the backend. Production does not fall back to direct Aurora access. |
 | `runtimeSessionId ... valid min length: 33` | The runtime session ID is too short. Restart the backend on current code; `_build_runtime_session_id` in `backend/agentcore/runtime.py` builds a valid ID. |
 | Gateway reports `no targets were configured` | A target is missing. Check that `meridian-catalog-tools` exists, render the config and run `agentcore deploy -y`. |
-| Production returns no packages | Run `python scripts/verify_agentcore.py` (expect ten tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
+| Production returns no packages | Run `python scripts/verify_agentcore.py` (expect eleven tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
 | A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py`. |
 | Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant for that traveler. Run `python scripts/bind_web_backend_role.py --apply`, with `--traveler trv_demo_decoy` for Jordan Lee. |
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
@@ -1502,16 +1557,44 @@ explains why App Runner needs this.
 
 ## Waits, retries and readback
 
-The browser bounds ladder chat, hold and confirmation waits to 55 seconds.
-The main Concierge streams real AgentCore text over `/api/chat/stream`, with a
-120-second browser deadline. The stream sends a heartbeat every 10 seconds
-while awaiting events, below CloudFront's 60-second origin idle timeout.
-App Runner still imposes a 120-second total request limit; streaming does not
-extend it. A partial reply is marked incomplete and is never retried automatically. The runtime client uses a 45-second
-socket read timeout with one attempt; this is not an end-to-end workflow
-deadline, and a multi-step workflow can outlive the browser's wait. Its thread
-stays addressable in the URL, and the UI reads the saved outcome back before
-offering a retry. Stopping the wait does not undo a committed transaction.
+The calls that can run long stream, and the browser waits on activity, not on a
+fixed clock. Phase 4 chat, Phase 5, a hold and a booking use server-sent events
+(`/api/chat/stream`, `/api/chat/order/stream`, `/api/chat/book/stream`). The
+backend sends a keepalive comment every 10 seconds while it works, below
+CloudFront's 60-second origin response timeout. The browser ends its wait after
+30 seconds with no chunk (an idle timeout) or 110 seconds in total (a hard
+ceiling), whichever comes first. The ceiling sits under App Runner's
+120-second total request limit, which streaming does not extend. Reads and the
+earlier phases keep a plain 55-second wait.
+
+The server ends a stream at the same 110-second ceiling, with a final event that
+tells the page to read the outcome back, and closes it. It never cancels the
+work, because cancelling in the middle of a governed write could leave it half
+done. What survives once the browser or the server has closed the request:
+
+- A placed hold or booking is durable in Aurora.
+- The audit row and the Memory unit that follow it are best effort. They run
+  with no open request, App Runner gives no guarantee to work that outlives a
+  request, and a deploy or scale-in in that window can drop them. A confirmed
+  booking or placed hold with no audit row is therefore possible after a call
+  that ran past the ceiling or a browser that left early. Check the trips and
+  the audit table together when reconciling such a call.
+- The traveler's state stays true regardless, because the page reads what Aurora
+  committed, not what the stream said.
+
+A partial reply is marked incomplete and never retried automatically. The
+runtime client uses a 45-second socket read timeout with one attempt; this is
+not an end-to-end workflow deadline, and a multi-step workflow can outlive the
+browser's wait.
+
+When the browser stops waiting it reads the outcome back from Aurora instead of
+showing a timeout. After a hold or a booking it reads the receipt once (10
+seconds at most) and shows it when Aurora has it; otherwise it keeps the
+message that the outcome could not be confirmed. After a Phase 5 turn it keeps
+reading the journey, and the traveler sees the result when the worker's lease
+has ended. A resume that meets a running worker answers 409 and the page keeps
+reading. Reading stops after five minutes. Stopping the wait does not undo a
+committed transaction.
 
 An unconfirmed chat turn without a hold or booking target is retried once,
 after 250 ms, if the connection closes before the runtime responds; it keeps

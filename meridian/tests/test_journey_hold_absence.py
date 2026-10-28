@@ -13,6 +13,6 @@ def test_a_journey_without_a_hold_says_none_was_placed() -> None:
 def test_a_checkpointed_hold_missing_from_aurora_is_named() -> None:
     absent = _hold_absent({"hold_id": "HLD-0125BCDA"})
     assert absent["status"] == "unavailable"
-    assert absent["checkpoint_hold_id"] == "HLD-0125BCDA"
+    assert absent["snapshot_hold_id"] == "HLD-0125BCDA"
     assert "HLD-0125BCDA" in absent["reason"]
     assert "no hold has been placed" not in absent["reason"]

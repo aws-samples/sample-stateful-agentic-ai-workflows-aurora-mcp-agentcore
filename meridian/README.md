@@ -1,11 +1,16 @@
 # Meridian application
 
-Meridian is a travel concierge built on Aurora PostgreSQL, MCP, Strands Agents,
+Meridian is a travel concierge built on Amazon Aurora PostgreSQL, MCP, Strands Agents,
 and Amazon Bedrock AgentCore. This directory holds the runnable application:
 the FastAPI backend, the React frontend, the AgentCore project with its two
-Runtimes, the CDK apps, scripts and tests. The maintained LangGraph example is
-in [examples/langgraph](examples/langgraph/README.md); the application does not
-import it.
+Runtimes, the CDK apps, scripts and tests. A maintained second implementation of the
+workflow is in [examples/langgraph](examples/langgraph/README.md); the application does
+not import it.
+
+A request flows from the browser to the FastAPI backend, which calls an AgentCore
+Runtime. The Runtime's tools go through the AgentCore Gateway, where Cedar policy decides
+each call, to a Lambda function that reads and writes Amazon Aurora under row-level
+security.
 
 Start with the [repository README](../README.md) for prerequisites, the quick
 start and a walkthrough of the showcase. This page is the reference for the views,
@@ -42,15 +47,14 @@ windowed layout, the controls bar has a **Display settings** menu with a
 **Projector readability** checkbox and **Preview audience layout**, and a
 **Present fullscreen** button that hides the controls until you press **Esc**.
 Both themes use the same color roles and system font. The
-projector setting enlarges type by 20% without changing colors. Dark mode uses
-the deck's black background and white labels. Rounded blue actions with white text
-are shared across all five views. Green indicates observed success, red indicates
+projector setting enlarges type by 20% without changing colors. Rounded blue actions with
+white text are shared across all five views. Green indicates observed success, red indicates
 errors or blocked/canceled states, and amber indicates caution or pending attention;
 labels and icons preserve the meaning without color. Unrun or unknown stays neutral.
 
 Solution Briefing opens with the architecture. Its four numbered topics reveal
 one at a time; supporting services and technical reference stay collapsed until
-you open them. This keeps the projector focused on the topic being discussed.
+you open them.
 
 ## Five capabilities
 
@@ -58,9 +62,9 @@ you open them. This keeps the projector focused on the topic being discussed.
 | --- | --- | --- |
 | 1. SQL | Query | Rows from Aurora through one parameterized `search_trips` statement over the RDS Data API; code, not a model, picks the filter |
 | 2. MCP | Tools | Typed tools on the custom `meridian-concierge` MCP server: `search_trips`, package comparison, currency conversion, destination price range, region inventory and loyalty. Every value a tool sends to Aurora is a bound parameter, and the `search_trips` trace shows the statement with its values |
-| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, chosen by one Claude Sonnet 5.5 Strands agent that holds the earlier tools |
-| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) with ten Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
-| 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry |
+| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, chosen by one Claude Sonnet 5.5 Strands agent that holds the earlier tools. A turn stops after 45 seconds with a fixed message |
+| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) offered ten of the Gateway's eleven tools (the eleventh, `release_hold`, is for the Phase 5 workflow), a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
+| 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry. The workflow searches, holds and releases through the Gateway as the signed-in caller, and each run writes one audit row |
 
 ### Prompts
 
@@ -97,7 +101,7 @@ writes a booking. Every hold and confirmation uses the governed Gateway path.
 | Workflow state: Strands Graph snapshots, append-only JSONB, one row per node | Aurora PostgreSQL table `workflow_snapshots` | Written and read by the `MeridianWorkflow` Runtime as the `meridian_workflow` login, with the traveler pinned per transaction under RLS |
 | Journey binding, worker leases and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
 | Presenter session stops | Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, read back under RLS |
-| Holds from any phase and from the Phase 5 workflow | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
+| Holds from any phase and from the Phase 5 workflow, and a failed run's release | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
 | Booking confirmation | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda changing the booking from `held` to `confirmed` |
 
 A Data API transaction keeps the RLS role and traveler scope together for one
@@ -112,13 +116,24 @@ The canceled-flight prompt runs `classify → search → availability →
 prepare_hold → hold → synthesize` as a Strands Graph in the `MeridianWorkflow`
 Runtime. It pauses after `search` so the saved snapshot is visible before the
 workflow checks availability and places a hold. The hold needs the traveler's
-answered review, and a resume stops again at the confirm gate until it is answered. The proof scripts pause by passing `pause_after` to the runner.
+answered review, and a resume stops again at the confirm gate until it is answered. The
+proof scripts pause by passing `pause_after` to the runner.
 
 - `prepare_hold` saves the hold's request ID and booking ID in the snapshot
   before the `hold` node calls the Gateway. A resumed or retried run sends the
   same IDs, and Aurora returns the existing booking instead of creating another.
 - The `MeridianHolds` Lambda checks the worker's lease inside the write
   transaction, so a worker that lost its lease cannot write.
+- When a step fails after the hold, the runner calls the Gateway's `release_hold` tool with
+  the saved request ID, the journey ID and the run's execution ID. The Lambda checks the
+  lease and the hold in one transaction and releases only a hold that is still held, so a
+  worker that lost its lease leaves the hold in place. The Runtime's error event carries a
+  `hold_release` phrase when the hold was not released, and the Runtime log names the hold and
+  the reason. The backend does not copy the phrase: the traveler sees the fixed reference
+  message, and the journey read shows the booking's status.
+- Each run that starts writes one `agent_audit_log` row, `operation = 'workflow_run'`, with
+  the Gateway calls and the error that ended it. Gateway failures appear as a code or a
+  fixed phrase, never as the Gateway's own text.
 - A snapshot and a business write are separate transactions. The design makes
   the write idempotent and the execution resumable; it does not claim
   exactly-once execution.
@@ -139,9 +154,14 @@ The main Concierge streams AgentCore text as it arrives, with progress messages
 during tool work. The final trip list and completion state appear after catalog
 hydration and memory persistence. Interrupted text is marked incomplete.
 
-- The browser stops waiting for chat, hold and confirmation responses after
-  55 seconds (two minutes for the streamed Concierge) and offers **Stop waiting** before then. A server action can still
-  finish after the browser stops waiting.
+- Phase 4 chat, Phase 5, holds and confirmations stream with a keepalive every
+  10 seconds. The browser stops waiting after 30 seconds of silence or 110
+  seconds in total, and offers **Stop waiting** before then. Other calls stop
+  after 55 seconds. The server closes the stream at the same ceiling and keeps
+  working on a best-effort basis: a placed hold or booking is durable, but its
+  audit row and memory unit are not guaranteed once the request has ended. The
+  app reads the hold, booking or recovery back from Aurora instead of showing
+  a timeout.
 - The runtime client uses a 45-second socket read timeout and no blanket
   retries. An unconfirmed chat turn gets one retry if the connection closes
   before response headers arrive; holds, confirmations and timeouts are never
@@ -159,9 +179,11 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/api/chat/stream` | Phase 4 Concierge SSE: progress, text deltas, conversation identity, then one completed response. Uses the same authentication and traveler authorization as chat. Disconnects are never automatically retried. |
+| `POST` | `/api/chat/stream` | Phase 4 and Phase 5 SSE: progress, text deltas, conversation identity, then one completed response, with a keepalive every 10 seconds. Uses the same authentication and traveler authorization as chat. Disconnects are never automatically retried. |
 | `POST` | `/api/chat` | Chat by `phase` (1 to 5). Phase 5 invokes the `MeridianWorkflow` Runtime with the conversation, traveler count and resume request, and relays its result. The response includes the trace in `activities`. |
 | `POST` | `/api/chat/order` | Courtesy hold from any phase: Runtime, Gateway and Cedar, then the `MeridianHolds` Lambda. `order` is null when the hold is refused. |
+| `POST` | `/api/chat/order/stream` | The hold of `/api/chat/order` as SSE. It ends with one `complete` event, or an `error` event that carries the plain route's `status` and, for a worded hold failure, `code: governed_write`. |
+| `POST` | `/api/chat/book/stream` | The confirmation of `/api/chat/book` as SSE, with the same events. |
 | `POST` | `/api/chat/book` | Confirm a held booking. The backend reads the total under RLS so the policy judges what Aurora holds. `order` is null when the confirmation is refused. |
 | `GET` | `/api/chat/holds` | Read a direct-hold receipt by `conversation_id`, `product_id`, `duration` and `quantity`; no model call or write |
 | `GET` | `/api/chat/bookings/{booking_id}` | Read a booking with its amounts and expiry |
@@ -252,10 +274,22 @@ workload), the RLS scope, the workload's IAM identity and the rows returned, and
 Every Phase 4 turn that reaches the agent Runtime has one row written for it, failed turns
 included. If the row's own write fails, there is no row: the request fails with that error,
 or, when the turn had already failed or was cancelled, the backend logs the lost row with the
-turn's ids. A hold or booking that was placed still says so in its reply. Three Phase 4 replies do not reach the Runtime and write no row: the offer to
+turn's ids. A hold or booking that was placed still says so in its reply. Phase 5 writes its
+own row for each workflow run, described below. Three Phase 4 replies do not reach the
+Runtime and write no row: the offer to
 review a recovery, a turn with traveler context off, and the handoff to the workflow. A
 request for another traveler is refused with 403 before any agent runs, and the backend
 records that refusal as a deny row in `traveler_access_audit`.
+
+Each Phase 5 workflow run that starts writes one row through the same table, when the run
+ends: `operation = 'workflow_run'`, `authorization_subject` is the verified Amazon Cognito
+subject (in `iam` mode, the Runtime role's workload identity), `tool_calls` lists the
+Gateway calls in the order they finished (`hybrid_trip_search`, `create_courtesy_hold`,
+`release_hold`), and `turn_error` names the error that ended a failed run, with credentials
+and account ids masked. `authorization_decision` comes from the same rule as in Phase 4. A
+malformed request and a thread another run holds write no row, and a process that dies hard
+writes none. The write is bounded at 10 seconds and a failure to write it does not change
+the run's result.
 
 The migrations in `scripts/migrations/` add the journey, execution, hold
 request, snapshot and session-stop tables (`journeys`, `journey_executions`,
@@ -264,7 +298,9 @@ request, snapshot and session-stop tables (`journeys`, `journey_executions`,
 `bookings.confirmed_at`, and the two `SECURITY DEFINER` functions the governed
 writes call: `create_courtesy_hold` and `confirm_booking`. Both re-check the
 traveler scope and agent type inside the transaction, and a retried call
-returns the original booking or confirmation. `scripts/apply_migrations.py`
+returns the original booking or confirmation. `release_hold` has no function of its own: the
+Lambda reads and updates the booking inside the traveler's scope.
+`scripts/apply_migrations.py`
 applies them to new and existing databases.
 
 `scripts/travel_catalog.py` defines the seed data and `scripts/seed_data.py`
@@ -300,8 +336,12 @@ Traveler-scoped operations and gateway actions pass these controls:
 1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). The workload grant is checked for that IAM principal. AgentCore Identity is used only inbound: in `jwt` mode its JWT authorizer verifies the signed-in person's token at both Runtimes and the Gateway (see [Who the traveler is](#who-the-traveler-is)).
 2. `traveler_identity_bindings` in Aurora authorizes that workload for the requested traveler. A missing grant fails before any RLS scope is set.
 3. Aurora row-level security filters rows to that traveler under the restricted `meridian_app` role.
-4. AgentCore Gateway serves the tools over MCP (signed with AWS credentials in `iam` mode, with the caller's Amazon Cognito access token in `jwt` mode), and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. Any other call is denied by default.
-5. The `MeridianHolds` Lambda is a workload with its own grant. It sets the traveler scope, switches to `meridian_app`, and calls `create_courtesy_hold` or `confirm_booking`. Cedar judged the ceiling the caller sent, so before a new hold or a first confirmation the Lambda derives the ceiling again from the traveler's saved preferences, under that traveler's RLS scope, and refuses a larger total with `budget_ceiling_exceeded`. A retry of a request that already committed replays without new price or budget checks. The Phase 4 concierge and the Phase 5 workflow both place holds through this tool; the workflow also passes its request ID, booking ID and execution ID so the Lambda can check the worker's lease.
+4. AgentCore Gateway serves the tools over MCP (signed with AWS credentials in `iam` mode, with the caller's Amazon Cognito access token in `jwt` mode), and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. A release is permitted only when the call names a hold request and a journey. Any other call is denied by default.
+5. The `MeridianHolds` Lambda is a workload with its own grant. It sets the traveler scope, switches to `meridian_app`, and calls `create_courtesy_hold`, `confirm_booking` or `release_hold`:
+
+   - **Create and confirm.** Cedar judged the ceiling the caller sent, so before a new hold or a first confirmation the Lambda derives the ceiling again from the traveler's saved preferences, under that traveler's RLS scope, and refuses a larger total with `budget_ceiling_exceeded`. A retry of a request that already committed replays without new price or budget checks. The Phase 4 concierge and the Phase 5 workflow both place holds through this tool; the workflow also passes its request ID, booking ID and execution ID so the Lambda can check the worker's lease.
+   - **Release.** `release_hold` finds the hold by its request and journey inside the traveler's scope and releases it only while it is held, so another traveler's hold reads as not found; when the workflow gives a hold back it also passes its execution ID, and the Lambda refuses the release if the lease is lost.
+   - **Workflow.** The workflow also searches the catalog through the Gateway, and each run writes one audit row that names the signed-in person.
 
 The runtime pins the traveler ID, the confirmation flag, the budget ceiling and
 the journey reference on every hold and confirmation call from the request the
@@ -341,8 +381,8 @@ backend, both Runtimes and the Gateway each verify the person's Amazon Cognito
 access token, and row-level security is the last check. A second seeded user, the
 decoy, has a valid token and a real traveler row; `scripts/identity_proof.py`
 records that the decoy is refused at all four layers (backend, Runtimes, Gateway
-and Amazon Aurora) and that Jordan is allowed at each. The proof passed 17 of 17
-checks on 2026-10-08, in `jwt` mode. The five hops are in
+and Amazon Aurora) and that Jordan is allowed at each. The proof has 21 probes. Its last recorded pass, 17 of 17
+probes on 2026-10-08 in `jwt` mode, predates the current plan. The five hops are in
 [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md#identity-five-hops),
 the command is in
 [docs/OPERATIONS.md](docs/OPERATIONS.md#prove-the-decoy-is-refused), and the
@@ -364,10 +404,10 @@ package before a hold. It is not enabled.
 | Frontend | React 18, Vite, TypeScript |
 | Backend | FastAPI, Python 3.13 |
 | Agents | Strands Agents for Phases 1 to 4; the Phase 4 agent runs on AgentCore Runtime with tools from AgentCore Gateway |
-| Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases. The LangGraph version is in `examples/langgraph/` |
+| Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases, calling the Gateway for search, hold and release. A second implementation is in `examples/langgraph/` |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
-| Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge and the Phase 3 agent, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
+| Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge and the Phase 3 agent, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap and adaptive thinking at effort medium. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
 | MCP | The custom `meridian-concierge` server (typed `search_trips` and domain tools) for Phase 2, and the custom `meridian-memory` server for external MCP hosts (the app reads memory directly); `awslabs.postgres-mcp-server` serves only the reference MCP agent |
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs in the runtime's CloudWatch log group, with the trace ID shown in the UI |
 

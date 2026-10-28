@@ -57,6 +57,10 @@ function microvmOf(execution: JourneyExecution): string {
   return execution.microvm_id ?? execution.worker_id;
 }
 
+function bothHaveMicrovm(first: JourneyExecution | null, latest: JourneyExecution | null): boolean {
+  return Boolean(first?.microvm_id && latest?.microvm_id);
+}
+
 function sessionChanged(first: JourneyExecution | null, latest: JourneyExecution | null): boolean {
   if (!first || !latest) return false;
   if (first.microvm_id && latest.microvm_id) return first.microvm_id !== latest.microvm_id;
@@ -205,6 +209,7 @@ export function PresenterProof({
   const hold = document.hold;
   const auth = document.authorization;
   const restarted = sessionChanged(first, latest);
+  const unit = bothHaveMicrovm(first, latest) ? 'microVM' : 'worker';
   const stops = document.session_stops && isObserved(document.session_stops)
     ? document.session_stops.items : [];
   const newestStop = stops[0] ?? null;
@@ -212,9 +217,9 @@ export function PresenterProof({
   const resumed = hasVerifiedResume(document);
   const waitingToResume = !resumed && isObserved(document.workflow)
     && document.workflow.workflow_status === 'paused';
-  const holdGone = !isObserved(hold) && Boolean(hold.checkpoint_hold_id);
+  const holdGone = !isObserved(hold) && Boolean(hold.snapshot_hold_id);
   const holdSummary = isObserved(hold)
-    ? `${hold.hold_records} hold record${hold.hold_records === 1 ? '' : 's'}.`
+    ? `${hold.label}.`
     : holdGone ? 'Hold no longer in Aurora.' : 'No hold recorded.';
 
   return (
@@ -251,7 +256,7 @@ export function PresenterProof({
       </p>}
 
       <div className="mds-proof-flow">
-        <SessionCard now={now} role="Original session" execution={first} fallback="none yet" />
+        <SessionCard now={now} role={`Original ${unit}`} execution={first} fallback="none yet" />
         <span className="mds-proof-arrow" aria-hidden="true">
           <ArrowRight size={22} />
         </span>
@@ -305,7 +310,7 @@ export function PresenterProof({
         <span className="mds-proof-arrow" aria-hidden="true">
           <ArrowRight size={22} />
         </span>
-        <SessionCard now={now} role={restarted ? "Replacement session" : "Latest execution"} execution={latest} fallback="waiting" />
+        <SessionCard now={now} role={restarted ? `Replacement ${unit}` : "Latest execution"} execution={latest} fallback="waiting" />
       </div>
 
       {newestStop && (
@@ -423,7 +428,7 @@ export function PresenterProof({
               <div className="mc-hold-pending">
                 <strong>Hold no longer in Aurora.</strong>
                 <p>
-                  The saved step names hold {hold.checkpoint_hold_id}, but Aurora has no booking
+                  The saved step names hold {hold.snapshot_hold_id}, but Aurora has no booking
                   for it. Releasing a sample booking removes its rows.
                 </p>
               </div>

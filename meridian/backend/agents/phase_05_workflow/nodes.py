@@ -11,7 +11,12 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.agentcore.caller_claims import CallerClaimsError
 from backend.agentcore.caller_credential import current_caller_token
-from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
+from backend.agentcore.errors import (
+    AgentCoreNotConfiguredError,
+    CallerCredentialError,
+    CallerTokenExpired,
+    CallerTokenMissing,
+)
 from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
@@ -19,9 +24,13 @@ from backend.agents.phase_05_workflow.governed_hold import (
     REFUSED_BY_IDENTITY,
     REFUSED_BY_POLICY,
     GovernedHold,
+    NO_RELEASE_RECEIPT,
+    UNREADABLE_RESULT,
     HoldOutcomeUnknown,
     hold_arguments,
     place_governed_hold,
+    release_arguments,
+    release_governed_hold,
 )
 from backend.agents.phase_05_workflow.governed_tools import invoke_gateway_tool, recording
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
@@ -41,6 +50,11 @@ from backend.trace_names import AVAILABILITY_CODE
 
 logger = logging.getLogger(__name__)
 
+RELEASE_LEASE_LOST = "hold left in place: another worker owns this run"
+RELEASE_NOT_SENT = "hold not released: the release call was not sent"
+RELEASE_NO_REQUEST = "hold not released: the saved state has no hold request id"
+RELEASE_UNCONFIRMED = "hold release unconfirmed: the release call failed"
+
 StepFn = Callable[..., Awaitable[Any]]
 GatewayCall = Callable[[str, Dict[str, Any]], Dict[str, Any]]
 BOOKING_STATUS_SQL = "SELECT status FROM bookings WHERE booking_id = %s"
@@ -56,6 +70,17 @@ SELECT hr.booking_id, hr.fingerprint, b.status,
   FROM hold_requests hr JOIN bookings b ON b.booking_id = hr.booking_id
  WHERE hr.journey_id = %s AND hr.hold_request_id = %s
 """
+
+
+UNSENT_ERRORS = (CallerCredentialError, CallerClaimsError, AgentCoreNotConfiguredError)
+UNKNOWN_ANSWERS = (UNREADABLE_RESULT, NO_RELEASE_RECEIPT)
+
+
+def _unreleased_note(error: Optional[str]) -> str:
+    """A fixed phrase for a release answer that did not confirm a release."""
+    if error in UNKNOWN_ANSWERS:
+        return f"hold release unconfirmed: {error}"
+    return f"hold not released: {error}"
 
 
 class WorkflowNodes:
@@ -85,6 +110,7 @@ class WorkflowNodes:
         self.availability_fn = availability_fn
         self.memory_recall_fn = memory_recall_fn
         self._gateway_call = recording(gateway_call or self._configured_gateway)
+        self.release_note: Optional[str] = None
 
     @staticmethod
     def _configured_gateway(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -828,19 +854,24 @@ class WorkflowNodes:
         )
 
     async def release_hold(
-        self, state: Dict[str, Any], *, expected_hold_id: Optional[str] = None
+        self,
+        state: Dict[str, Any],
+        *,
+        expected_hold_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> bool:
-        """Compensating action: give the seats back. True when a held booking was released.
+        """Compensating action: give the seats back through the Gateway.
 
-        A durable workflow that commits inventory needs an answer for "step 3
-        failed after step 2 committed". Releasing marks the booking so the
-        capacity count in ``create_courtesy_hold`` stops counting it.
+        True when the booking is released, by this call or an earlier one. A durable workflow
+        that commits inventory needs an answer for "step 3 failed after step 2 committed".
+        The call goes through the same Gateway as the hold, so the interceptor, Cedar and the
+        holds Lambda see it, and the Lambda checks the hold belongs to the traveler.
 
-        ``expected_hold_id`` scopes the compensation to the run that is
-        failing. The persisted state is the *latest* state for the thread, so
-        without this a failed run could read a hold from an earlier successful
-        run and release it - undoing work that never failed.
+        ``expected_hold_id`` scopes the compensation to the run that is failing. The persisted
+        state is the *latest* state for the thread, so without this a failed run could read a
+        hold from an earlier successful run and release it, undoing work that never failed.
         """
+        self.release_note = None
         hold_id = state.get("hold_id")
         traveler_id = state.get("traveler_id")
         if not hold_id or not traveler_id:
@@ -851,28 +882,39 @@ class WorkflowNodes:
                 hold_id,
             )
             return False
-        try:
-            from backend.agentcore.identity import get_agentcore_identity
-            from backend.db.rds_data_client import get_rds_data_client
-
-            db = get_rds_data_client()
-            async with db.scoped_session(
-                traveler_id=traveler_id,
-                agent_type="booking_agent",
-                authorization=get_agentcore_identity().authorization_context(),
-            ) as transaction_id:
-                rows = await db.execute(
-                    "UPDATE bookings SET status = 'released' "
-                    "WHERE booking_id = %s AND traveler_id = %s AND status = 'held' "
-                    "RETURNING booking_id",
-                    (hold_id, traveler_id),
-                    transaction_id=transaction_id,
-                )
-            logger.info("released courtesy hold %s", hold_id)
-            return bool(rows)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("could not release hold %s: %s", hold_id, exc)
+        journey_id = state.get("journey_id")
+        if not journey_id:
+            logger.warning("not releasing hold %s: the saved state names no journey", hold_id)
             return False
+        request_id = (state.get("hold_intent") or {}).get("hold_request_id")
+        if not request_id:
+            logger.warning("not releasing hold %s: the saved intent names no request id", hold_id)
+            self.release_note = RELEASE_NO_REQUEST
+            return False
+        arguments = release_arguments(
+            traveler_id=str(traveler_id), hold_request_id=str(request_id),
+            journey_id=str(journey_id), execution_id=execution_id,
+        )
+        try:
+            outcome = await asyncio.to_thread(
+                release_governed_hold, self._gateway_call, arguments
+            )
+        except Exception as exc:  # noqa: BLE001 - compensation must not mask the original failure
+            logger.warning("could not release hold %s: %s", hold_id, type(exc).__name__)
+            self.release_note = (
+                RELEASE_NOT_SENT if isinstance(exc, UNSENT_ERRORS) else RELEASE_UNCONFIRMED
+            )
+            return False
+        if outcome.lease_lost:
+            logger.warning("not releasing hold %s: another worker owns this run", hold_id)
+            self.release_note = RELEASE_LEASE_LOST
+            return False
+        if not outcome.released:
+            logger.warning("hold %s was not released: %s", hold_id, outcome.error)
+            self.release_note = _unreleased_note(outcome.error)
+            return False
+        logger.info("released courtesy hold %s through the Gateway", hold_id)
+        return True
 
     async def memory_recall(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None

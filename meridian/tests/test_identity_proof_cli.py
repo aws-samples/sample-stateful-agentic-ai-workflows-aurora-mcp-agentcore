@@ -71,7 +71,7 @@ def test_the_dry_run_declares_the_residue_including_the_concierge_memory_events(
 
     assert "AgentCore Memory" in out and "not deleted by this command" in out
     assert "append-only" in out
-    assert "19 probes" in out
+    assert "21 probes" in out
 
 
 def test_the_dry_run_says_what_would_be_refused(tmp_path, capsys):
@@ -174,7 +174,7 @@ def test_jordan_only_runs_the_controls_and_records_the_mode(tmp_path, capsys):
     code, _ = run([*APPLY, "--jordan-only"], deps, capsys)
 
     data = json.loads((tmp_path / "identity-proof" / "latest.json").read_text())
-    assert code == 0 and data["mode"] == "jordan-only" and len(data["outcomes"]) == 9
+    assert code == 0 and data["mode"] == "jordan-only" and len(data["outcomes"]) == 10
 
 
 def test_a_crash_while_building_is_one_masked_line_and_exit_one(tmp_path, capsys):

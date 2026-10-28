@@ -12,8 +12,8 @@ phase runs in `MeridianConcierge`. The Workflow phase runs in `MeridianWorkflow`
 | Memory | `meridian_session` | Session store for the runtime (`SEMANTIC` strategy) |
 | Gateway | `meridian-aurora` (`meridian-aurora-jwt` in `jwt` mode) | MCP endpoint with AWS_IAM inbound auth (CUSTOM_JWT in `jwt` mode, with the request interceptor attached) and the Cedar policy engine attached |
 | Gateway target | `MeridianCatalog` | Existing Lambda function `meridian-catalog-tools` (you create it; see the runbook) |
-| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` |
-| Policy engine | `MeridianGovernance` | Cedar policies in `ENFORCE` mode: reads are permitted; holds and confirmations only within the stated conditions. In `jwt` mode a traveler-binding rule (`meridian_traveler_binding`) also denies a hold or confirmation whose `travelerId` differs from the token's `traveler_id` claim |
+| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking`, `release_hold` |
+| Policy engine | `MeridianGovernance` | Cedar policies in `ENFORCE` mode: reads are permitted; holds and confirmations only within the stated conditions, and a release only for a named hold and journey. In `jwt` mode a traveler-binding rule (`meridian_traveler_binding`) also denies a hold, confirmation or release whose `travelerId` differs from the token's `traveler_id` claim |
 
 ## Layout
 

@@ -29,7 +29,7 @@
   .mds-brief-arch-mobile p { margin:4px 0 0; color:var(--mds-label-2); }
 }
 
-/* Match the supplied slide artwork in each theme without recoloring it. */
+/* Match the supplied source artwork in each theme without recoloring it. */
 .mds-brief-icon-dark { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-light { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-dark { display:block; }

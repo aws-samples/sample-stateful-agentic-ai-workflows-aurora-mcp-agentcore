@@ -4,9 +4,9 @@ This CDK project is managed by the AgentCore CLI. It deploys your agent infrastr
 
 ## Structure
 
-- `bin/cdk.ts` — Entry point. Reads project configuration from `agentcore/` and creates a stack per deployment target.
-- `lib/cdk-stack.ts` — Defines `AgentCoreStack`, which wraps the `AgentCoreApplication` L3 construct.
-- `test/cdk.test.ts` — Unit tests for stack synthesis.
+- `bin/cdk.ts`: Entry point. Reads project configuration from `agentcore/` and creates a stack per deployment target.
+- `lib/cdk-stack.ts`: Defines `AgentCoreStack`, which wraps the `AgentCoreApplication` L3 construct.
+- `test/cdk.test.ts`: Unit tests for stack synthesis.
 
 ## Useful commands
 

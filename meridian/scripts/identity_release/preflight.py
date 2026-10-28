@@ -23,7 +23,10 @@ from botocore.exceptions import ClientError
 from backend.agentcore.auth_mode import IAM, JWT, MODES
 from scripts.identity_release import settings
 
-BASE_POLICIES = ("meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance")
+BASE_POLICIES = (
+    "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance",
+    "meridian_release_governance",
+)
 BINDING_POLICY = "meridian_traveler_binding"
 ENFORCING = "ACTIVE"
 RUNTIME_ENV_KEYS = ("AGENTCORE_RUNTIME_ARN", "AGENTCORE_WORKFLOW_RUNTIME_ARN")

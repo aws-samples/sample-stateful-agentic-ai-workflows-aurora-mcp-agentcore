@@ -87,8 +87,8 @@ def _shown(value: Any) -> str:
         .replace("\r", "\\r")
         .replace("\n", "\\n")
         .replace("\t", "\\t")
-        .replace(" ", "\\u2028")
-        .replace(" ", "\\u2029")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
     )
     escaped = _OTHER_CONTROL_CHARACTER.sub(lambda match: f"\\x{ord(match.group()):02x}", escaped)
     return f"'{escaped}'"
@@ -110,7 +110,13 @@ def display_sql(sql: str, params: Sequence[Any] = ()) -> str:
             shows values the statement never bound would be a false record.
     """
     statement = numbered_sql(sql)
-    highest = max((int(number) for number in _NUMBERED.findall(statement)), default=0)
+    used = {int(number) for number in _NUMBERED.findall(statement)}
+    highest = max(used, default=0)
+    if used != set(range(1, highest + 1)):
+        raise ValueError(
+            f"display_sql: the statement numbers its parameters with a gap "
+            f"({sorted(used)}): {statement[:80]}"
+        )
     if highest != len(params):
         raise ValueError(
             f"display_sql: the statement binds {highest} parameter(s) but {len(params)} "

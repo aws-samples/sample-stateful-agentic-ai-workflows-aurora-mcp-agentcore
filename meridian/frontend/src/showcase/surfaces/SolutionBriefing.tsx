@@ -54,7 +54,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
         <Detail title="Tool contracts & Cedar policies">
           <p>The model interprets the request, chooses tools and writes grounded replies. Application code establishes the traveler, pins explicit confirmation and the saved budget, and validates the returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
           <h3>{toolsHeading()}</h3>
-          <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker uses the same governed hold tool.</p>
+          <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker searches the catalog, places its hold and gives back a failed run&rsquo;s hold through the same Gateway under Cedar.</p>
           <dl className="mds-brief-tools">{TOOLS.map(([name, kind, body]) => <div key={name}><dt><span>{kind}</span><code>{name}</code></dt><dd>{body}</dd></div>)}</dl>
           <h3>Configured Cedar policies</h3>
           <p><code>MeridianGovernance</code> uses ENFORCE mode and default deny. A denied call does not execute the target. The gateway ARN’s account portion is abbreviated below; this reference is not a live policy decision.</p>
@@ -68,6 +68,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <Facts items={[
             ['Before the hold', 'After lease release or expiry, resume the saved graph with the intended request and booking IDs.'],
             ['Write committed, response lost', 'Retry the same intent. Aurora returns the existing booking with its original expiry. A permitted call alone does not prove that the write committed.'],
+            ['A step fails after the hold', 'The runner releases the hold through the Gateway under Cedar. The Lambda refuses the release when the run\u2019s lease or journey is not the caller\u2019s, and the hold is left in place.'],
             ['After the hold step is saved', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
           ]} />
           <p>A saved step and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>

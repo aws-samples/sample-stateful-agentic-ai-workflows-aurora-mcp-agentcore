@@ -51,7 +51,7 @@ export function BriefingArchitecture() {
       <li><strong>3. AgentCore Gateway - authorize the call</strong><p>AgentCore Policy evaluates Cedar before the tool runs.</p></li>
       <li><strong>4. AWS Lambda - execute the tool</strong><p>Validate the input and recheck the action at the target.</p></li>
       <li><strong>5. Aurora PostgreSQL - record the outcome</strong><p>Read scoped facts and commit replay-safe business writes.</p></li>
-      <li><strong>Phase 5: Strands Graph in its own AgentCore Runtime</strong><p>Uses the same Gateway tool path. Its saved steps and worker leases live in Amazon Aurora.</p></li>
+      <li><strong>Phase 5: Strands Graph in its own AgentCore Runtime</strong><p>Searches, holds and releases through the Gateway under Cedar. Its saved steps and worker leases live in Amazon Aurora.</p></li>
     </ol>
     <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1 to 5. Phase 5 joins at Gateway. Dashed path: direct Data API access.</span></figcaption>
     <details className="mds-brief-platform">

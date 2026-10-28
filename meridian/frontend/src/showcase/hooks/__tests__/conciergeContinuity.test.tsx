@@ -33,12 +33,12 @@ describe('Concierge request context', () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.travelersCount).toBe(2));
     await act(async () => { await result.current.submitPrompt('Recall my plan', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, travelers_count: 2 }), expect.any(AbortSignal), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, travelers_count: 2 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     act(() => result.current.setChatFilters({ ...result.current.chatFilters, travelers: 3 }));
     await act(async () => { await result.current.submitPrompt('Plan for three', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     await act(async () => { await result.current.submitPrompt('Keep the same party', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 
   it('waits for context authorization instead of submitting a context-off turn while connecting', async () => {
@@ -57,7 +57,7 @@ describe('Concierge request context', () => {
       await pending;
     });
     await act(async () => { await result.current.submitPrompt('Recall my plan'); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ memory_enabled: true, travelers_count: 2 }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ memory_enabled: true, travelers_count: 2 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 
   it.each(['update', 'delete'] as const)('refreshes the displayed budget after a preference %s', async action => {
@@ -107,11 +107,11 @@ describe('Concierge request context', () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.previewProfile?.home_airport).toBe('JFK'));
     await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, memory_enabled: true }), expect.any(AbortSignal), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, memory_enabled: true }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     expect(result.current.selectedPhase).toBe(1);
     expect(result.current.memoryEnabled).toBe(false);
     await act(async () => { await result.current.submitPrompt('Make it quieter', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_id: 'production-thread', phase: 4 }), expect.any(AbortSignal), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_id: 'production-thread', phase: 4 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 
   it('keeps a normal SQL ladder request free of traveler memory', async () => {
@@ -132,7 +132,7 @@ describe('Concierge request context', () => {
     expect(result.current.previewProfile).toBeNull();
     expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
       phase: 4, experience: 'concierge', memory_enabled: true,
-    }), expect.any(AbortSignal), expect.any(Function));
+    }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     expect(result.current.memoryEnabled).toBe(false);
   });
 
@@ -145,9 +145,9 @@ describe('Concierge request context', () => {
     expect(result.current.recoveryRequest).toContain('Rework');
     await act(async () => { await result.current.submitPrompt(result.current.recoveryRequest!, 5, { reviewOnly: true }); });
     expect(result.current.recoveryRequest).toBeNull();
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     await act(async () => { await result.current.replayLastPrompt(); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, resume: undefined }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, resume: undefined }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 
   it('sends the chosen package with the resume of a paused recovery', async () => {
@@ -162,7 +162,7 @@ describe('Concierge request context', () => {
     });
     expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
       phase: 5, resume: true, selected_package_id: 'CTY-002', conversation_id: 'phase5-thread',
-    }), expect.any(AbortSignal));
+    }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 
   it('inspects the phase that produced a concierge reply without losing the run', async () => {
@@ -217,7 +217,7 @@ describe('Concierge request context', () => {
     await act(async () => { await result.current.replayLastPrompt(); });
     expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
       phase: 4, memory_enabled: true, conversation_id: 'production-thread',
-    }), expect.any(AbortSignal), expect.any(Function));
+    }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   });
 });
 
@@ -229,14 +229,14 @@ it('uses the same party for estimates and holds before and after clearing per-tu
   await waitFor(() => expect(result.current.travelersCount).toBe(2));
   const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '', available_sizes: ['5 nights'] };
   await act(async () => { await result.current.holdTrip(product); });
-  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 2 }), expect.any(AbortSignal));
+  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 2 }), expect.any(AbortSignal), expect.any(Function));
   act(() => result.current.setChatFilters({ ...result.current.chatFilters, travelers: 3 }));
   await act(async () => { await result.current.submitPrompt('Plan Tokyo', 5); });
-  expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
+  expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   expect(result.current.chatFilters.travelers).toBe(0);
   expect(result.current.travelersCount).toBe(3);
   await act(async () => { await result.current.holdTrip(product); });
-  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 3 }), expect.any(AbortSignal));
+  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 3 }), expect.any(AbortSignal), expect.any(Function));
 });
 
 it('retains a confirmed hold and workflow evidence without placing it again on reopen', async () => {
@@ -297,7 +297,7 @@ it.each(['Resume workflow from the saved step', 'Resume workflow from checkpoint
   expect(result.current.workflowStatus).toBe('paused');
   expect(result.current.travelersCount).toBe(3);
   await act(async () => { await result.current.submitPrompt(prompt); });
-  expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ resume: true, conversation_id: 'saved-thread', travelers_count: 3 }), expect.any(AbortSignal));
+  expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ resume: true, conversation_id: 'saved-thread', travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
 });
 
 it('keeps the ranking and opens the package the recovery holds, not the top-ranked one', async () => {

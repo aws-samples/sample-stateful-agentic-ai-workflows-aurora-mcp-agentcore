@@ -25,6 +25,8 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     budgetCeilingPerTravelerCents: 320000,
     travelersCount: 1,
     restoreJourney: vi.fn(),
+    awaitingWorkflow: false,
+    settleWorkflow: vi.fn(),
     selectedPhase: 1,
     lastRequestPhase: null,
     recoveryRequest: null,

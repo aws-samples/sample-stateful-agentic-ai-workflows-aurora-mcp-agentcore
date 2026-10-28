@@ -6,7 +6,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 SOURCE = (
     Path(__file__).resolve().parents[1]
@@ -134,3 +141,140 @@ def test_the_data_api_client_has_short_timeouts_and_one_attempt(trigger):
     config = trigger.RDS.meta.config
     assert (config.connect_timeout, config.read_timeout) == (1, 3)
     assert config.retries["total_max_attempts"] == 1
+
+
+IDENTITY_STACK = SOURCE.parents[2] / "lib" / "meridian-identity-stack.ts"
+ACCESS_DENIED = ClientError(
+    {"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "ExecuteStatement"
+)
+CONNECTION_ERRORS = [
+    ConnectionClosedError(endpoint_url="https://rds-data.us-east-1.amazonaws.com"),
+    EndpointConnectionError(endpoint_url="https://rds-data.us-east-1.amazonaws.com"),
+    ConnectTimeoutError(endpoint_url="https://rds-data.us-east-1.amazonaws.com"),
+]
+
+
+class ScriptedDataApi:
+    """Plays one outcome per call and moves the trigger's clock by that call's duration."""
+
+    def __init__(self, clock, outcomes):
+        self.clock, self.outcomes, self.calls = clock, list(outcomes), 0
+
+    def execute_statement(self, **_request):
+        self.calls += 1
+        seconds, outcome = self.outcomes.pop(0)
+        self.clock.now += seconds
+        if isinstance(outcome, Exception):
+            raise outcome
+        return {"formattedRecords": json.dumps(outcome)}
+
+
+class Clock:
+    now = 100.0
+
+    def monotonic(self):
+        return self.now
+
+
+@pytest.fixture
+def scripted(trigger, monkeypatch):
+    """Install a scripted Data API; the real retry client factory runs against a stubbed boto3."""
+    clock, retry_configs = Clock(), []
+    monkeypatch.setattr(trigger.time, "monotonic", clock.monotonic)
+
+    def install(outcomes):
+        api = ScriptedDataApi(clock, outcomes)
+
+        def stub_client(service, config):
+            retry_configs.append((service, config))
+            return api
+
+        trigger.RDS = api
+        monkeypatch.setattr(trigger.boto3, "client", stub_client)
+        return api
+
+    install.retry_configs = retry_configs
+    return install
+
+
+ROW = [{"traveler_id": "trv_meridian_demo"}]
+
+
+@pytest.mark.parametrize("error", CONNECTION_ERRORS, ids=lambda e: type(e).__name__)
+def test_one_dropped_connection_is_retried_and_the_sign_in_passes(trigger, scripted, error):
+    api = scripted([(0.05, error), (0.1, ROW)])
+    result = trigger.lambda_handler(event(), None)
+    assert api.calls == 2
+    assert result["response"]["claimsAndScopeOverrideDetails"]["accessTokenGeneration"][
+        "claimsToAddOrOverride"] == {"traveler_id": "trv_meridian_demo"}
+
+
+def test_two_dropped_connections_refuse_with_the_same_text_and_code(trigger, scripted, caplog):
+    api = scripted([(0.05, CONNECTION_ERRORS[0]), (0.05, CONNECTION_ERRORS[0])])
+    with pytest.raises(RuntimeError) as raised:
+        trigger.lambda_handler(event(sub="sub-secret-subject"), None)
+    assert api.calls == 2
+    assert str(raised.value) == "Sign-in refused: the traveler lookup failed."
+    assert "Traveler lookup failed: ConnectionClosedError" in caplog.text
+    assert "sub-secret-subject" not in caplog.text
+
+
+@pytest.mark.parametrize("error", [
+    ACCESS_DENIED,
+    ClientError({"Error": {"Code": "BadRequestException", "Message": "x"}}, "ExecuteStatement"),
+    ReadTimeoutError(endpoint_url="https://rds-data.us-east-1.amazonaws.com"),
+    BotoCoreError(),
+], ids=lambda e: type(e).__name__)
+def test_an_answer_or_a_non_connection_failure_refuses_at_once_with_one_call(
+    trigger, scripted, error
+):
+    api = scripted([(0.05, error), (0.05, ROW)])
+    with pytest.raises(RuntimeError, match="the traveler lookup failed"):
+        trigger.lambda_handler(event(), None)
+    assert api.calls == 1
+
+
+def test_a_slow_first_attempt_that_leaves_too_little_budget_is_not_retried(trigger, scripted):
+    api = scripted([(3.2, CONNECTION_ERRORS[0]), (0.05, ROW)])
+    with pytest.raises(RuntimeError, match="the traveler lookup failed"):
+        trigger.lambda_handler(event(), None)
+    assert api.calls == 1
+
+
+@pytest.mark.parametrize("first_attempt_seconds", [0.05, 1.0, 2.1])
+def test_the_retry_ends_well_before_the_function_and_cognito_limits(
+    trigger, scripted, first_attempt_seconds
+):
+    """Fixed numbers, none read from the module: 4 s function timeout, 5 s Cognito limit."""
+    scripted([(first_attempt_seconds, CONNECTION_ERRORS[2]), (0.1, ROW)])
+    trigger.lambda_handler(event(), None)
+    ((service, config),) = scripted.retry_configs
+    worst_end = first_attempt_seconds + config.connect_timeout + config.read_timeout
+    assert service == "rds-data"
+    assert config.retries["total_max_attempts"] == 1
+    assert worst_end <= 4.0 - 0.3 + 1e-9
+    assert worst_end <= 5.0 - 1.0
+
+
+def test_the_last_whole_second_attempt_starts_at_two_point_two_seconds(trigger, scripted):
+    scripted([(2.1, CONNECTION_ERRORS[0]), (0.05, ROW)])
+    assert trigger.lambda_handler(event(), None)["response"]
+    ((_, config),) = scripted.retry_configs
+    assert config.read_timeout >= 0.5
+
+
+def test_a_first_attempt_just_past_two_point_two_seconds_is_not_retried(trigger, scripted):
+    api = scripted([(2.3, CONNECTION_ERRORS[0]), (0.05, ROW)])
+    with pytest.raises(RuntimeError, match="the traveler lookup failed"):
+        trigger.lambda_handler(event(), None)
+    assert api.calls == 1 and scripted.retry_configs == []
+
+
+def test_the_budget_constant_matches_the_function_timeout_in_the_stack(trigger):
+    stack = IDENTITY_STACK.read_text()
+    assert f"timeout: Duration.seconds({int(trigger.FUNCTION_TIMEOUT_S)})" in stack
+
+
+def test_the_function_timeout_is_four_seconds_in_the_stack_and_the_module(trigger):
+    assert "timeout: Duration.seconds(4)," in IDENTITY_STACK.read_text()
+    assert trigger.FUNCTION_TIMEOUT_S == 4

@@ -13,6 +13,7 @@ from backend.agents.phase_05_workflow.governed_hold import (
     place_governed_hold,
     release_arguments,
     release_governed_hold,
+    target_error,
 )
 from backend.agents.phase_05_workflow.governed_tools import GatewayToolError
 
@@ -187,6 +188,13 @@ def test_release_arguments_are_the_three_identities_and_the_execution_when_given
 def test_a_lease_lost_answer_is_never_a_release(code):
     outcome = release_governed_hold(lambda *_: _response({"error": code}), {})
     assert (outcome.released, outcome.error, outcome.lease_lost) == (False, code, True)
+
+
+@pytest.mark.parametrize("code", [["execution_lease_lost"], {"code": "x"}, 7])
+def test_a_non_string_error_value_is_a_fixed_phrase_and_not_a_lost_lease(code):
+    outcome = release_governed_hold(lambda *_: _response({"error": code}), {})
+    assert outcome.released is False and outcome.lease_lost is False
+    assert outcome.error == target_error(code)
 
 
 def test_other_failures_are_not_a_lost_lease():

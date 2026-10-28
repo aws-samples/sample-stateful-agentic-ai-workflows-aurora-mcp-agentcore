@@ -11,6 +11,7 @@ import pytest
 
 from backend import bedrock_model
 from backend.config import BedrockConfig
+from scripts import smoke_bedrock_model as smoke
 
 MERIDIAN = Path(__file__).resolve().parents[1]
 RUNTIME = MERIDIAN / "meridian_agentcore" / "app" / "MeridianConcierge"
@@ -19,6 +20,16 @@ spec = importlib.util.spec_from_file_location(
     "concierge_model_loader_parity", RUNTIME / "model" / "load.py")
 loader = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(loader)
+
+# The owner's choice (28 Oct): adaptive thinking at effort medium, exactly as the smoke sends it.
+ADAPTIVE_MEDIUM = {"thinking": {"type": "adaptive"}, "output_config": {"effort": "medium"}}
+CLIENTS_USING_THE_FACTORY = (
+    "backend.agents.phase_01_sql.agent",
+    "backend.agents.phase_02_mcp.agent",
+    "backend.agents.phase_03_retrieval.agent",
+    "backend.agents.phase_04_production.memory_agent",
+)
+FIRST_TURN = [{"role": "user", "content": [{"text": "hello"}]}]
 
 # Sonnet 5.5 rejects each of these: a temperature, thinking disabled, a forced tool choice.
 REJECTED_NAMES = {"temperature", "tool_choice", "toolChoice"}
@@ -67,7 +78,46 @@ def test_the_thinking_setting_comes_from_the_one_constant(monkeypatch):
 
 def test_the_accessor_returns_a_copy():
     bedrock_model.request_fields()["thinking"] = {"type": "enabled"}
-    assert "thinking" not in bedrock_model.REQUEST_FIELDS
+    assert bedrock_model.REQUEST_FIELDS == ADAPTIVE_MEDIUM
+
+
+def test_both_sides_pin_adaptive_thinking_at_effort_medium():
+    assert bedrock_model.REQUEST_FIELDS == ADAPTIVE_MEDIUM
+    assert loader.REQUEST_FIELDS == ADAPTIVE_MEDIUM
+
+
+def test_the_pinned_value_is_the_smoke_candidate_for_effort_medium():
+    candidates = dict(smoke.CANDIDATES)
+    assert candidates["adaptive thinking, effort medium"] == ADAPTIVE_MEDIUM
+
+
+def test_the_backend_request_carries_the_thinking_fields():
+    request = bedrock_model.bedrock_model(SONNET).format_request(FIRST_TURN)
+    assert request["additionalModelRequestFields"] == ADAPTIVE_MEDIUM
+    assert request["inferenceConfig"]["maxTokens"] == 16000
+
+
+def test_the_runtime_request_carries_the_thinking_fields():
+    request = loader.load_model(SONNET, "us-east-1").format_request(FIRST_TURN)
+    assert request["additionalModelRequestFields"] == ADAPTIVE_MEDIUM
+    assert request["inferenceConfig"]["maxTokens"] == 16000
+
+
+def factory_calls(tree: ast.AST) -> list[ast.Call]:
+    """Calls of a bare ``bedrock_model(...)`` name."""
+    return [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name) and node.func.id == "bedrock_model"]
+
+
+@pytest.mark.parametrize("module_name", CLIENTS_USING_THE_FACTORY)
+def test_every_local_agent_calls_the_factory_with_the_default_budget(module_name):
+    module = importlib.import_module(module_name)
+    assert module.bedrock_model is bedrock_model.bedrock_model
+    calls = factory_calls(ast.parse(Path(module.__file__).read_text()))
+    assert calls
+    for call in calls:
+        assert call.keywords == [] and len(call.args) <= 1
+        assert not call.args or ast.unparse(call.args[0]) == "config.bedrock.model_id"
 
 
 def test_thinking_is_never_set_to_disabled():

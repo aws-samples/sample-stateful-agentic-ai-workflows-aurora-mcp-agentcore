@@ -301,7 +301,10 @@ def release_governed_hold(
     code = payload.get("error")
     if code is not None:
         log_detail(RELEASE_TOOL, str(code))
-        return GovernedRelease(False, target_error(code), lease_lost=code in LEASE_LOST_ERRORS)
+        return GovernedRelease(
+            False, target_error(code),
+            lease_lost=isinstance(code, str) and code in LEASE_LOST_ERRORS,
+        )
     release = payload.get("release")
     if not isinstance(release, dict) or release.get("status") != "released":
         return GovernedRelease(False, NO_RELEASE_RECEIPT)

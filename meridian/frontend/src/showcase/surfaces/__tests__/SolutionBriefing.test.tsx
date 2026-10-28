@@ -65,10 +65,21 @@ describe('SolutionBriefing', () => {
     fireEvent.click(screen.getByText('Implementation reference'));
     expect(screen.getByText(/seed_data.py loads Aurora/)).toBeVisible();
     fireEvent.click(screen.getByText('Recovery guarantees & evidence'));
-    for (const text of ['Before the hold', 'Write committed, response lost', 'After the hold step is saved']) {
+    for (const text of ['Before the hold', 'Write committed, response lost', 'A step fails after the hold', 'After the hold step is saved']) {
       expect(screen.getByText(text)).toBeVisible();
     }
+    expect(screen.getByText(/^The runner releases the hold through the Gateway under Cedar/)).toBeVisible();
+    expect(screen.getByText(/lease or journey is not the caller/)).toBeVisible();
     expect(screen.getByText(/separate transactions/)).toBeVisible();
+  });
+
+  it('says the Phase 5 worker searches, holds and releases through the Gateway', () => {
+    render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    fireEvent.click(screen.getByText('Verify the boundaries'));
+    fireEvent.click(screen.getByText('Tool contracts & Cedar policies'));
+    expect(screen.getByText(/searches the catalog, places its hold and gives back a failed run/)).toBeVisible();
+    expect(screen.getByText(/compensate a failed run, and the Lambda checks the run.s lease and journey/)).toBeVisible();
+    expect(screen.queryByText(/same governed hold tool/)).toBeNull();
   });
 
   it('hands off to the capability ladder and live evidence', () => {
@@ -104,7 +115,8 @@ describe('SolutionBriefing against the deployed Cedar template', () => {
     const listed = TOOLS.map(([name]) => name).sort();
     const read = deployed.find(policy => policy.name === 'meridian_read_tools')!.statement;
     const readActions = [...read.matchAll(/Action::"([^"]+)"/g)].map(match => match[1]);
-    const writes = ['MeridianHolds___create_courtesy_hold', 'MeridianHolds___confirm_booking'];
+    const writes = ['MeridianHolds___create_courtesy_hold', 'MeridianHolds___confirm_booking',
+      'MeridianHolds___release_hold'];
     expect(listed).toEqual([...readActions, ...writes].sort());
   });
 
@@ -117,7 +129,7 @@ describe('SolutionBriefing against the deployed Cedar template', () => {
     const { container } = render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
     const heading = [...container.querySelectorAll('h3')].find(node => /MCP tools/.test(node.textContent ?? ''));
     expect(heading?.textContent).toBe(toolsHeading());
-    expect(heading?.textContent).toBe('Ten MCP tools, two Lambda targets');
+    expect(heading?.textContent).toBe('Eleven MCP tools, two Lambda targets');
     expect(container.querySelectorAll('.mds-brief-tools > div')).toHaveLength(toolCounts().tools);
     expect(toolCounts()).toEqual({ tools: TOOLS.length, targets: gatewayTargets.length });
   });

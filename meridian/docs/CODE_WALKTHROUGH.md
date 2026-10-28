@@ -103,6 +103,8 @@ visits every node.
 | `backend/agentcore/workflow_runtime.py`, `WorkflowRuntimeClient` | How the backend invokes the Runtime and stops its session |
 | `backend/agents/phase_05_workflow/hold_intent.py`, `prepare_hold_node` | Normalizes the terms and saves stable request and booking IDs before the hold node |
 | `backend/agents/phase_05_workflow/nodes.py`, `hold`, and `governed_hold.py` | Calls the Gateway with the saved intent and the current execution lease |
+| `backend/agents/phase_05_workflow/governed_tools.py` and `nodes.py`, `release_hold` | Search and the compensating release call Gateway tools with the caller's token |
+| `backend/agents/phase_05_workflow/run_audit.py` | Writes one `workflow_run` audit row per run, naming the verified Cognito subject (in `jwt` mode) |
 | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py`, `create_courtesy_hold` | Reauthorizes the workload, checks the lease and calls Aurora's idempotent write |
 | `scripts/migrations/008_hold_request_identity.sql` | Replay protection in the same transaction as the business write |
 | `backend/agents/phase_05_workflow/nodes.py`, `synthesize` | Builds the closing status from saved state, including the hold outcome and expiry |
@@ -114,7 +116,7 @@ A graceful restart, a hard kill and a lost response are different failures;
 [OPERATIONS.md](OPERATIONS.md#exercise-recovery-failures) shows how to
 exercise each. A snapshot and a business write are not one distributed
 transaction: the design gives resumable execution with an idempotent action,
-not exactly-once execution. The LangGraph version of the idea is a maintained
+not exactly-once execution. The same idea on another graph framework is a maintained
 example in [`examples/langgraph/`](../examples/langgraph/README.md); the
 application does not import it.
 

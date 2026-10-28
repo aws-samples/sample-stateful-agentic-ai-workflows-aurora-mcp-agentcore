@@ -144,7 +144,9 @@ def _grant_refuser(raw: dict, deny_rows: int) -> str | None:
     return None
 
 
-def classify_gateway(raw: Any, *, deny_rows: int, design: str) -> Verdict:
+def classify_gateway(
+    raw: Any, *, deny_rows: int, design: str, answers: frozenset[str] = frozenset()
+) -> Verdict:
     """Classify a Gateway tool call and attribute a refusal to the layer that made it.
 
     A refusal counts only with evidence of its layer: an HTTP 200 tool error that carries the
@@ -160,11 +162,16 @@ def classify_gateway(raw: Any, *, deny_rows: int, design: str) -> Verdict:
             the call. A new row means the Holds Lambda ran and refused.
         design: ``both``, ``cedar`` or ``interceptor``, the Gateway enforcement that shipped; a
             refusal from a layer the design does not have is an error.
+        answers: Named Lambda answers a control expects, such as ``hold_not_found`` for a hold
+            that does not exist. Such an answer proves the caller reached the tool and is
+            allowed; any other named answer is still an error.
     """
     shape = gateway_shape(raw)
     text = _gateway_text(raw)
     if shape == "success":
         return Verdict(ALLOWED, None, text or "tool call accepted")
+    if shape == "payload.error" and tool_payload(raw).get("error") in answers:
+        return Verdict(ALLOWED, None, f"the tool answered {tool_payload(raw)['error']}")
     if shape == "not_a_dict" or _is_http_failure(raw):
         return Verdict(ERROR, None, f"not a tool refusal ({shape}): {text}")
     evidence = _evidence_refuser(raw, shape, text)

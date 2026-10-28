@@ -467,10 +467,16 @@
           "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___confirm_booking\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") when { context.input.travelerConfirmed == true && context.input.totalCents <= context.input.budgetCeilingCents };"
         },
         {
-          "name": "meridian_traveler_binding",
-          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold, a booking or a loyalty read runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
+          "name": "meridian_release_governance",
+          "description": "A hold is released only when the call names a hold request and a journey. The holds Lambda checks that the hold exists and belongs to the pinned traveler, because Cedar sees arguments, not rows. Nothing else permits release_hold, so any other call is denied by default.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___loyalty_balance\", AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___release_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") when { context.input.holdRequestId != \"\" && context.input.journeyId != \"\" };"
+        },
+        {
+          "name": "meridian_traveler_binding",
+          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold, a booking, a release or a loyalty read runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___loyalty_balance\", AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\", AgentCore::Action::\"MeridianHolds___release_hold\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
         }
       ]
     }

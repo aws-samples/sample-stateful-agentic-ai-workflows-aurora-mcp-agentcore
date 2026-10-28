@@ -1,0 +1,86 @@
+Stack AgentCore-meridianv2-default
+IAM Statement Changes
+┌───┬────────────────────────────────────────────────────────────────────────────────┬────────┬───────────────────────┬──────────────────────────────────────────┬───────────┐
+│   │ Resource                                                                       │ Effect │ Action                │ Principal                                │ Condition │
+├───┼────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────┼──────────────────────────────────────────┼───────────┤
+│ + │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}               │ Allow  │ lambda:InvokeFunction │ AWS:${Mcp/GatewayMeridianAuroraJwt/Role} │           │
+│   │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}:*             │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools          │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools:*        │        │                       │                                          │           │
+├───┼────────────────────────────────────────────────────────────────────────────────┼────────┼───────────────────────┼──────────────────────────────────────────┼───────────┤
+│ - │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}               │ Allow  │ lambda:InvokeFunction │ AWS:${Mcp/GatewayMeridianAuroraJwt/Role} │           │
+│   │ ${Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function.Arn}:*             │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools          │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools:*        │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search   │        │                       │                                          │           │
+│   │ arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search:* │        │                       │                                          │           │
+└───┴────────────────────────────────────────────────────────────────────────────────┴────────┴───────────────────────┴──────────────────────────────────────────┴───────────┘
+(NOTE: There may be security-related changes not in this list. See https://github.com/aws/aws-cdk/issues/1299)
+
+Resources
+[-] AWS::BedrockAgentCore::GatewayTarget Mcp/GatewayMeridianAuroraJwt/TargetSemanticTripSearchLambda McpGatewayMeridianAuroraJwtTargetSemanticTripSearchLambda4B78D317 destroy
+[~] AWS::BedrockAgentCore::Policy Application/PolicyEngineMeridianGovernance/Policymeridian_read_tools ApplicationPolicyEngineMeridianGovernancePolicymeridianreadtools749E061A
+ ├─ [~] Definition
+ │   └─ [~] .Policy:
+ │       └─ [~] .Statement:
+ │           ├─ [-] permit(principal, action in [AgentCore::Action::"SemanticTripSearchLambda___semantic_trip_search", AgentCore::Action::"MeridianHolds___get_package_details"], resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345");
+ │           └─ [+] permit(principal, action in [AgentCore::Action::"MeridianCatalog___search_trips", AgentCore::Action::"MeridianCatalog___compare_packages", AgentCore::Action::"MeridianCatalog___price_range", AgentCore::Action::"MeridianCatalog___region_inventory", AgentCore::Action::"MeridianCatalog___currency_convert", AgentCore::Action::"MeridianCatalog___hybrid_trip_search", AgentCore::Action::"MeridianHolds___get_package_details", AgentCore::Action::"MeridianHolds___loyalty_balance"], resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345");
+ └─ [~] Description
+     ├─ [-] Any authenticated caller may search packages and read package details.
+     └─ [+] Any authenticated caller may search packages, read package details and read a loyalty balance. In jwt mode the traveler binding below limits the loyalty read to the caller's own traveler.
+[~] AWS::BedrockAgentCore::Policy Application/PolicyEngineMeridianGovernance/Policymeridian_traveler_binding ApplicationPolicyEngineMeridianGovernancePolicymeridiantravelerbinding779A4EDB
+ ├─ [~] Definition
+ │   └─ [~] .Policy:
+ │       └─ [~] .Statement:
+ │           ├─ [-] forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::"MeridianHolds___create_courtesy_hold", AgentCore::Action::"MeridianHolds___confirm_booking"], resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345") unless { principal.hasTag("traveler_id") && context.input has travelerId && principal.getTag("traveler_id") != "" && principal.getTag("traveler_id") == context.input.travelerId };
+ │           └─ [+] forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::"MeridianHolds___loyalty_balance", AgentCore::Action::"MeridianHolds___create_courtesy_hold", AgentCore::Action::"MeridianHolds___confirm_booking"], resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345") unless { principal.hasTag("traveler_id") && context.input has travelerId && principal.getTag("traveler_id") != "" && principal.getTag("traveler_id") == context.input.travelerId };
+ └─ [~] Description
+     ├─ [-] Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold or a booking runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.
+     └─ [+] Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold, a booking or a loyalty read runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.
+[~] AWS::BedrockAgentCore::Runtime Application/AgentMeridianConcierge/Runtime ApplicationAgentMeridianConciergeRuntimeC59BB6EB
+ └─ [~] AgentRuntimeArtifact
+     └─ [~] .CodeConfiguration:
+         └─ [~] .Code:
+             └─ [~] .S3:
+                 └─ [~] .Prefix:
+                     ├─ [-] 042896dc1966b8a6214e5383aba5b8b931cfa049d17aafa37eb8a77c859b95da.zip
+                     └─ [+] 01dc6054f16adcd6557fd9261016d679b2b3ad2b4b1da6d19449e8ebe02697bf.zip
+[~] AWS::BedrockAgentCore::Runtime Application/AgentMeridianWorkflow/Runtime ApplicationAgentMeridianWorkflowRuntimeB5D1714F
+ └─ [~] AgentRuntimeArtifact
+     └─ [~] .CodeConfiguration:
+         └─ [~] .Code:
+             └─ [~] .S3:
+                 └─ [~] .Prefix:
+                     ├─ [-] dfd5922f5aa9441e95d21ed58bb9f2209a004912a1232e89f75f725bd37f3d4a.zip
+                     └─ [+] bf7be128c7d4dc05da04c62f93c864bf00620d58d53613b228ba8085440cf858.zip
+[~] AWS::IAM::Policy Mcp/GatewayMeridianAuroraJwt/Role/DefaultPolicy McpGatewayMeridianAuroraJwtRoleDefaultPolicy0319B3CF
+ └─ [~] PolicyDocument
+     └─ [~] .Statement:
+         └─ @@ -5,8 +5,6 @@
+            [ ] "Resource": [
+            [ ]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools",
+            [ ]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-catalog-tools:*",
+            [-]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search",
+            [-]   "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search:*",
+            [ ]   {
+            [ ]     "Fn::GetAtt": [
+            [ ]       "McpGatewayMeridianAuroraJwtLambdaMeridianHoldsFunction0C6BCAE7",
+[~] AWS::BedrockAgentCore::GatewayTarget Mcp/GatewayMeridianAuroraJwt/TargetMeridianCatalog McpGatewayMeridianAuroraJwtTargetMeridianCatalog61571DDC
+ └─ [~] TargetConfiguration
+     └─ [~] .Mcp:
+         └─ [~] .Lambda:
+             └─ [~] .ToolSchema:
+                 └─ [~] .S3:
+                     └─ [~] .Uri:
+                         ├─ [-] s3://cdk-hnb659fds-assets-123456789012-us-east-1/f3bc822097333cae6697b15854e917ef62e98a4a6a6be0ca0cc616912f3dea9a.json
+                         └─ [+] s3://cdk-hnb659fds-assets-123456789012-us-east-1/4dc776a81b9ac9c85a9364a5050815faf826211393fae0b7fbce9b93f45a4cdf.json
+[~] AWS::Lambda::Function Mcp/GatewayMeridianAuroraJwt/LambdaMeridianHolds/Function McpGatewayMeridianAuroraJwtLambdaMeridianHoldsFunction0C6BCAE7
+ └─ [~] Code
+     └─ [~] .S3Key:
+         ├─ [-] c1db13ab836db24060490c83b83c089adb1ce9e6e1899d81e02d398cec22e6b1.zip
+         └─ [+] 4e90553f9801bdb5a4ffd95a5bb57ae6da23a144e8849221bbde00d9dba4fad3.zip
+
+Outputs
+[-] Output GatewayTargetSemanticTripSearchLambdaIdOutput: {"Description":"Gateway Target ID for: SemanticTripSearchLambda (gateway: meridian-aurora-jwt)","Value":{"Fn::GetAtt":["McpGatewayMeridianAuroraJwtTargetSemanticTripSearchLambda4B78D317","TargetId"]},"Export":{"Name":"AgentCore-meridianv2-default-GatewayTarget-SemanticTripSearchLambda-Id"}}
+✨ Number of stacks with differences: 1
+{"success":true,"targetName":"default","stackName":"AgentCore-meridianv2-default","logPath":"agentcore/.cli/logs/deploy/deploy-20260101-000000.log","dependencySyncResult":{"outcome":"opted-out","optedOut":true,"checkOnly":true,"migratedFromCaret":false,"reinstalled":false,"skewWarning":true,"changes":[],"restored":[],"skipped":[],"warnings":["@aws/agentcore-cdk (0.1.0-alpha.47, CLI expects 0.1.0-alpha.45), aws-cdk-lib (~2.265.0, CLI expects ~2.261.0), @types/jest (~30.0.0, CLI expects ~29.5.14), jest (~30.5.2, CLI expects ~29.7.0) are newer than this CLI was tested with; deploy may fail — upgrade the CLI with `npm install -g @aws/agentcore@latest`. To manage these versions yourself: agentcore config disableDependencyManagement true"],"notice":null}}

@@ -126,7 +126,7 @@ with a window where they disagree.
 
 ## Recommendation
 
-Do not ship it for this talk's reference app; rely on the existing layers (Cognito token
+Do not ship it for this reference app; rely on the existing layers (Cognito token
 verification at each hop, interceptor plus Cedar on the tool path, `meridian_*` least-privilege
 logins, RLS, and the `aws_iam` workload binding as a second check). Confidence: high that it
 should not ship in the reference app, because it touches every policy, adds a signer and a

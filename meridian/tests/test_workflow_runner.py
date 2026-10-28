@@ -280,7 +280,7 @@ async def test_a_failure_after_the_hold_releases_only_this_runs_booking():
     world = World()
     released = []
 
-    async def release(state, *, expected_hold_id=None):
+    async def release(state, *, expected_hold_id=None, execution_id=None):
         released.append((state.get("hold_id"), expected_hold_id))
         return True
 
@@ -442,7 +442,7 @@ async def test_a_snapshot_write_refused_for_a_lost_lease_stops_the_run_as_lease_
     world = World()
     ran, released = [], []
 
-    async def release(state, *, expected_hold_id=None):
+    async def release(state, *, expected_hold_id=None, execution_id=None):
         released.append(expected_hold_id)
         return True
 

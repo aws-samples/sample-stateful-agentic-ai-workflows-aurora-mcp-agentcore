@@ -12,7 +12,7 @@ Expose a reusable, named tool contract.
 | [`mcp/`](../../mcp/) | Server contracts, clients, argument validation and result handling. |
 | [`agent.py`](agent.py) | Reference Strands MCP agent over the generic PostgreSQL MCP server. The live ladder does not run it. |
 
-## Live checkpoint
+## Live check
 
 > Compare three trip types and convert each price to euros.
 

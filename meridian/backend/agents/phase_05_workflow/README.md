@@ -18,7 +18,9 @@ Resume execution without duplicating the business action.
 | [`state.py`](state.py) | Defines the workflow state, the trace span shape and the stable hold identifier. |
 | [`routing.py`](routing.py) | Decides the intent of a request, whether it is a recovery and whether it pauses after search. |
 | [`hold_intent.py`](hold_intent.py) | Fixes the identity and terms of a hold before it runs so every retry reuses them. |
-| [`governed_hold.py`](governed_hold.py) | Places the hold through the AgentCore Gateway so Cedar policy decides it. |
+| [`governed_hold.py`](governed_hold.py) | Places the hold and gives it back through the AgentCore Gateway so Cedar policy decides both. |
+| [`governed_tools.py`](governed_tools.py) | Calls the catalog search through the Gateway with the signed-in caller's token and keeps the list of Gateway calls a run made. |
+| [`run_audit.py`](run_audit.py) | Writes one audit row per run, naming the verified Cognito subject (in `jwt` mode), the Gateway calls and the ending error. |
 | [`packages.py`](packages.py) | Reads the ranked package and an available duration out of workflow state. |
 | [`memory_recall.py`](memory_recall.py) | Reads saved preferences, session turns and similar trips from Aurora, then searches the catalog. |
 
@@ -32,7 +34,7 @@ id derived from the thread. A presenter can stop that session; the next resume
 starts a new microVM on the same session id, which claims the next attempt and
 restores the newest saved snapshot from Amazon Aurora, so no state lives on the microVM.
 
-## Live checkpoint
+## Live check
 
 > My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
 

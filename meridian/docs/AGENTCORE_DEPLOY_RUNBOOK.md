@@ -14,8 +14,8 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Memory | `meridian_session` | Runtime session store, `SEMANTIC` strategy over `/users/{actorId}/sessions/{sessionId}` |
 | Gateway | `meridian-aurora` (`meridian-aurora-jwt` in `jwt` mode) | MCP endpoint with AWS_IAM inbound auth (Cognito JWT in `jwt` mode) and the Cedar policy engine attached in `ENFORCE` mode |
 | Gateway target | `MeridianCatalog` | `search_trips`, `compare_packages`, `price_range`, `region_inventory`, `currency_convert` and `hybrid_trip_search` over Amazon Aurora, served by the Lambda function `meridian-catalog-tools` you create in step 2. It replaces `SemanticTripSearchLambda` |
-| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold` and `confirm_booking` |
-| Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the catalog tools, `get_package_details` and `loyalty_balance`; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget. In `jwt` mode the render adds a fourth rule, `meridian_traveler_binding`, which covers `loyalty_balance`, `create_courtesy_hold` and `confirm_booking`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
+| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`. The Gateway serves eleven tools; the Concierge model is offered ten, because `release_hold` is for the Phase 5 workflow |
+| Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the catalog tools, `get_package_details` and `loyalty_balance`; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget; `meridian_release_governance` permits a release only when the call names a hold request and a journey. In `jwt` mode the render adds a fifth rule, `meridian_traveler_binding`, which covers `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
 
 The resources are declared in
 [`meridian_agentcore/agentcore/agentcore.template.json`](../meridian_agentcore/agentcore/agentcore.template.json).
@@ -250,7 +250,7 @@ Every render needs `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env` (set by
    without policies. Expect about 5 to 8 minutes.
 2. **Second pass.** The render now finds the gateway ID in
    `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json` and adds
-   the policy engine, its three Cedar policies (four in `jwt` mode, with
+   the policy engine, its four Cedar policies (five in `jwt` mode, with
    `meridian_traveler_binding`) and the gateway association.
 3. **Third pass.** The render adds the policy engine ID to the runtime's
    environment and prints `Configuration complete.` The deploy updates the
@@ -385,7 +385,7 @@ while the hold step is running. Each run removes the rows it creates.
 From the repository root:
 
 ```bash
-python meridian/scripts/verify_agentcore.py        # runtime, gateway, memory, policy engine ACTIVE and ENFORCE, ten tools
+python meridian/scripts/verify_agentcore.py        # runtime, gateway, memory, policy engine ACTIVE and ENFORCE, eleven tools
 python meridian/scripts/smoke_gateway_tools.py CTY-002   # tools/list and get_package_details, signed with your credentials
 python meridian/scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold placed, over-budget hold denied
 ```
@@ -397,7 +397,7 @@ Holds expire on their own.
 In the showcase trace for a Production turn, expect:
 
 - `Workload identity: AWS STS` and `Workload traveler grant allowed`
-- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with ten tools
+- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with eleven tools, `release_hold` listed as withheld from the model
 - `AgentCore Memory: session restored` with the event count
 - `AgentCore Gateway: tools/call → hybrid_trip_search` and its result. A parameterized filter shows `tools/call → search_trips`, and a points question shows `tools/call → loyalty_balance`
 - For a hold: `AgentCore Gateway: tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
@@ -461,7 +461,8 @@ Changes to other fields update resources in place.
 
 Adding a gateway tool together with a policy that names it takes two deploys:
 the tool first, then the policy, because a policy is validated against the
-gateway's tool schema.
+gateway's tool schema. The interceptor Lambda is not part of either deploy: ship a
+changed pin list first with `release_identity.py interceptor`.
 
 Replacing a target is a create and a delete. A target's name is the prefix of its tool names and of the Cedar action ids, so a rename changes both. Because a rule is validated against the tools that exist, a release that renames a target runs two deploys through `release_identity.py deploy`: the first adds the new target and any new tool and leaves the rules alone, the second changes the rules, removes the old target and updates the Runtimes. The plan gate (`scripts/identity_release/deploy_diff.py`) accepts a removal only for a target named in `RETIRED_TARGETS`.
 

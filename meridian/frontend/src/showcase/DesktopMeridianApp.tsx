@@ -21,6 +21,7 @@ import { ChatComposer } from './components/ChatComposer';
 import { CapabilityBrief } from './components/CapabilityBrief';
 import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
 import { JourneyChooser } from './journey/JourneyChooser';
+import { workflowStillRunning } from './journey/evidence';
 import { RequestWaitNotice } from './components/RequestWaitNotice';
 import { PresenterProof } from './surfaces/PresenterProof';
 import { ConciergeConversation } from './components/ConciergeConversation';
@@ -118,13 +119,16 @@ export function DesktopMeridianApp({
   // While a recovery runs on the desk, its journey is re-read as Aurora records each step.
   const watchingRecovery = isRecoveryView && runPhase === 5 && state.isLoading
     && Boolean(state.conversationId);
+  // A recovery the browser stopped waiting for keeps running; read it until it finishes.
+  const readingBack = runPhase === 5 && state.awaitingWorkflow && !state.isLoading
+    && Boolean(state.conversationId);
   const journey = useJourney(
     journeyId,
     setJourneyId,
-    watchingRecovery || (!state.isLoading
+    watchingRecovery || readingBack || (!state.isLoading
       && (view === 'proof' || isRecoveryView || (view === 'ladder' && runPhase === 5))),
     runPhase === 5 ? state.conversationId || threadId : threadId,
-    watchingRecovery,
+    watchingRecovery || readingBack,
   );
   const refreshJourney = journey.refresh;
   const journeyIdForStop = journey.document?.journey_id;
@@ -145,6 +149,11 @@ export function DesktopMeridianApp({
     }
   }, [isRecoveryView, runPhase, state.conversationId,
     state.workflowStatus, state.isLoading, refreshJourney]);
+  const settleWorkflow = state.settleWorkflow;
+  useEffect(() => {
+    if (!readingBack || !journey.document || journey.loading) return;
+    if (!workflowStillRunning(journey.document)) settleWorkflow(journey.document);
+  }, [readingBack, journey.document, journey.loading, settleWorkflow]);
   const restoredJourney = useRef<typeof journey.document>(null);
   useEffect(() => {
     if (!isRecoveryView || !journey.document || (restoredJourney.current === journey.document && !state.error)) return;

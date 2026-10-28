@@ -3,19 +3,43 @@ import { getAccessToken, withBearer } from '../auth/accessToken';
 /** Browser deadlines end the wait, not a server-side transaction. */
 export const REQUEST_TIMEOUT_MS = 55_000;
 
-export function runWithDeadline<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-  signal?: AbortSignal,
-  timeoutMs = REQUEST_TIMEOUT_MS,
+/**
+ * A streamed call ends when nothing arrives for this long. The backend sends a keepalive every
+ * 10 s, so a silent stream means the connection or the server is gone.
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 30_000;
+
+/** The longest a streamed call waits: under App Runner's 120 s limit on a whole request. */
+export const STREAM_HARD_CAP_MS = 110_000;
+
+interface Limits {
+  /** Ends the wait after this long without `touch()`; unset means no idle timer. */
+  idleMs?: number;
+  capMs: number;
+}
+
+function runWithLimits<T>(
+  operation: (signal: AbortSignal, touch: () => void) => Promise<T>,
+  signal: AbortSignal | undefined,
+  { idleMs, capMs }: Limits,
 ): Promise<T> {
   const controller = new AbortController();
   return new Promise<T>((resolve, reject) => {
     const abort = () => controller.abort(signal?.reason);
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const stop = (message: string) => () => controller.abort(new DOMException(message, 'TimeoutError'));
+    const touch = () => {
+      if (idleMs === undefined) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(stop('The response went quiet.'), idleMs);
+    };
     const finish = () => {
-      clearTimeout(timer);
+      clearTimeout(capTimer);
+      clearTimeout(idleTimer);
       signal?.removeEventListener('abort', abort);
     };
-    const timer = setTimeout(() => controller.abort(new DOMException('The response took too long.', 'TimeoutError')), timeoutMs);
+    const capTimer = setTimeout(stop('The response took too long.'), capMs);
+    touch();
     controller.signal.addEventListener('abort', () => {
       finish();
       reject(controller.signal.reason ?? new DOMException('Stopped waiting.', 'AbortError'));
@@ -23,11 +47,35 @@ export function runWithDeadline<T>(
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) { abort(); return; }
     try {
-      operation(controller.signal).then(resolve, reject).finally(finish);
+      operation(controller.signal, touch).then(resolve, reject).finally(finish);
     } catch (error) {
       finish();
       reject(error);
     }
+  });
+}
+
+export function runWithDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  return runWithLimits(operation, signal, { capMs: timeoutMs });
+}
+
+/**
+ * Waits for a call that streams. `touch` restarts the idle timer; the caller invokes it for
+ * every chunk that arrives, keepalives included. The wait ends at the idle limit or the hard
+ * cap, whichever comes first, with a TimeoutError.
+ */
+export function runWithStreamDeadline<T>(
+  operation: (signal: AbortSignal, touch: () => void) => Promise<T>,
+  signal?: AbortSignal,
+  limits: Partial<Limits> = {},
+): Promise<T> {
+  return runWithLimits(operation, signal, {
+    idleMs: limits.idleMs ?? STREAM_IDLE_TIMEOUT_MS,
+    capMs: limits.capMs ?? STREAM_HARD_CAP_MS,
   });
 }
 
@@ -70,7 +118,7 @@ export class NotSentError extends Error {
   }
 }
 
-function isServerReply(body: unknown, status: number): boolean {
+export function isServerReply(body: unknown, status: number): boolean {
   if (typeof body !== 'object' || body === null) return false;
   const { error, code } = body as { error?: unknown; code?: unknown };
   if (typeof error !== 'string') return false;

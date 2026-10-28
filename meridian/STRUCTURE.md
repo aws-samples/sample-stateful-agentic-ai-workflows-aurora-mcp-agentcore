@@ -34,12 +34,12 @@ Retrieval, Production and Workflow import their agent modules at runtime:
 - `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, the RLS read, the turn's audit row and the memory write around the managed runtime; `process_hold()` and `process_booking()` for a hold or confirmation from the UI
 - `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
-- `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles
+- `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles; `governed_tools.py` calls Gateway tools (search) and `governed_hold.py` the hold and release tools, with the caller's token; `run_audit.py` writes one audit row per run
 - `backend/agentcore/runtime.py`, `backend/agentcore/workflow_runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming Concierge client, workflow Runtime client with session stop) and the backend's IAM identity from AWS STS
 - `backend/agentcore/auth_mode.py`, `caller_credential.py`, `caller_claims.py`, `runtime_https.py`: the `MERIDIAN_AGENTCORE_AUTH` switch, the per-request caller token, the traveler read from a forwarded token, and the bearer-token Runtime invocation
 - `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `tool_errors.py` (ends the turn on a tool setup error), `turn_watchdog.py` (the 35 second idle watchdog, the 15 second keepalive, the 300 second cap and the history repair), `turn_work.py` (the worker threads for Memory, Gateway start and close, and the repair order), `model/load.py` (the Claude Sonnet 5.5 model), `prompts.py`, `gateway_auth.py`, `caller_identity.py`
 - `meridian_agentcore/app/MeridianWorkflow/`: the Phase 5 Runtime; its `backend/` directory is a generated copy of the backend modules the workflow imports
-- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking`)
+- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking`, `release_hold`)
 - `meridian_agentcore/agentcore/gateway_targets/meridian_catalog/`: the `MeridianCatalog` Lambda and its generated tool schema
 - `meridian_agentcore/agentcore/interceptors/traveler_pin/`: the Gateway request interceptor that pins `travelerId` to the signed-in traveler (attached to the Gateway, never a target)
 - `meridian_agentcore/agentcore/agentcore.template.json`: runtime, memory, gateway targets and the `MeridianGovernance` Cedar policy engine, with placeholders that `scripts/render_agentcore_config.py` fills for your account
@@ -71,7 +71,7 @@ uses the governed Gateway path.
 | `backend/tools/` | The catalog tools the MCP server, Phase 3 and the `MeridianCatalog` Lambda share: `search_trips`, `hybrid_trip_search`, `get_package_details`, and the tool-name and schema helpers |
 | `backend/retrieval/` | The one hybrid search (`hybrid.py`) and the availability check |
 | `backend/security/` | Masking of 12-digit account ids: error text before it is stored or shown, identity fields when they leave the backend |
-| `backend/bedrock_model.py` | The one factory for the Claude Sonnet 5.5 Strands model: the 16,000-token output cap and `REQUEST_FIELDS` |
+| `backend/bedrock_model.py` | The one factory for the Claude Sonnet 5.5 Strands model: the 16,000-token output cap and `REQUEST_FIELDS` (adaptive thinking, effort medium) |
 | `backend/memory/` | Aurora traveler memory store and audit writer |
 | `backend/authorization.py` | Workload-to-traveler authorization types |
 | `backend/http_auth.py` | HTTP principal and traveler binding |
@@ -137,7 +137,7 @@ uses the governed Gateway path.
 | `examples/rls_app_role.sql`, `examples/rls_for_agents.sql` | The restricted RLS role, RLS policies and the authorization audit view |
 | `examples/memory_mcp_demo.py` | Stand-alone client for the custom memory MCP server |
 | `tests/` | Pytest suite |
-| `examples/langgraph/` | Maintained LangGraph example: a Data API checkpoint saver, a pause and resume graph, and its tests, including the checkpointer conformance suite in `tests/conformance/`. The application does not import it |
+| `examples/langgraph/` | A maintained second implementation of the workflow: a Data API saver, a pause and resume graph, and its tests, including the saver conformance suite in `tests/conformance/`. The application does not import it |
 | `docs/` | Architecture, operations, deployment runbook, code walkthrough and design notes |
 
 ## Naming

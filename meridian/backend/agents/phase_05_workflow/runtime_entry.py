@@ -181,11 +181,18 @@ def _error(exc: BaseException) -> Dict[str, Any]:
             message = str(exc)
             if code == "gateway_tool":
                 message = mask_account_ids(message)[:GATEWAY_MESSAGE_LIMIT]
-            return {"type": "error", "code": code, "message": message}
+            return _with_release_note({"type": "error", "code": code, "message": message}, exc)
     reference = uuid.uuid4().hex[:8]
     logger.error("reference=<%s> | workflow turn failed", reference, exc_info=exc)
-    return {"type": "error", "code": "internal",
-            "message": f"The workflow failed. Reference {reference}."}
+    return _with_release_note(
+        {"type": "error", "code": "internal",
+         "message": f"The workflow failed. Reference {reference}."}, exc)
+
+
+def _with_release_note(event: Dict[str, Any], exc: BaseException) -> Dict[str, Any]:
+    """Add the fixed phrase saying a hold was left in place, when compensation set one."""
+    note = getattr(exc, "hold_release", None)
+    return {**event, "hold_release": note} if isinstance(note, str) else event
 
 
 def default_runner(worker_id: str) -> WorkflowRunner:

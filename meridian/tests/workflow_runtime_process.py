@@ -3,8 +3,9 @@
 Usage: python -m tests.workflow_runtime_process '<payload json>' <session_id>
 
 The entry uses the default runner, so retrieval is real and holds go through the live
-Gateway. The first line is {"current_user": ...} from the run's own client, then each event
-prints as one JSON line.
+Gateway. In jwt mode the seeded user's token is minted in memory and passed as the
+Authorization header, as the Runtime receives it. The first line is {"current_user": ...}
+from the run's own client, then each event prints as one JSON line.
 """
 
 import os
@@ -25,12 +26,14 @@ import json  # noqa: E402
 
 from backend.agents.phase_05_workflow.runtime_entry import workflow_turn  # noqa: E402
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
+from tests.workflow_runtime_caller import runtime_headers  # noqa: E402
 
 
 async def main(payload: dict, session_id: str) -> None:
     rows = await get_rds_data_client().execute("SELECT current_user AS u")
     print(json.dumps({"current_user": rows[0]["u"]}), flush=True)
-    async for event in workflow_turn(payload, session_id=session_id):
+    headers = runtime_headers(payload["traveler_id"])
+    async for event in workflow_turn(payload, session_id=session_id, headers=headers):
         print(json.dumps(event, default=str), flush=True)
 
 

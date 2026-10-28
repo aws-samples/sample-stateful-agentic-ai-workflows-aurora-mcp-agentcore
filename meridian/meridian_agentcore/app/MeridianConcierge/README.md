@@ -30,14 +30,18 @@ The managed concierge calls Claude Sonnet 5.5 through Bedrock's global inference
 (`global.anthropic.claude-sonnet-5-5`) with a 16,000-token output budget.
 `model/load.py` sends none of the three settings Sonnet 5.5 rejects:
 no `temperature`, no forced tool choice and no disabled thinking, so tool choice stays
-automatic. While `REQUEST_FIELDS` is empty, no thinking field is sent. Local agents read their own `BEDROCK_MODEL_ID` from the backend
+automatic. `REQUEST_FIELDS` sets adaptive thinking at effort medium (`thinking: adaptive`,
+`output_config.effort: medium`), the same value as `backend/bedrock_model.py`; thinking
+tokens count against the 16,000-token output budget. Local agents read their own `BEDROCK_MODEL_ID` from the backend
 `.env` (the same default). The Runtime reuses its model client between turns while each
 agent loads the authorized conversation through AgentCore Memory. To change the managed
 model, edit `BEDROCK_MODEL_ID` in the AgentCore template, render the project
 configuration, then redeploy; the CDK app accepts only a global inference profile id,
 because it grants the execution role that one model through its profile. Changing only
-the backend's `.env` does not change the managed Runtime. `BEDROCK_MAX_TOKENS` accepts 256
-to 16,000. GPT-OSS models are rejected by configuration. Throttling and transient errors
+the backend's `.env` does not change the managed Runtime. `BEDROCK_MAX_TOKENS` accepts 4,096
+to 16,000; the floor leaves room for medium-effort thinking plus an answer. A
+`BEDROCK_MODEL_ID` override still receives the thinking fields above, so it must name a
+model that accepts them, or `REQUEST_FIELDS` must change in both files. GPT-OSS models are rejected by configuration. Throttling and transient errors
 are retried by botocore in adaptive mode; a persistent failure ends the turn with its
 error, and no other model answers. A tool that could not be set up (missing credentials,
 permissions or configuration) ends the turn with that error (`tool_errors.py`).
@@ -71,6 +75,11 @@ A turn ended early can leave a tool call with no result in the saved history. Th
 result for each open call and a fixed closing reply, so the next turn sends Bedrock a history that alternates
 roles; the next turn waits up to 3 seconds for a repair still running. A Memory write that was still running
 when its turn ended lands afterwards and sorts before the closing messages.
+
+With thinking on, the assistant messages saved to AgentCore Memory, and the model-call span events
+that tracing exports, include the model's reasoning text and its signature. That is the model's reasoning
+about the same conversation, kept under the same retention and access as the conversation itself. The
+traveler stream never carries it.
 
 ## Payload
 

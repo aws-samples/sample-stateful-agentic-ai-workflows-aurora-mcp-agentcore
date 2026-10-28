@@ -414,7 +414,7 @@ async def _conversation(q, thread_id: Optional[str]) -> Dict[str, Any]:
 def _hold_absent(inline: Any) -> Dict[str, Any]:
     """Explain a missing hold row without contradicting the snapshot.
 
-    Releasing a demo booking deletes its rows, while the snapshot still names
+    Releasing a booking deletes its rows, while the snapshot still names
     the hold the workflow placed. Saying none was placed would be false.
     """
     hold_id = _channel(inline, "hold_id")
@@ -422,8 +422,14 @@ def _hold_absent(inline: Any) -> Dict[str, Any]:
         return _unavailable("no hold has been placed for this journey")
     return {
         **_unavailable(f"the snapshot names hold {hold_id}, but Aurora has no booking for it"),
-        "checkpoint_hold_id": hold_id,
+        "snapshot_hold_id": hold_id,
     }
+
+
+def _hold_label(records: int) -> str:
+    """What the evidence says about the holds it counted, from the rows themselves."""
+    noun = "hold record" if records == 1 else "hold records"
+    return f"{records} {noun} for this journey"
 
 
 async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
@@ -431,10 +437,10 @@ async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
     if not rows:
         return _hold_absent(inline)
     row = rows[0]
+    holds = len({r["hold_request_id"] for r in rows})
     return {
         "status": row["status"],
-        # The claim the demo makes, stated as data rather than as prose.
-        "label": "one hold for this request",
+        "label": _hold_label(holds),
         "source": "hold_requests + bookings + booking_lines",
         "hold_request_id": row["hold_request_id"],
         "booking_id": row["booking_id"],
@@ -453,7 +459,7 @@ async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
         ),
         # A journey can contain multiple distinct requests; this count alone
         # does not establish whether any one request was replayed.
-        "hold_records": len(rows),
+        "hold_records": holds,
     }
 
 

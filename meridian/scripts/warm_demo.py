@@ -1,4 +1,4 @@
-"""Warm every service the demo touches so the first live turn on stage is not cold.
+"""Warm every service the demo touches so the first live turn is not cold.
 
 Runs, in order: health (Aurora), the catalog, the traveler profile under RLS, one
 read-only turn each for SQL, MCP, Retrieval and Production (AgentCore Runtime,
@@ -9,6 +9,10 @@ Local (default): python scripts/warm_demo.py
 Hosted:          MERIDIAN_HOSTED_AUTH='{"username": ..., "password": ...}' \
                  python scripts/warm_demo.py --hosted
 
+Verify:          add --verify to --hosted. A full pass writes status "verified" to the release
+                 record (time, commit, check names); a failing step writes "verification_failed"
+                 with that step's name and exits 1.
+
 With MERIDIAN_AGENTCORE_AUTH=jwt the script signs in as a seeded user (``--as jordan`` or
 ``--as decoy``) and sends that access token; the edge credential is not used.
 """
@@ -17,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import sys
@@ -34,7 +39,7 @@ from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
 from scripts.agentcore_caller import (  # noqa: E402
     TRAVELER_USERS, bearer_headers, require_token_safe_url, traveler_for_user,
 )
-from scripts.published import load_record, release_url  # noqa: E402
+from scripts.published import load_record, record_verification, release_url  # noqa: E402
 
 load_dotenv()
 
@@ -42,6 +47,7 @@ LOCAL_URL = "http://127.0.0.1:8013"
 TRAVELER_ID = "trv_meridian_demo"
 TURN_TIMEOUT_SECONDS = 120
 READ_TIMEOUT_SECONDS = 30
+DEFAULT_USER = "jordan"
 
 
 def basic_auth_header() -> dict[str, str]:
@@ -142,34 +148,56 @@ def build_parser() -> argparse.ArgumentParser:
     target.add_argument("--base-url", default=LOCAL_URL,
                         help=f"warm this backend instead of {LOCAL_URL} (a credential goes only "
                              "to https, or http on localhost)")
+    parser.add_argument("--verify", action="store_true",
+                        help="with --hosted, record the result in the release record")
     parser.add_argument("--as", dest="as_user", choices=sorted(set(TRAVELER_USERS.values())),
-                        default="jordan", help="the seeded user to sign in as in jwt mode")
+                        default=DEFAULT_USER, help="the seeded user to sign in as in jwt mode")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    base = release_url(load_record()).rstrip("/") if args.hosted else args.base_url.rstrip("/")
-    require_token_safe_url(base, always=args.hosted)
-    headers = request_headers(args.hosted, args.as_user)
-    print(f"Warming {base}")
-    failures = 0
-    for label, path, body, check in steps(traveler_for_user(args.as_user)):
+def run_steps(base: str, headers: dict[str, str], traveler: str) -> tuple[list[str], list[str]]:
+    """Run the warm-up; return the labels that passed and the labels that failed, in order."""
+    passed: list[str] = []
+    failed: list[str] = []
+    for label, path, body, check in steps(traveler):
         started = time.monotonic()
         try:
             problem = check(call(base, headers, path, body)) if check else None
             call_ok = True
-        except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        except (OSError, http.client.HTTPException, ValueError) as error:
             problem, call_ok = f"{type(error).__name__}: {error}", False
         elapsed = time.monotonic() - started
-        failures += bool(problem)
+        (failed if problem else passed).append(label)
         print(f"  {'FAIL' if problem else 'ok  '}  {label:<24} {elapsed:5.1f}s"
               + (f"  {problem}" if problem else ""))
         if not call_ok and path == "/api/health":
             print("  Stopping: the backend did not answer its health check.")
-            return 1
-    print("Warm." if not failures else f"{failures} step(s) need attention before going live.")
-    return 1 if failures else 0
+            break
+    return passed, failed
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Warm the target. Exit 0 when every step passes, 1 on a failure, 2 on a usage error."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.verify and not args.hosted:
+        parser.error("--verify records a result for the hosted release; add --hosted")
+    if args.verify and args.as_user != DEFAULT_USER:
+        parser.error(f"--verify records the release verdict for {DEFAULT_USER} only; "
+                     f"--as {args.as_user} would check a different traveler and write nothing")
+    base = release_url(load_record()).rstrip("/") if args.hosted else args.base_url.rstrip("/")
+    require_token_safe_url(base, always=args.hosted)
+    headers = request_headers(args.hosted, args.as_user)
+    print(f"Warming {base}")
+    passed, failed = run_steps(base, headers, traveler_for_user(args.as_user))
+    if args.verify:
+        record = record_verification(passed, failed[0] if failed else None)
+        print(f"Release record: {record['status']}.")
+    if failed:
+        print(f"{len(failed)} step(s) need attention before going live.")
+    else:
+        print("Warm.")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

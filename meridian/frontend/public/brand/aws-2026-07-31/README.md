@@ -8,7 +8,7 @@ The SVG bytes, colors, shapes, and square proportions are preserved. The
 diagram scales them uniformly. AgentCore uses the separate purple service-family assets in the parent
 directory, with dedicated Runtime, Gateway, Memory and Policy marks.
 
-| Asset | Service | Deck slide | Original ZIP entry |
+| Asset | Service | Page in source file | Original ZIP entry |
 | --- | --- | --- | --- |
 | `lambda.svg` | AWS Lambda | 62 | `ppt/media/image18.svg` |
 | `app-runner.svg` | AWS App Runner | 66 | `ppt/media/image271.svg` |

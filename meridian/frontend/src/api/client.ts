@@ -11,7 +11,10 @@ import {
 } from './request';
 import { getAccessToken, setBearerOrigin } from '../auth/accessToken';
 import { CURRENT_TRAVELER } from './currentTraveler';
-import { SignInRequiredError, TokenExpiredError, readChatStream, type ChatStreamEvent } from './chatStream';
+import {
+  SignInRequiredError, TokenExpiredError, readEventStream,
+  type ChatStreamEvent, type StreamedResult,
+} from './chatStream';
 import type {
   BookingRequest,
   BookingResponse,
@@ -115,21 +118,25 @@ export async function fetchProduct(productId: string): Promise<Product> {
 }
 
 /**
- * Stream a turn. An HTTP 401 is recovered by authorizedFetch. A token that expires inside the
- * stream is refreshed and the turn is sent again once, but only if nothing reached the caller
- * yet; after content the turn may have written state, so the person decides whether to resend.
+ * Post a request and read its server-sent events to the terminal one. An HTTP 401 is recovered by
+ * authorizedFetch. A token that expires inside the stream is refreshed and the request is sent
+ * again once, but only if nothing reached the caller yet; after content the turn may have
+ * written state, so the person decides whether to resend. A resent hold or booking replays: its
+ * request identity is saved on the device and the database dedupes on it.
  */
-async function streamChatMessage(
-  request: ChatRequest, signal: AbortSignal | undefined, onEvent: (event: ChatStreamEvent) => void,
-): Promise<ChatResponse> {
+async function streamRequest<T extends StreamedResult>(
+  path: string, body: unknown, signal: AbortSignal | undefined,
+  onEvent: (event: ChatStreamEvent) => void, touch?: () => void,
+): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
-    const response = await authorizedFetch(`${API_BASE}/chat/stream`, {
+    const response = await authorizedFetch(`${API_BASE}${path}`, {
       method: 'POST', signal, cache: 'no-store',
-      headers: { ...JSON_HEADERS, Accept: 'text/event-stream' }, body: JSON.stringify(request),
+      headers: { ...JSON_HEADERS, Accept: 'text/event-stream' }, body: JSON.stringify(body),
     });
+    touch?.();
     const refusedToken = getAccessToken();
     try {
-      return await readChatStream(response, onEvent, signal);
+      return await readEventStream<T>(response, onEvent, signal, touch);
     } catch (error) {
       if (error instanceof SignInRequiredError) {
         await refreshAfterStreamExpiry(refusedToken);
@@ -150,11 +157,15 @@ async function streamChatMessage(
 }
 
 /**
- * Send a chat message to the AI assistant
+ * Send a chat message to the AI assistant. Phases 4 and 5 can outlast a plain request, so with an
+ * `onEvent` they stream, and `touch` is called for every chunk, keepalives included.
  */
-export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
-  if (request.phase === 4 && onEvent) {
-    return streamChatMessage(request, signal, onEvent);
+export async function sendChatMessage(
+  request: ChatRequest, signal?: AbortSignal,
+  onEvent?: (event: ChatStreamEvent) => void, touch?: () => void,
+): Promise<ChatResponse> {
+  if ((request.phase === 4 || request.phase === 5) && onEvent) {
+    return streamRequest<ChatResponse>('/chat/stream', request, signal, onEvent, touch);
   }
   return requestJson(`${API_BASE}/chat`, {
     method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
@@ -226,16 +237,16 @@ export async function searchProducts(query: string, phase: 1 | 2 | 3 = 3): Promi
 /**
  * Process an order for a product
  */
-export async function confirmBooking(request: BookingRequest, signal?: AbortSignal): Promise<BookingResponse> {
-  return requestJson(`${API_BASE}/chat/book`, {
-    method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
-  });
+export async function confirmBooking(
+  request: BookingRequest, signal?: AbortSignal, touch?: () => void,
+): Promise<BookingResponse> {
+  return streamRequest<BookingResponse>('/chat/book/stream', request, signal, () => {}, touch);
 }
 
-export async function processOrder(request: OrderRequest, signal?: AbortSignal): Promise<OrderResponse> {
-  return requestJson(`${API_BASE}/chat/order`, {
-    method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
-  });
+export async function processOrder(
+  request: OrderRequest, signal?: AbortSignal, touch?: () => void,
+): Promise<OrderResponse> {
+  return streamRequest<OrderResponse>('/chat/order/stream', request, signal, () => {}, touch);
 }
 
 export interface HoldLookup {
