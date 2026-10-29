@@ -317,6 +317,8 @@ export function ShowcaseMarkdown({
           rehypePlugins={highlightMemory ? [rehypeMemoryHighlight] : []}
           // Make raw-HTML rejection explicit at the renderer boundary.
           skipHtml
+          // A model-written image URL would be fetched by the browser without a click.
+          disallowedElements={['img']}
         >
           {cleaned}
         </ReactMarkdown>

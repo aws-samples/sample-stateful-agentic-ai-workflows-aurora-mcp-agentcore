@@ -12,6 +12,7 @@ reference MCP agent in `backend/agents/phase_02_mcp/`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -54,6 +55,14 @@ class MeridianConciergeMCPClient:
         self._exit_stack: Optional[AsyncExitStack] = None
 
     async def connect(self) -> None:
+        """Start the server and list its tools, within the Phase 3 pool's start timeout.
+
+        Raises:
+            TimeoutError: The server did not answer ``initialize`` and ``list_tools`` in time.
+                The child process is stopped before the error is raised.
+        """
+        from backend.agents.phase_03_retrieval import mcp_session
+
         if self._connected:
             return
         params = concierge_server_parameters()
@@ -61,8 +70,9 @@ class MeridianConciergeMCPClient:
         try:
             read, write = await self._exit_stack.enter_async_context(stdio_client(params))
             self.session = await self._exit_stack.enter_async_context(ClientSession(read, write))
-            await self.session.initialize()
-            response = await self.session.list_tools()
+            async with asyncio.timeout(mcp_session.MCP_START_TIMEOUT_SECONDS):
+                await self.session.initialize()
+                response = await self.session.list_tools()
             self._tools = [{"name": t.name, "description": t.description} for t in response.tools]
             self._connected = True
         except BaseException:

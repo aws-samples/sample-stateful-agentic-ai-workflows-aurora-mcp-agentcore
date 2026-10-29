@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../../api/client';
 import { RlsProbeCard } from '../RlsProbeCard';
@@ -150,5 +150,43 @@ describe('RlsProbeCard signed-in person', () => {
     await screen.findByText('Negative control');
 
     expect(screen.queryByText('Signed-in person')).not.toBeInTheDocument();
+  });
+});
+
+describe('RlsProbeCard overlapping probes', () => {
+  beforeEach(() => { vi.mocked(fetchRlsProbe).mockReset(); });
+
+  it('shows the later probe when the earlier one answers last', async () => {
+    const resolvers: Array<(value: RlsProbeResponse) => void> = [];
+    vi.mocked(fetchRlsProbe).mockImplementation(
+      () => new Promise<RlsProbeResponse>((resolve) => { resolvers.push(resolve); }),
+    );
+    const { rerender } = render(<RlsProbeCard travelerId="trv_first" />);
+    rerender(<RlsProbeCard travelerId="trv_second" />);
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+    const named = (id: string): RlsProbeResponse => ({
+      ...probe('deny'),
+      authorization: { ...probe('deny').authorization, subject_id: id },
+    });
+
+    await act(async () => { resolvers[1](named('second-answer')); });
+    await act(async () => { resolvers[0](named('first-answer')); });
+
+    expect(screen.getByText('second-answer')).toBeInTheDocument();
+    expect(screen.queryByText('first-answer')).not.toBeInTheDocument();
+  });
+
+  it('keeps the button busy until the latest probe settles', async () => {
+    const resolvers: Array<(value: RlsProbeResponse) => void> = [];
+    vi.mocked(fetchRlsProbe).mockImplementation(
+      () => new Promise<RlsProbeResponse>((resolve) => { resolvers.push(resolve); }),
+    );
+    const { rerender } = render(<RlsProbeCard travelerId="trv_first" />);
+    rerender(<RlsProbeCard travelerId="trv_second" />);
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+
+    await act(async () => { resolvers[0](probe('deny')); });
+
+    expect(screen.getByRole('button', { name: 'Running governance probe' })).toBeDisabled();
   });
 });

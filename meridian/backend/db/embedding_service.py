@@ -148,9 +148,11 @@ class EmbeddingService:
         """Embed text with Cohere Embed v4 (1024-dim) via Bedrock.
 
         The query arm of hybrid search and the write path for semantic recall
-        both call this. Tries the configured model then the fallback chain,
-        and rejects any result whose dimension count doesn't match the
-        pgvector column. ``input_type`` is "search_query" for queries,
+        both call this. Retries the one configured model up to
+        ``EMBEDDING_ATTEMPTS`` times, with no fallback model, and raises
+        ``EmbeddingUnavailable`` when every attempt fails. A result whose
+        dimension count doesn't match the pgvector column is rejected.
+        ``input_type`` is "search_query" for queries,
         "search_document" for stored content (Cohere asymmetric embeddings).
         """
         if len(text) > self.MAX_TEXT_LENGTH:

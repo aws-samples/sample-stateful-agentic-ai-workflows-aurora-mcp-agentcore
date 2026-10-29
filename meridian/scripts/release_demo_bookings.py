@@ -8,14 +8,16 @@ the demo traveler's bookings, their lines and their hold-request identities.
 Journeys and checkpoints stay, so System evidence keeps its history.
 
 Usage:
-    python scripts/release_demo_bookings.py            # remove every demo booking
+    python scripts/release_demo_bookings.py            # list the demo bookings, delete nothing
     python scripts/release_demo_bookings.py --confirmed-only
-    python scripts/release_demo_bookings.py --dry-run
+    python scripts/release_demo_bookings.py --apply --i-understand-this-changes-aws
+
+The default is a dry run. ``--apply`` deletes as the master login, so it also needs
+``--i-understand-this-changes-aws``; without it the script exits 3 and changes nothing.
 """
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -27,8 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
+from scripts.identity_release.usage import UsageParser  # noqa: E402
 
 DEMO_TRAVELER = "trv_meridian_demo"
+DECOY_TRAVELER = "trv_demo_decoy"
+CONFIRM_FLAG = "--i-understand-this-changes-aws"
 console = Console()
 
 
@@ -79,16 +84,36 @@ async def release(
     return len(rows)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--traveler", default=DEMO_TRAVELER, help="traveler id to release")
+def main(argv: list[str] | None = None) -> None:
+    """Parse the CLI and list, or with both confirm flags delete, the traveler's bookings."""
+    parser = UsageParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--traveler", default=DEMO_TRAVELER, choices=[DEMO_TRAVELER, DECOY_TRAVELER],
+        help="seeded traveler id to release",
+    )
     parser.add_argument(
         "--confirmed-only", action="store_true", help="leave active holds in place"
     )
-    parser.add_argument("--dry-run", action="store_true", help="list without deleting")
+    parser.add_argument("--apply", action="store_true", help="delete; the default only lists")
+    parser.add_argument(
+        CONFIRM_FLAG, action="store_true", dest="confirmed",
+        help="required with --apply: acknowledges that it deletes bookings",
+    )
     parser.add_argument("--booking-id", help="release only this booking owned by the traveler")
-    args = parser.parse_args()
-    asyncio.run(release(args.traveler, args.confirmed_only, args.dry_run, args.booking_id))
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="deprecated: listing is already the default; accepted so older runbooks still run",
+    )
+    args = parser.parse_args(argv)
+    if args.dry_run and args.apply:
+        parser.error("--dry-run lists only and cannot be combined with --apply.")
+    if args.apply and not args.confirmed:
+        parser.error(
+            f"--apply deletes bookings; add {CONFIRM_FLAG} to run it. Nothing was changed."
+        )
+    asyncio.run(
+        release(args.traveler, args.confirmed_only, not args.apply, args.booking_id)
+    )
 
 
 if __name__ == "__main__":

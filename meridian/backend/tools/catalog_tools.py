@@ -169,7 +169,7 @@ async def price_range(destination: str) -> Dict[str, Any]:
     destination = (destination or "").strip()
     if not destination:
         return _refusal("destination is required")
-    pattern = f"%{destination}%"
+    pattern = f"%{_escape_like(destination)}%"
     row = await get_rds_data_client().execute_one(sql, (pattern, pattern))
     if not row or not row.get("sample_size"):
         return {"destination": destination, "sample_size": 0}
@@ -202,7 +202,7 @@ async def region_inventory(region: str, trip_type: Optional[str] = None) -> Dict
         FROM trip_packages
         WHERE region ILIKE %s
     """
-    params: List[Any] = [f"%{region}%"]
+    params: List[Any] = [f"%{_escape_like(region)}%"]
     if trip_type:
         sql += " AND trip_type = %s"
         params.append(trip_type)

@@ -54,7 +54,7 @@ async def _saved_cap_cents(traveler: str) -> int:
     """The traveler's saved per-person cap, read the way the backend derives it."""
     facts = await get_rds_data_client().execute(
         "SELECT preference_key AS key, preference_value AS value FROM traveler_preferences "
-        "WHERE traveler_id = %s ORDER BY confidence DESC, last_seen_at DESC LIMIT 50", (traveler,))
+        "WHERE traveler_id = %s ORDER BY confidence DESC NULLS LAST, last_seen_at DESC LIMIT 50", (traveler,))
     cap = budget_ceiling_per_traveler_cents(facts)
     if cap is None:
         pytest.skip(f"{traveler} has no saved budget fact")

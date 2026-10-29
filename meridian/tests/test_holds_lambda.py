@@ -256,6 +256,7 @@ def test_new_journey_is_created_for_an_unknown_reference(config, monkeypatch):
         **CATALOG_PRICE,
         **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "INSERT INTO journey_threads": [{"thread_id": "concierge:conv-1"}],
         "FROM create_courtesy_hold": [{
             "booking_id": "HLD-2", "status": "held", "replayed": False,
             "seats_available": 4, "seats_reserved": 1, "seats_remaining": 3,
@@ -725,6 +726,10 @@ def test_a_hold_above_the_saved_budget_is_refused_whatever_ceiling_the_caller_se
     }
 
 
+def test_the_saved_preferences_sort_a_null_confidence_last():
+    assert "ORDER BY confidence DESC NULLS LAST, last_seen_at DESC" in holds.PREFERENCES_SQL
+
+
 def test_a_hold_within_the_saved_budget_for_the_party_runs(config, monkeypatch):
     api = _authorized_api(**CATALOG_PRICE, **_saved_cap("$2.5k per person"), **HOLD_ROW)
     monkeypatch.setattr(holds, "RDS", api)
@@ -1067,3 +1072,205 @@ def test_release_hold_refuses_a_live_lease_on_another_journey_and_updates_nothin
     assert api.tx == ["begin", "rollback"]
     assert _executed(api, "FOR UPDATE OF b") == []
     assert _executed(api, "SET status = 'released'") == []
+
+
+class _TransactionGone(FakeDataApi):
+    """The Data API once a transaction has ended: a second rollback is refused, not ignored."""
+
+    def __init__(self, rows_by_marker, failing_marker):
+        super().__init__(rows_by_marker)
+        self.failing_marker = failing_marker
+
+    def execute_statement(self, **kwargs):
+        if self.failing_marker in kwargs["sql"] and "transactionId" not in kwargs:
+            raise ClientError(
+                {"Error": {"Code": "StatementTimeoutException", "Message": "timed out"}},
+                "ExecuteStatement",
+            )
+        return super().execute_statement(**kwargs)
+
+    def rollback_transaction(self, **kwargs):
+        super().rollback_transaction(**kwargs)
+        if self.tx.count("rollback") > 1:
+            raise ClientError(
+                {"Error": {"Code": "BadRequestException", "Message": "Transaction is not found"}},
+                "RollbackTransaction",
+            )
+        return {}
+
+
+@pytest.mark.parametrize(("tool", "args", "code"), [
+    ("create_courtesy_hold", _hold_args, "hold_failed"),
+    ("confirm_booking", _booking_args, "booking_failed"),
+    ("release_hold", _release_args, "release_failed"),
+    ("loyalty_balance", lambda: {"travelerId": "trv_meridian_demo"}, holds.LOYALTY_FAILED),
+])
+def test_a_failed_deny_audit_answers_with_the_fixed_code_instead_of_crashing(
+    config, monkeypatch, tool, args, code
+):
+    """The refusal path rolled back already; a failing deny-audit write must not raise twice."""
+    api = _TransactionGone({"FROM traveler_identity_bindings": []}, "traveler_access_audit")
+    monkeypatch.setattr(holds, "RDS", api)
+
+    result = holds.lambda_handler(args(), _context(f"MeridianHolds___{tool}"))
+
+    assert result == {"error": code}
+    assert api.tx == ["begin", "rollback", "rollback"]
+
+
+
+FACTS_EXPLICIT_THEN_SEEDED = [
+    {"key": "budget_cap", "value": "$5,000"},
+    {"key": "budget_cap", "value": "$3,200"},
+]
+
+
+def test_the_highest_confidence_fact_wins_when_two_rows_share_a_key(monkeypatch):
+    from backend.agents.budget import (
+        budget_ceiling_from_facts,
+        budget_ceiling_per_traveler_cents,
+    )
+
+    monkeypatch.delenv(holds.DEFAULT_BUDGET_ENV, raising=False)
+    assert budget_ceiling_per_traveler_cents(FACTS_EXPLICIT_THEN_SEEDED) == 500000
+    assert budget_ceiling_from_facts(FACTS_EXPLICIT_THEN_SEEDED, 2) == 1_000_000
+    assert holds.saved_ceiling_cents(FACTS_EXPLICIT_THEN_SEEDED, 2) == 1_000_000
+
+
+def test_a_hold_uses_the_explicit_budget_over_the_seeded_one(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM trip_packages": [{"unit_price_cents": 400000}],
+        "FROM traveler_preferences": [
+            {"preference_key": "budget_cap", "preference_value": "$5,000"},
+            {"preference_key": "budget_cap", "preference_value": "$3,200"},
+        ],
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        "FROM create_courtesy_hold": [{
+            "booking_id": "HLD-1", "status": "held", "replayed": False,
+            "seats_available": 4, "seats_reserved": 2, "seats_remaining": 2,
+        }],
+        "FROM bookings": RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "unitPriceCents": 400000, "totalCents": 800000}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]["bookingId"] == "HLD-1"
+
+
+ACCOUNT_ID = "123456789012"
+ACCOUNT_ARN = f"arn:aws:sts::{ACCOUNT_ID}:assumed-role/MeridianHolds/session"
+
+
+@pytest.fixture
+def account_config(config, monkeypatch):
+    monkeypatch.setattr(holds, "SUBJECT", ("aws_iam", "AROAEXAMPLE", ACCOUNT_ARN))
+
+
+def _granted(**extra):
+    return {"FROM traveler_identity_bindings": [{"binding_id": "bind_1"}], **extra}
+
+
+def _run_tool(monkeypatch, tool, api, args):
+    monkeypatch.setattr(holds, "RDS", api)
+    return holds.lambda_handler(args, _context(f"MeridianHolds___{tool}"))
+
+
+def _success_cases():
+    hold_rows = _granted(
+        **CATALOG_PRICE, **SAVED_BUDGET,
+        **{
+            "FROM journey_threads": [{"journey_id": "jrn_1"}],
+            "FROM create_courtesy_hold": [{
+                "booking_id": "HLD-1", "status": "held", "replayed": False,
+                "seats_available": 4, "seats_reserved": 2, "seats_remaining": 2,
+            }],
+            "FROM bookings": RECEIPT,
+        },
+    )
+    confirm_rows = _granted(
+        **BOOKED_PARTY, **SAVED_BUDGET,
+        **{
+            "FROM confirm_booking": [{
+                "booking_id": "HLD-1", "status": "confirmed", "replayed": False,
+                "confirmed_at": "2026-09-10 13:00:00+00",
+                "hold_expires_at": "2026-09-11 00:00:00+00", "total_amount": "5000.00",
+            }],
+            "FROM bookings b": BOOKING_RECEIPT,
+        },
+    )
+    release_rows = _granted(**{
+        "FOR UPDATE OF b": [{"booking_id": "HLD-1", "status": "held"}],
+        "SET status = 'released'": [{"booking_id": "HLD-1"}],
+    })
+    return [
+        ("create_courtesy_hold", hold_rows, _hold_args()),
+        ("confirm_booking", confirm_rows, _booking_args()),
+        ("release_hold", release_rows, _release_args()),
+        ("loyalty_balance", _granted(**{"FROM traveler_profiles": [{"loyalty_programs": "{}"}]}),
+         {"travelerId": "trv_meridian_demo", "program": "Skyline"}),
+        ("create_courtesy_hold", {"FROM traveler_identity_bindings": []}, _hold_args()),
+    ]
+
+
+@pytest.mark.parametrize("case", range(5))
+def test_no_tool_result_carries_an_account_id(account_config, monkeypatch, case):
+    tool, rows, args = _success_cases()[case]
+    result = _run_tool(monkeypatch, tool, FakeDataApi(rows), args)
+    assert ACCOUNT_ID not in json.dumps(result)
+    masked = "arn:aws:sts::<acct>:assumed-role/MeridianHolds/session"
+    assert result["governance"]["principal"] == masked
+
+
+def test_the_audit_row_keeps_the_unmasked_principal(account_config, monkeypatch):
+    tool, rows, args = _success_cases()[0]
+    api = FakeDataApi(rows)
+    _run_tool(monkeypatch, tool, api, args)
+    [audit] = [
+        p for s, p in zip(api.statements, api.parameters, strict=True)
+        if "traveler_access_audit" in s
+    ]
+    assert audit["principal"] == ACCOUNT_ARN
+
+
+def test_a_refusal_keeps_the_unmasked_principal_in_the_deny_row(account_config, monkeypatch):
+    tool, rows, args = _success_cases()[4]
+    api = FakeDataApi(rows)
+    _run_tool(monkeypatch, tool, api, args)
+    audits = [
+        p for s, p in zip(api.statements, api.parameters, strict=True)
+        if "traveler_access_audit" in s
+    ]
+    assert {a["principal"] for a in audits} == {ACCOUNT_ARN}
+
+
+def _hold_rows_for_new_thread(**extra):
+    return {
+        **CATALOG_PRICE,
+        **SAVED_BUDGET,
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM create_courtesy_hold": [{
+            "booking_id": "HLD-2", "status": "held", "replayed": False,
+            "seats_available": 4, "seats_reserved": 1, "seats_remaining": 3,
+        }],
+        "FROM bookings": RECEIPT,
+        **extra,
+    }
+
+
+def test_a_thread_owned_by_another_traveler_refuses_the_hold_by_name(config, monkeypatch):
+    api = FakeDataApi(_hold_rows_for_new_thread())
+    result = _run_tool(monkeypatch, "create_courtesy_hold", api, _hold_args())
+    assert result == {"error": "journey_not_owned"}
+    assert api.tx == ["begin", "rollback"]
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_a_thread_insert_that_returns_its_row_proceeds(config, monkeypatch):
+    rows = _hold_rows_for_new_thread(
+        **{"INSERT INTO journey_threads": [{"thread_id": "concierge:conv-1"}]}
+    )
+    api = FakeDataApi(rows)
+    result = _run_tool(monkeypatch, "create_courtesy_hold", api, _hold_args())
+    assert result["hold"]["bookingId"] == "HLD-2"
+    assert api.tx == ["begin", "commit"]

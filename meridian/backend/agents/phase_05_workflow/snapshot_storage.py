@@ -14,18 +14,22 @@ and finds the execution still running. A worker that stalled past its lease
 therefore cannot append an older state after another worker took the thread over.
 """
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable, List, Optional
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from strands.types.exceptions import StorageError
 
 from backend.db.journey_store import ExecutionLeaseLostError
+from backend.db.rds_data_client import run_blocking_shielded
 
 # The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
 # Live tests read back ASCII, multibyte and escape-dense snapshots just under this cap.
 MAX_SNAPSHOT_BYTES = 900_000
+
+logger = logging.getLogger(__name__)
 
 PIN_TRAVELER_SQL = "SELECT set_config('app.current_traveler_id', %s, true)"
 
@@ -58,6 +62,13 @@ SELECT DISTINCT storage_key FROM workflow_snapshots
 def _like_prefix(prefix: str) -> str:
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"{escaped}%"
+
+
+def _failure(exc: Exception) -> str:
+    """The Data API error code, or the exception type when the SDK gave none."""
+    if isinstance(exc, ClientError):
+        return exc.response["Error"]["Code"]
+    return type(exc).__name__
 
 
 class AuroraSnapshotStorage:
@@ -133,10 +144,8 @@ class AuroraSnapshotStorage:
                         f"{self._session_id}, or its lease lapsed; its snapshot was not saved. "
                         "Re-read the saved journey."
                     )
-        except ClientError as exc:
-            raise StorageError(
-                f"writing {owned!r} failed: {exc.response['Error']['Code']}"
-            ) from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"writing {owned!r} failed: {_failure(exc)}") from exc
         if self._on_write is not None:
             self._on_write(round((time.perf_counter() - started) * 1000))
 
@@ -150,10 +159,8 @@ class AuroraSnapshotStorage:
         try:
             async with self._pinned() as tx:
                 rows = await self._client.execute(READ_SQL, (owned,), transaction_id=tx)
-        except ClientError as exc:
-            raise StorageError(
-                f"reading {owned!r} failed: {exc.response['Error']['Code']}"
-            ) from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"reading {owned!r} failed: {_failure(exc)}") from exc
         return rows[0]["snapshot"].encode("utf-8") if rows else None
 
     @asynccontextmanager
@@ -165,14 +172,25 @@ class AuroraSnapshotStorage:
         per snapshot would bury the authorization evidence. The master role
         ignores the pin; meridian_workflow is bound by it.
         """
-        tx = self._client.begin_transaction()
+        tx = await run_blocking_shielded(self._client.begin_transaction)
+        committed = False
+
+        def commit() -> None:
+            nonlocal committed
+            self._client.commit_transaction(tx)
+            committed = True
+
         try:
             await self._client.execute(PIN_TRAVELER_SQL, (self._traveler_id,), transaction_id=tx)
             yield tx
+            await run_blocking_shielded(commit)
         except BaseException:
-            self._client.rollback_transaction(tx)
+            if not committed:
+                try:
+                    await run_blocking_shielded(self._client.rollback_transaction, tx)
+                except Exception:
+                    logger.exception("Failed to roll back snapshot transaction %s", tx)
             raise
-        self._client.commit_transaction(tx)
 
     async def delete(self, key: str) -> None:
         """Refuse: the table is the run's history."""
@@ -188,8 +206,6 @@ class AuroraSnapshotStorage:
             async with self._pinned() as tx:
                 rows = await self._client.execute(
                     LIST_SQL, (self._session_id, _like_prefix(query)), transaction_id=tx)
-        except ClientError as exc:
-            raise StorageError(
-                f"listing {query!r} failed: {exc.response['Error']['Code']}"
-            ) from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"listing {query!r} failed: {_failure(exc)}") from exc
         return [row["storage_key"] for row in rows]

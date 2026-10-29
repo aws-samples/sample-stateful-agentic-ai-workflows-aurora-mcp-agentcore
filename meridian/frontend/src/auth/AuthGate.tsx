@@ -114,6 +114,7 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
  */
 function ApiIdentityGate({ children }: { children: ReactNode }) {
   const [traveler, setTraveler] = useState<SignedInTraveler | null>(null);
+  const [answered, setAnswered] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,7 +123,8 @@ function ApiIdentityGate({ children }: { children: ReactNode }) {
         travelerId: identity.traveler_id, displayName: null, avatarUrl: null,
       }))
       // An unreachable API is an expected state here: every panel reports it on its own.
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (!controller.signal.aborted) setAnswered(true); });
     return () => controller.abort();
   }, []);
 
@@ -130,6 +132,7 @@ function ApiIdentityGate({ children }: { children: ReactNode }) {
     <SessionContext.Provider
       value={{
         traveler, verifiedTravelerId: traveler?.travelerId ?? null,
+        identityPending: !answered,
         source: traveler ? 'api' : 'none', signOut: null,
       }}
     >

@@ -276,3 +276,12 @@ def test_mask_secrets_keeps_a_reason_or_an_ordinary_word_readable(text):
 def test_mask_secrets_masks_an_opaque_bearer_value_after_a_colon_or_authorization():
     assert mask_secrets("Authorization: Bearer abcdefghijkl") == "Authorization: Bearer <token>"
     assert mask_secrets("secret: abcdefghijklmnop1234") == "secret: <masked>"
+
+
+@pytest.mark.parametrize("text", [
+    "PGPASSWORD=hunter2", "DB_PASSWORD=hunter2", "apikey=hunter2", "accesskey=abc123",
+    "secretkey=abc", "privatekey=abc", "authkey=abc", "signingkey=abc",
+])
+def test_mask_secrets_masks_a_credential_name_that_follows_letters(text):
+    name, _ = text.split("=")
+    assert mask_secrets(text) == f"{name}=<masked>"

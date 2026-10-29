@@ -49,7 +49,7 @@ def _show(label: str, value: Any) -> None:
 
 async def run(traveler_id: str, conversation_id: str) -> None:
     client = MeridianMemoryMCPClient()
-    print("Launching meridian-memory MCP server (stdio)…")
+    print("Launching meridian-memory MCP server (stdio) ...")
     await client.connect()
 
     print("\nTools exposed by the server:")
@@ -85,14 +85,16 @@ async def run(traveler_id: str, conversation_id: str) -> None:
             "recall_traveler_profile", {"traveler_id": "trv_demo_decoy"}
         )
         _show("Authorization negative control", {"unexpected": "allowed"})
+        await client.disconnect()
+        raise SystemExit(1)
     except PermissionError as exc:
         _show(
-            "Authorization negative control — DENY trv_demo_decoy",
+            "Authorization negative control: DENY trv_demo_decoy",
             {"decision": "deny", "error": str(exc)},
         )
 
     await client.disconnect()
-    print("\nDone — memory MCP server exercised end-to-end.")
+    print("\nDone: memory MCP server exercised end-to-end.")
 
 
 def main() -> None:

@@ -254,9 +254,14 @@ A confirmed booking uses catalog capacity. To release the sample traveler's
 bookings, list them first:
 
 ```bash
-python scripts/release_demo_bookings.py --dry-run
-python scripts/release_demo_bookings.py --booking-id <booking-id>
+python scripts/release_demo_bookings.py
+python scripts/release_demo_bookings.py --booking-id <booking-id> --apply \
+  --i-understand-this-changes-aws
 ```
+
+Without `--apply` the script only lists what it would release (`--dry-run` is a deprecated
+alias of that default). `--apply` without
+`--i-understand-this-changes-aws` exits 3 and deletes nothing.
 
 ## Governed tools and the workflow audit row
 

@@ -61,7 +61,7 @@ REQUEST_FINGERPRINT_SQL = (
 )
 PREFERENCES_SQL = (
     "SELECT preference_key, preference_value FROM traveler_preferences "
-    "WHERE traveler_id = :traveler ORDER BY confidence DESC, last_seen_at DESC LIMIT 50"
+    "WHERE traveler_id = :traveler ORDER BY confidence DESC NULLS LAST, last_seen_at DESC LIMIT 50"
 )
 LOYALTY_SQL = "SELECT loyalty_programs FROM traveler_profiles WHERE traveler_id = :traveler"
 BOOKED_PARTY_SQL = (
@@ -73,7 +73,7 @@ MAX_REQUEST_CHAIN = 50
 # The ceiling derivation in backend/agents/budget.py, repeated here because this
 # function deploys alone. tests/test_holds_lambda.py keeps the two in step.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
-AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)
+AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)(k\b)?", re.I)
 DEFAULT_BUDGET_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_BUDGET_CENTS = 400000
 BINDING_SQL = (
@@ -212,6 +212,16 @@ def _transaction(operation: str, tx: str) -> None:
     method(resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, transactionId=tx)
 
 
+def _rollback_quietly(tx: str) -> None:
+    """Roll back, tolerating a transaction that already ended; the caller still answers."""
+    try:
+        _transaction("rollback", tx)
+    except Exception as error:  # noqa: BLE001 - a second rollback must never mask the answer
+        print(json.dumps({
+            "meridian_tool": "rollback", "ok": False, "error_type": type(error).__name__,
+        }), flush=True)
+
+
 def normalize_terms(package_id: str, duration: str, quantity: int, unit_price: Decimal) -> dict:
     """The same canonical form as backend/agents/phase_05_workflow/hold_intent.py."""
     price = Decimal(unit_price).quantize(Decimal("0.01"))
@@ -259,7 +269,12 @@ def _authorize(traveler_id: str, tx: str) -> dict:
         "decision": decision,
         "reason": "active identity binding" if allowed else "no active identity binding",
     }, tx)
-    return {"allowed": allowed, "decision": decision, "subject": subject_id, "principal": principal}
+    return {
+        "allowed": allowed,
+        "decision": decision,
+        "subject": subject_id,
+        "principal": ACCOUNT.sub("<acct>", principal),
+    }
 
 
 def _scope(traveler_id: str, tx: str) -> None:
@@ -285,12 +300,14 @@ def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
         {"j": journey_id, "t": traveler_id, "b": HOLD_BACKEND},
         tx,
     )
-    query(
+    claimed = query(
         "INSERT INTO journey_threads (thread_id, journey_id) VALUES (:thread, :j) "
-        "ON CONFLICT (thread_id) DO NOTHING",
+        "ON CONFLICT (thread_id) DO NOTHING RETURNING thread_id",
         {"thread": journey_ref, "j": journey_id},
         tx,
     )
+    if not claimed:
+        raise RuntimeError("journey_not_owned")
     query(
         "UPDATE journeys SET active_thread_id = :thread, updated_at = CURRENT_TIMESTAMP "
         "WHERE journey_id = :j",
@@ -363,7 +380,9 @@ def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
         The largest dollar figure in the first budget fact present, times the party. Without
         a budget fact, ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS`` for the whole trip.
     """
-    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
+    by_key: dict[str, str] = {}
+    for fact in facts:
+        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
     for key in BUDGET_KEYS:
         amounts = _dollars(by_key.get(key, ""))
         if amounts:
@@ -504,7 +523,7 @@ def create_courtesy_hold(args: dict) -> dict:
         journey_id, row, receipt = _held_row(args, hold, expires_at, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
-        _transaction("rollback", tx)
+        _rollback_quietly(tx)
         return _failure("create_courtesy_hold", error, "hold_failed")
     lapsed = receipt["status"] == "held" and bool(receipt.get("lapsed"))
     result = {
@@ -582,7 +601,7 @@ def confirm_booking(args: dict) -> dict:
         receipt = _booking_receipt(booking_id, traveler_id, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
-        _transaction("rollback", tx)
+        _rollback_quietly(tx)
         return _failure("confirm_booking", error, "booking_failed")
     result = {
         "bookingId": booking_id,
@@ -654,7 +673,7 @@ def release_hold(args: dict) -> dict:
         released = _release_row(args, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL and the checks raise named errors
-        _transaction("rollback", tx)
+        _rollback_quietly(tx)
         return _failure("release_hold", error, "release_failed")
     result = {
         "bookingId": released["booking_id"],
@@ -734,7 +753,8 @@ ARN = re.compile(r"arn:[a-z0-9-]+:[^\s\"',)]*")
 ACCOUNT = re.compile(r"(?<![0-9A-Za-z])\d{12}(?![0-9A-Za-z])")
 _TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
 CREDENTIAL = re.compile(
-    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""((?<![A-Za-z])key|(?:access|secret|private|api|auth|signing)key|"""
+    r"""password|secret|token|authorization)("""
     r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
     rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
     r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",
@@ -815,7 +835,7 @@ def loyalty_balance(args: dict) -> dict:
         rows = query(LOYALTY_SQL, {"traveler": traveler_id}, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the caller gets a fixed code, the log the type
-        _transaction("rollback", tx)
+        _rollback_quietly(tx)
         return _failure("loyalty_balance", error, LOYALTY_FAILED)
     result = loyalty_from_programs(
         traveler_id, program, (rows[0] if rows else {}).get("loyalty_programs"))

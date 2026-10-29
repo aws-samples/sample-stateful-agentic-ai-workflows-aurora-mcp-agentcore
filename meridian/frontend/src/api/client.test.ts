@@ -11,6 +11,7 @@ import {
   stopRuntimeSession,
   updateMemoryFact,
 } from './client';
+import { setAccessTokenProvider, setBearerOrigin, withBearer } from '../auth/accessToken';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -136,9 +137,26 @@ describe('healthOriginFor', () => {
     ).toBe('https://api.meridian.example');
   });
 
-  it('keeps the resolved backend origin for a relative API base', () => {
+  it('resolves a relative API base against the page origin', () => {
     expect(
-      healthOriginFor('/api', 'https://showcase.meridian.example'),
-    ).toBe('https://showcase.meridian.example');
+      healthOriginFor('/api', 'http://localhost:8013', 'http://localhost:5173'),
+    ).toBe('http://localhost:5173');
+  });
+
+  it('keeps the backend origin for a relative API base when there is no page', () => {
+    expect(healthOriginFor('/api', 'https://showcase.meridian.example'))
+      .toBe('https://showcase.meridian.example');
+  });
+
+  it('sends the token to a relative API base on the page origin', () => {
+    const origin = healthOriginFor('/api', 'http://localhost:8013', window.location.origin);
+    setAccessTokenProvider(() => 'access.jwt');
+    setBearerOrigin(origin);
+    try {
+      expect(new Headers(withBearer('/api/me')).get('Authorization')).toBe('Bearer access.jwt');
+    } finally {
+      setAccessTokenProvider(null);
+      setBearerOrigin(null);
+    }
   });
 });

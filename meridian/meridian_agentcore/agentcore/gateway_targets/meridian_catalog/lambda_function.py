@@ -536,7 +536,7 @@ def price_range(args: dict) -> dict:
     destination = str(args.get("destination", "")).strip()
     if not destination:
         raise ToolInputError("destination is required")
-    pattern = f"%{destination}%"
+    pattern = f"%{_escape_like(destination)}%"
     rows = execute(
         "SELECT MIN(price_per_person)::float AS min_price, AVG(price_per_person)::float AS "
         "avg_price, MAX(price_per_person)::float AS max_price, COUNT(*) AS sample_size "
@@ -569,7 +569,7 @@ def region_inventory(args: dict) -> dict:
     trip_type = args.get("trip_type") or None
     sql = ("SELECT package_id, name, trip_type, package_places_left(package_id) AS availability "
            "FROM trip_packages WHERE region ILIKE %s")
-    params: list[Any] = [f"%{region}%"]
+    params: list[Any] = [f"%{_escape_like(region)}%"]
     if trip_type:
         sql += " AND trip_type = %s"
         params.append(str(trip_type))
@@ -618,7 +618,8 @@ ARN = re.compile(r"arn:[a-z0-9-]+:[^\s\"',)]*")
 ACCOUNT = re.compile(r"(?<![0-9A-Za-z])\d{12}(?![0-9A-Za-z])")
 _TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
 CREDENTIAL = re.compile(
-    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""((?<![A-Za-z])key|(?:access|secret|private|api|auth|signing)key|"""
+    r"""password|secret|token|authorization)("""
     r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
     rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
     r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",

@@ -20,15 +20,18 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Optional, List, Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from backend.authorization import (
     AuthorizationContext,
@@ -36,6 +39,91 @@ from backend.authorization import (
     TravelerAuthorizationError,
 )
 from backend.timing import clock, elapsed_ms
+
+
+DATA_API_CONNECT_TIMEOUT_SECONDS = 5
+DATA_API_READ_TIMEOUT_SECONDS = 60
+DATA_API_RETRY_BACKOFF_SECONDS = (0.2, 0.4)
+_RETRYABLE_ERROR_CODES = frozenset({
+    "ThrottlingException",
+    "ServiceUnavailable",
+    "ServiceUnavailableError",
+    "InternalServerError",
+    "InternalServerErrorException",
+})
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Whether the Data API refused the call before running it, or could not be reached."""
+    if isinstance(exc, EndpointConnectionError):
+        return True
+    return (
+        isinstance(exc, ClientError)
+        and exc.response.get("Error", {}).get("Code") in _RETRYABLE_ERROR_CODES
+    )
+
+
+def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
+    """Call a Data API method, retrying throttling, 5xx and connection errors.
+
+    Only for calls that are safe to repeat: a statement outside a transaction, or a
+    transaction begin or rollback. Never use it for a statement inside a transaction
+    or for a commit. Runs in a worker thread, so it sleeps with ``time.sleep``.
+
+    Args:
+        func: The boto client method.
+        **kwargs: Its keyword arguments.
+
+    Returns:
+        What ``func`` returned.
+    """
+    attempts = len(DATA_API_RETRY_BACKOFF_SECONDS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return func(**kwargs)
+        except (ClientError, EndpointConnectionError) as exc:
+            if attempt == attempts or not _is_retryable(exc):
+                raise
+            delay = DATA_API_RETRY_BACKOFF_SECONDS[attempt - 1]
+            logger.warning(
+                "Data API %s failed (%s); retry %d of %d in %.1fs",
+                getattr(func, "__name__", "call"), type(exc).__name__,
+                attempt, attempts - 1, delay,
+            )
+            time.sleep(delay)
+
+
+async def run_blocking_shielded(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    """Run a blocking SDK call in a thread so the event loop keeps ticking.
+
+    Cancelling ``to_thread`` does not stop its underlying request, so a cancelled
+    caller keeps waiting for the call to finish before the cancellation continues.
+    That keeps a transaction from being left half done behind a rollback or release.
+
+    Args:
+        func: The blocking callable.
+        *args: Positional arguments for ``func``.
+        **kwargs: Keyword arguments for ``func``.
+
+    Returns:
+        What ``func`` returned.
+    """
+    operation = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
+    try:
+        return await asyncio.shield(operation)
+    except asyncio.CancelledError:
+        # Shutdown can cancel a task more than once. Keep shielding the
+        # SDK request until it finishes even if another cancellation arrives.
+        while not operation.done():
+            try:
+                await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not operation.cancelled():
+            operation.exception()  # Retrieve any SDK error; cancellation wins.
+        raise
 
 
 @dataclass
@@ -135,7 +223,17 @@ class RDSDataClient:
         self.database = database or os.getenv("AURORA_DATABASE", "meridian")
         self.region = region or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         
-        self.client = boto3.client('rds-data', region_name=self.region)
+        self.client = boto3.client(
+            "rds-data",
+            region_name=self.region,
+            config=Config(
+                # A re-sent statement runs twice inside one transaction: a claim insert
+                # collides with its own first run and a keyed insert fails as a duplicate.
+                retries={"total_max_attempts": 1, "mode": "standard"},
+                connect_timeout=DATA_API_CONNECT_TIMEOUT_SECONDS,
+                read_timeout=DATA_API_READ_TIMEOUT_SECONDS,
+            ),
+        )
     
     def _format_parameters(self, params: Optional[tuple]) -> List[Dict]:
         """Convert tuple parameters to RDS Data API format.
@@ -260,28 +358,13 @@ class RDSDataClient:
         )
         if transaction_id:
             kwargs["transactionId"] = transaction_id
-        # Let lease heartbeats and other HTTP requests run during Data API I/O.
-        # Cancelling to_thread does not stop its underlying request: drain it
-        # before the caller rolls back the transaction or releases its lease.
-        operation = asyncio.create_task(
-            asyncio.to_thread(self.client.execute_statement, **kwargs)
-        )
-        try:
-            response = await asyncio.shield(operation)
-        except asyncio.CancelledError:
-            # Shutdown can cancel a task more than once. Keep shielding the
-            # SDK request until it finishes even if another cancellation arrives.
-            while not operation.done():
-                try:
-                    await asyncio.shield(operation)
-                except asyncio.CancelledError:
-                    continue
-                except Exception:
-                    break
-            if not operation.cancelled():
-                operation.exception()  # Retrieve any SDK error; cancellation wins.
-            raise
-        
+        if transaction_id:
+            response = await run_blocking_shielded(self.client.execute_statement, **kwargs)
+        else:
+            response = await run_blocking_shielded(
+                call_with_retry, self.client.execute_statement, **kwargs
+            )
+
         # Extract column names from metadata
         column_metadata = response.get("columnMetadata", [])
         column_names = [col.get("name", f"col{i}") for i, col in enumerate(column_metadata)]
@@ -300,7 +383,8 @@ class RDSDataClient:
 
     def begin_transaction(self) -> str:
         """Open an RDS Data API transaction and return its id."""
-        response = self.client.begin_transaction(
+        response = call_with_retry(
+            self.client.begin_transaction,
             resourceArn=self.cluster_arn,
             secretArn=self.secret_arn,
             database=self.database,
@@ -316,7 +400,8 @@ class RDSDataClient:
 
     def rollback_transaction(self, transaction_id: str) -> None:
         try:
-            self.client.rollback_transaction(
+            call_with_retry(
+                self.client.rollback_transaction,
                 resourceArn=self.cluster_arn,
                 secretArn=self.secret_arn,
                 transactionId=transaction_id,
@@ -470,7 +555,7 @@ class RDSDataClient:
                 "ENVIRONMENT=development."
             )
         timings = timings or ScopeTimings()
-        tx = self.begin_transaction()
+        tx = await run_blocking_shielded(self.begin_transaction)
         transaction_finished = False
         try:
             if traveler_id is not None:
@@ -491,7 +576,7 @@ class RDSDataClient:
                     # Preserve the DENY evidence. Rolling the transaction back
                     # would erase the audit row together with the rejected
                     # request, so commit this audit-only transaction first.
-                    self.commit_transaction(tx)
+                    await run_blocking_shielded(self.commit_transaction, tx)
                     transaction_finished = True
                     raise TravelerAuthorizationError(decision)
 
@@ -500,14 +585,14 @@ class RDSDataClient:
             await self._assume_app_role(tx, app_role, allow_unscoped)
             timings.rls_ms = elapsed_ms(started)
             yield tx
-            self.commit_transaction(tx)
+            await run_blocking_shielded(self.commit_transaction, tx)
             transaction_finished = True
         except BaseException:
             # Cancellation must release RLS/lease row locks too. CancelledError
             # is a BaseException; otherwise Data API waits for its idle timeout.
             if not transaction_finished:
                 try:
-                    self.rollback_transaction(tx)
+                    await run_blocking_shielded(self.rollback_transaction, tx)
                 except Exception:
                     logger.exception("Failed to roll back interrupted traveler transaction")
             raise
@@ -548,17 +633,20 @@ class RDSDataClient:
         The least-privilege app role IS subject to RLS. ``SET LOCAL ROLE`` is
         transaction-scoped and reverts on commit or rollback.
 
-        IMPORTANT — why we SET LOCAL ROLE: the RDS Data API connects as the
-        DB user its secret maps to. Ours is the cluster master user
-        (meridian_admin), and on this Aurora cluster the master role is NOT
-        subject to RLS — row_security_active() returns false for it — even
-        though the tables are ENABLE + FORCE'd and the role is neither
-        superuser nor BYPASSRLS. (We don't assert the exact Aurora internal;
-        the observable fact is what matters: master sees 22 rows, a
-        non-privileged role sees 17, same GUC and policy.) We therefore step
-        down into the least-privilege ``meridian_app`` role for the lifetime of
-        this transaction — AFTER setting the GUCs — so the policies engage for
-        the queries that run inside the block. See examples/rls_app_role.sql.
+        Why we SET LOCAL ROLE: the RDS Data API connects as the DB user its
+        secret maps to. In the hosted release that is the least-privilege
+        service login (``meridian_backend`` here, ``meridian_gateway`` in the
+        holds Lambda), which holds no traveler tables itself; a local
+        deployment often connects as the cluster master user
+        (``meridian_admin``), and on this Aurora cluster the master role is NOT
+        subject to RLS: row_security_active() returns false for it even though
+        the tables are ENABLE + FORCE'd and the role is neither superuser nor
+        BYPASSRLS. (We don't assert the exact Aurora internal; the observable
+        fact is what matters: master sees 22 rows, a non-privileged role sees
+        17, same GUC and policy.) We therefore step down into ``meridian_app``
+        for the lifetime of this transaction, AFTER setting the GUCs, so the
+        policies engage for the queries that run inside the block. See
+        examples/rls_app_role.sql and docs/OPERATIONS.md, Service logins.
 
         The role switch is required by default. If ``meridian_app`` is not
         present (e.g. the migration hasn't been applied), scoped reads/writes

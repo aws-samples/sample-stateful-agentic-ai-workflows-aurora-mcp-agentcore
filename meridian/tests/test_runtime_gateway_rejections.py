@@ -1517,3 +1517,79 @@ def test_a_failed_memory_restore_fails_the_memory_span_and_the_turn_continues(
               if "could not be restored" in record.getMessage()]
     assert len(warned) == 1 and "111122223333" not in warned[0]
     assert CONVERSATION in warned[0]
+
+
+@pytest.fixture
+def busy_worker(runtime, monkeypatch):
+    """The Runtime with one off-loop worker, held busy until the test sets ``gate``."""
+    executor, gate = turn_work.OffLoopExecutor(1), threading.Event()
+    monkeypatch.setattr(runtime, "OFFLOOP", executor)
+    monkeypatch.setattr(runtime, "REPAIRS", turn_work.HistoryRepairs(executor))
+    monkeypatch.setattr(runtime, "SETTLE_SECONDS", 0.1)
+    monkeypatch.setattr(runtime, "CLOSE_SECONDS", 0.1)
+    executor.submit(gate.wait, 5)
+    try:
+        yield SimpleNamespace(runtime=runtime, executor=executor, gate=gate)
+    finally:
+        gate.set()
+        until(lambda: executor.busy == 0)
+
+
+def test_a_queued_history_repair_survives_the_wait_and_runs_once_a_worker_frees(busy_worker):
+    runtime = busy_worker.runtime
+    session, agent = GatedSession(), open_history()
+    session.gate.set()
+
+    asyncio.run(runtime.close_history(
+        history_turn(), agent, session, SimpleNamespace(done=lambda: True)))
+
+    assert runtime.REPAIRS.running("conv-9"), "the queued repair was dropped from the registry"
+    busy_worker.gate.set()
+    until(lambda: not runtime.REPAIRS.running("conv-9"))
+    assert [message["role"] for message in session.appended] == ["user", "assistant"]
+    assert asyncio.run(runtime.REPAIRS.finish("conv-9", 0.1)) is True
+
+
+def test_a_queued_history_repair_is_reported_to_the_next_turn_while_it_waits(busy_worker):
+    runtime = busy_worker.runtime
+    session, agent = GatedSession(), open_history()
+    session.gate.set()
+
+    asyncio.run(runtime.close_history(
+        history_turn(), agent, session, SimpleNamespace(done=lambda: True)))
+
+    assert asyncio.run(runtime.REPAIRS.finish("conv-9", 0.1)) is False
+
+
+def test_a_queued_gateway_close_still_runs_once_a_worker_frees(busy_worker):
+    closed = []
+    client = type("Client", (), {"__exit__": lambda self, *exc: closed.append(exc)})()
+
+    asyncio.run(busy_worker.runtime.close_gateway(client, (None, None, None)))
+
+    assert closed == []
+    busy_worker.gate.set()
+    until(lambda: closed)
+    assert closed == [(None, None, None)]
+
+
+async def test_a_cancelled_wait_for_a_job_that_later_fails_leaves_no_unretrieved_error():
+    import gc
+    from concurrent.futures import Future
+
+    reports = []
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(lambda _loop, context: reports.append(context))
+    job = Future()
+    wait = asyncio.create_task(turn_work.wait_for_job(job, 30))
+    await asyncio.sleep(0.05)
+    wait.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await wait
+    job.set_exception(RuntimeError("late failure"))
+    await asyncio.sleep(0.05)
+    del wait, job
+    gc.collect()
+    await asyncio.sleep(0.05)
+
+    assert reports == []

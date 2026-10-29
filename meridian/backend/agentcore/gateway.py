@@ -14,8 +14,7 @@ Configuration (preferred — @aws/agentcore CLI):
     cd meridian/meridian_agentcore
     agentcore validate --json
     agentcore deploy -y
-    agentcore fetch access --name meridian-aurora --type gateway --json
-    cd .. && python scripts/sync_agentcore_env.py --write --fetch-gateway-token
+    cd .. && python scripts/sync_agentcore_env.py --write
 
 Gateway URL is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.json``
 or env override:

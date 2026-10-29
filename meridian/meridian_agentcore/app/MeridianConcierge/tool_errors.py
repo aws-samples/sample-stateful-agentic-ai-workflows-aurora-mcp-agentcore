@@ -76,7 +76,8 @@ ACCOUNT_ID = re.compile(rf"{BOUNDARY_BEFORE}{UUID_PREFIX}\d{{12}}(?![0-9A-Za-z])
 
 _TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
 CREDENTIAL = re.compile(
-    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""((?<![A-Za-z])key|(?:access|secret|private|api|auth|signing)key|"""
+    r"""password|secret|token|authorization)("""
     r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
     rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
     r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",

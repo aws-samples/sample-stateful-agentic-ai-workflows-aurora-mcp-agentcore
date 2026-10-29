@@ -44,7 +44,7 @@ from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, turn_instructions, turn_prompt
 from turn_watchdog import KEEPALIVE_EVENT, TurnTimedOut, TurnWatchdog, settle_history
-from turn_work import HistoryRepairs, OffLoopExecutor
+from turn_work import HistoryRepairs, OffLoopExecutor, wait_for_job
 from turn_trace import SPANS, TraceHooks, TurnContext, activity, short
 
 app = BedrockAgentCoreApp()
@@ -495,7 +495,7 @@ async def close_history(turn: RunningTurn, agent, session, task) -> None:
     repair = REPAIRS.start(
         conversation, lambda keep_going: settle_history(agent, session, keep_going))
     try:
-        await asyncio.wait_for(asyncio.wrap_future(repair), SETTLE_SECONDS)
+        await wait_for_job(repair, SETTLE_SECONDS)
     except TimeoutError:
         logger.warning("the history repair of session %s is still running; the next turn "
                        "waits for it", conversation)
@@ -623,7 +623,7 @@ def note_sent(watchdog: TurnWatchdog, event: dict) -> None:
 async def close_gateway(gateway, exc_info: tuple) -> None:
     """Close the Gateway client off the event loop, waiting a bounded time for it."""
     try:
-        await asyncio.wait_for(OFFLOOP.run(gateway.__exit__, *exc_info), CLOSE_SECONDS)
+        await wait_for_job(OFFLOOP.submit(gateway.__exit__, *exc_info), CLOSE_SECONDS)
     except TimeoutError:
         logger.warning("the Gateway client did not close within %g seconds", CLOSE_SECONDS)
 

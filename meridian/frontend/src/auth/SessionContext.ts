@@ -9,6 +9,8 @@ export interface SessionValue {
    * `traveler` is only what the sign-in claims, so show this one as confirmed.
    */
   verifiedTravelerId?: string | null;
+  /** True while the API has not yet answered who is calling, so writes keyed by traveler wait. */
+  identityPending?: boolean;
   /** cognito: signed in on this page. api: no sign-in here, and the API named the caller. */
   source: 'cognito' | 'api' | 'none';
   /** Ends the session; null when there is no session of our own to end. */

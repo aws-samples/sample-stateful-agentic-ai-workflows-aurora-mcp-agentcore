@@ -33,7 +33,12 @@ class StoreFake:
         self.reads.append(("short_term", conversation_id, limit, transaction_id))
         return ["turn"]
 
-    async def recall_similar_interactions(self, traveler_id, query, *, limit, transaction_id):
+    def prepare_embedding_vector(self, _text, *, input_type):
+        return "[0.1]"
+
+    async def recall_similar_interactions(
+        self, traveler_id, query, *, limit, transaction_id, query_vector, embedding_prepared
+    ):
         self.reads.append(("similar", traveler_id, query, limit, transaction_id))
         return []
 

@@ -32,7 +32,11 @@ from backend.agents.phase_05_workflow.governed_hold import (
     release_arguments,
     release_governed_hold,
 )
-from backend.agents.phase_05_workflow.governed_tools import invoke_gateway_tool, recording
+from backend.agents.phase_05_workflow.governed_tools import (
+    GatewayToolError,
+    invoke_gateway_tool,
+    recording,
+)
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
 from backend.agents.phase_05_workflow.packages import package_to_dict
 from backend.agents.phase_05_workflow.routing import classify_intent, is_recovery_request
@@ -53,6 +57,7 @@ logger = logging.getLogger(__name__)
 RELEASE_LEASE_LOST = "hold left in place: another worker owns this run"
 RELEASE_NOT_SENT = "hold not released: the release call was not sent"
 RELEASE_NO_REQUEST = "hold not released: the saved state has no hold request id"
+RELEASE_NO_JOURNEY = "hold not released: the saved state has no journey id"
 RELEASE_UNCONFIRMED = "hold release unconfirmed: the release call failed"
 
 StepFn = Callable[..., Awaitable[Any]]
@@ -72,6 +77,8 @@ SELECT hr.booking_id, hr.fingerprint, b.status,
 """
 
 
+# A 401 or 429 arrives before any tool runs, so no hold exists. Other codes may follow a run.
+CLEAR_REJECTION_CODES = frozenset({"unauthorized", "throttled"})
 UNSENT_ERRORS = (CallerCredentialError, CallerClaimsError, AgentCoreNotConfiguredError)
 UNKNOWN_ANSWERS = (UNREADABLE_RESULT, NO_RELEASE_RECEIPT)
 
@@ -719,6 +726,8 @@ class WorkflowNodes:
             # token and the saved hold intent replays.
             raise
         except Exception as exc:  # noqa: BLE001 - a lost reply cannot prove no write
+            if isinstance(exc, GatewayToolError) and exc.code in CLEAR_REJECTION_CODES:
+                raise
             logger.warning("courtesy hold outcome unknown: %s", exc)
             # Failing the node leaves prepare_hold's durable intent pending.
             # Resume reuses that identity and reads/replays the original write.
@@ -885,6 +894,7 @@ class WorkflowNodes:
         journey_id = state.get("journey_id")
         if not journey_id:
             logger.warning("not releasing hold %s: the saved state names no journey", hold_id)
+            self.release_note = RELEASE_NO_JOURNEY
             return False
         request_id = (state.get("hold_intent") or {}).get("hold_request_id")
         if not request_id:

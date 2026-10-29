@@ -10,6 +10,7 @@ AWS docs:
     https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Extensions.html#AuroraPostgreSQL.Extensions.pgvector
 """
 
+import asyncio
 import json
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
@@ -20,6 +21,11 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 
 DEMO_TRAVELER_ID = "trv_meridian_demo"
+
+
+def _confidence(stored: Any) -> float:
+    """The stored confidence as a float, 0.5 only when none is stored."""
+    return 0.5 if stored is None else float(stored)
 
 
 class MemoryStore:
@@ -132,12 +138,16 @@ class MemoryStore:
 
         Backs the ``recall_session_context`` memory tool. Reads
         ``conversation_messages``; pass ``transaction_id`` so the read runs
-        inside the per-traveler RLS transaction.
+        inside the per-traveler RLS transaction. Newest first; rows that share a timestamp
+        order assistant, then user, then system, the reverse of how a turn is written.
         """
         return await self.db.execute(
             """
             SELECT role, content, created_at FROM conversation_messages
-            WHERE conversation_id = %s ORDER BY created_at DESC LIMIT %s
+            WHERE conversation_id = %s
+            ORDER BY created_at DESC,
+                     CASE role WHEN 'assistant' THEN 2 WHEN 'user' THEN 1 ELSE 0 END DESC
+            LIMIT %s
             """,
             (conversation_id, limit),
             transaction_id=transaction_id,
@@ -174,7 +184,7 @@ class MemoryStore:
             SELECT preference_type, preference_key, preference_value, confidence, source
             FROM traveler_preferences
             WHERE traveler_id = %s
-            ORDER BY confidence DESC, last_seen_at DESC
+            ORDER BY confidence DESC NULLS LAST, last_seen_at DESC
             LIMIT %s
             """,
             (traveler_id, limit),
@@ -185,7 +195,7 @@ class MemoryStore:
                 "key": row["preference_key"],
                 "value": row["preference_value"],
                 "source": row.get("source") or row["preference_type"],
-                "confidence": float(row.get("confidence") or 0.5),
+                "confidence": _confidence(row.get("confidence")),
             }
             for row in rows
         ]
@@ -285,7 +295,9 @@ class MemoryStore:
         """
         vec = query_vector
         if not embedding_prepared:
-            vec = self.prepare_embedding_vector(query, input_type="search_query")
+            vec = await asyncio.to_thread(
+                self.prepare_embedding_vector, query, input_type="search_query"
+            )
         if not vec:
             return []
         return await self.db.execute(
@@ -320,15 +332,15 @@ class MemoryStore:
         if with_embedding and content.strip():
             vec = embedding_vector
             if not embedding_prepared:
-                vec = self.prepare_embedding_vector(
-                    content,
-                    input_type="search_document",
+                vec = await asyncio.to_thread(
+                    self.prepare_embedding_vector, content, input_type="search_document"
                 )
             if vec:
                 await self.db.execute(
                     """
-                    INSERT INTO conversation_messages (message_id, conversation_id, role, content, embedding)
-                    VALUES (%s, %s, %s, %s, %s::vector)
+                    INSERT INTO conversation_messages (
+                        message_id, conversation_id, role, content, embedding, created_at
+                    ) VALUES (%s, %s, %s, %s, %s::vector, clock_timestamp())
                     """,
                     (message_id, conversation_id, role, content, vec),
                     transaction_id=transaction_id,
@@ -336,8 +348,9 @@ class MemoryStore:
             else:
                 await self.db.execute(
                     """
-                    INSERT INTO conversation_messages (message_id, conversation_id, role, content)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO conversation_messages (
+                        message_id, conversation_id, role, content, created_at
+                    ) VALUES (%s, %s, %s, %s, clock_timestamp())
                     """,
                     (message_id, conversation_id, role, content),
                     transaction_id=transaction_id,
@@ -345,8 +358,9 @@ class MemoryStore:
         else:
             await self.db.execute(
                 """
-                INSERT INTO conversation_messages (message_id, conversation_id, role, content)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO conversation_messages (
+                    message_id, conversation_id, role, content, created_at
+                ) VALUES (%s, %s, %s, %s, clock_timestamp())
                 """,
                 (message_id, conversation_id, role, content),
                 transaction_id=transaction_id,
@@ -382,9 +396,8 @@ class MemoryStore:
         combined = f"User: {query_text}\nAssistant: {response_summary}"
         vec = embedding_vector
         if not embedding_prepared:
-            vec = self.prepare_embedding_vector(
-                combined,
-                input_type="search_document",
+            vec = await asyncio.to_thread(
+                self.prepare_embedding_vector, combined, input_type="search_document"
             )
 
         payload = json.dumps(packages_shown or [])

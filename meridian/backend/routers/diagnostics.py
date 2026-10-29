@@ -19,7 +19,9 @@ actual rule.
 The app role itself is fail closed when the traveler GUC is unset. The broader
 baseline is available only through the definer function.
 
-This endpoint is READ-ONLY (COUNT + pg_policies SELECT only).
+The probe reads only COUNT and pg_policies, but its two authorization checks write
+``traveler_access_audit`` rows (an allow row for the caller, a deny row for the decoy control)
+on every call.
 
 AWS docs:
   - RDS Data API: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html
@@ -240,8 +242,11 @@ async def rls_probe(
 # courtesy hold, workflow checkpoints. This counts the rows behind those claims
 # so the close can point at them rather than restate them.
 #
-# READ-ONLY. Traveler-scoped tables are counted inside a scoped session, so the
-# receipt is itself subject to the governance it reports on.
+# The receipt records its own authorization checks: each scoped session writes one
+# traveler_access_audit row. Traveler-scoped tables are counted inside a scoped
+# session, so the receipt is itself subject to the governance it reports on. The
+# allow and deny counts include those rows and the ones /rls-probe writes on every
+# call, so running either raises them.
 # =============================================================================
 
 # The workflow snapshot table exists once migration 014 has run. Its absence is
@@ -381,7 +386,9 @@ def _decision_line(allow: Probed, deny: Probed) -> ReceiptLine:
     )
 
 
-def _checkpoint_detail(exists: Probed, total: Probed, thread_id: Optional[str]) -> str:
+def _checkpoint_detail(
+    exists: Probed, total: Probed, thread_id: Optional[str], owned: Probed = Probed(True)
+) -> str:
     """What to say about the snapshot rows, distinguishing absent, unknown and zero."""
     if exists.value is None:
         return f"snapshot table could not be checked (ref {exists.ref})"
@@ -389,11 +396,58 @@ def _checkpoint_detail(exists: Probed, total: Probed, thread_id: Optional[str]) 
         return "no workflow snapshot table in this database, so nothing was written"
     if thread_id is None:
         return "no workflow thread ran in this session"
+    if owned.value is None:
+        return f"ownership of thread {thread_id} could not be checked (ref {owned.ref})"
+    if not owned.value:
+        return f"thread {thread_id} is not one of this traveler's journeys, so it was not counted"
     if total.value is None:
         return f"workflow snapshots for thread {thread_id} could not be counted (ref {total.ref})"
     if total.value:
         return f"workflow position externalized into Aurora for thread {thread_id}"
     return f"thread {thread_id} wrote no workflow snapshot rows"
+
+
+async def _owns_thread(db, tx: str, thread_id: str) -> Probed:
+    """True when the thread is bound to one of the traveler's journeys, None if unanswerable.
+
+    Runs in the caller's open scoped session, so RLS hides another traveler's thread and
+    no further authorization audit row is written.
+    """
+    try:
+        rows = await db.execute(
+            "SELECT journey_id FROM journey_threads WHERE thread_id = %s",
+            (thread_id,),
+            transaction_id=tx,
+        )
+    except Exception:  # noqa: BLE001 - an unanswerable probe degrades its line, not the receipt
+        return Probed(None, log_exception("session_receipt_thread_owner"))
+    return Probed(bool(rows))
+
+
+async def _snapshot_line(
+    db, owned: Optional[Probed], thread_id: Optional[str]
+) -> "tuple[ReceiptLine, bool]":
+    """The workflow snapshot line and whether it proves durable rows for the caller's thread.
+
+    The count comes from a definer function that filters by thread only, so it runs only
+    after the thread is confirmed to belong to the caller. Counting the table whole would let
+    an earlier rehearsal satisfy a claim about the run on screen.
+    """
+    exists = await _tables_exist(db, CHECKPOINT_TABLES)
+    total = Probed(0)
+    if not (exists.value and thread_id and owned is not None):
+        owned = Probed(True)
+    elif owned.value:
+        total = await _admin_count_or_none(db, "workflow_snapshots", key=thread_id)
+    unknown = exists.value is None or owned.value is None or total.value is None
+    counted = bool(owned.value) and not unknown
+    line = ReceiptLine(
+        label="Workflow snapshot rows",
+        table=", ".join(CHECKPOINT_TABLES),
+        count=total.value if counted else None,
+        detail=_checkpoint_detail(exists, total, thread_id, owned),
+    )
+    return line, bool(exists.value and owned.value and total.value)
 
 
 @router.post("/session-receipt", response_model=SessionReceiptResponse)
@@ -450,6 +504,10 @@ async def session_receipt(
             transaction_id=tx,
             context="trip_interactions",
         )
+        owned = (
+            await _owns_thread(db, tx, request.conversation_id)
+            if request.conversation_id else None
+        )
 
     lines.append(_scoped_line(
         "Conversation turns persisted", "conversation_messages", turns,
@@ -480,39 +538,23 @@ async def session_receipt(
         "inventory committed by the workflow, still inside its TTL",
     ))
 
-    # Scoped to this session's workflow thread. Counting these tables whole -
-    # every thread, every traveler, all of time - let a rehearsal from an hour
-    # earlier satisfy a durability claim made about the run on screen, which is
-    # the one number on this receipt that has to be beyond argument.
-    # "No thread to count" and "no such table" are different answers, so the
-    # relation is probed first and the count follows only for a real thread.
-    thread_id = request.conversation_id
-    checkpoints_exist = await _tables_exist(db, CHECKPOINT_TABLES)
-    checkpoint_total = Probed(0)
-    if checkpoints_exist.value and thread_id:
-        checkpoint_total = await _admin_count_or_none(db, "workflow_snapshots", key=thread_id)
+    snapshot_line, durable = await _snapshot_line(
+        db, owned, request.conversation_id
+    )
+    lines.append(snapshot_line)
 
     from backend.agents.phase_05_workflow.service import workflow_store_status
 
     backend_status = workflow_store_status()
     backend_kind = str(backend_status.get("kind") or "not initialized")
     backend_durable = bool(backend_status.get("durable"))
-    unknown = checkpoints_exist.value is None or checkpoint_total.value is None
-    checkpoint_detail = _checkpoint_detail(checkpoints_exist, checkpoint_total, thread_id)
-
-    lines.append(ReceiptLine(
-        label="Workflow snapshot rows",
-        table=", ".join(CHECKPOINT_TABLES),
-        count=None if unknown else checkpoint_total.value,
-        detail=checkpoint_detail,
-    ))
 
     return SessionReceiptResponse(
         traveler_id=traveler_id,
         since=f"last {request.window_minutes} minutes",
         lines=lines,
         authorization_subject=authorization.subject_id if authorization else None,
-        durable_checkpoints=bool(checkpoints_exist.value and checkpoint_total.value),
+        durable_checkpoints=durable,
         checkpoint_backend=backend_kind,
         checkpoint_backend_durable=backend_durable,
     )

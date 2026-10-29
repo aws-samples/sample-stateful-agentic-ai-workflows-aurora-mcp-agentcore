@@ -292,8 +292,8 @@ Trip types in the catalog:
             package = await self.db.execute_one(query, (item['package_id'],))
 
             if package:
-                travelers = item.get('travelers_count', item.get('quantity', 1))
-                item_total = package['price_per_person'] * travelers
+                travelers = int(item.get('travelers_count', item.get('quantity', 1)))
+                item_total = Decimal(str(package['price_per_person'])) * travelers
                 subtotal += item_total
                 item_details.append({
                     "package_id": package['package_id'],

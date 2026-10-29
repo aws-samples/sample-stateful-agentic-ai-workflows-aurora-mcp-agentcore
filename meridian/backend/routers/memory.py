@@ -105,6 +105,8 @@ async def update_memory_fact(
     value = update.value.strip()
     if not preference_key:
         raise HTTPException(status_code=422, detail="Preference key cannot be empty")
+    if not value:
+        raise HTTPException(status_code=422, detail="Preference value cannot be empty")
     if len(preference_key) > 100:
         raise HTTPException(status_code=422, detail="Preference is too long")
 

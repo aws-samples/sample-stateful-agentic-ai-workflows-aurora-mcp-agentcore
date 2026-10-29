@@ -347,15 +347,21 @@ async function readBackWrite(
 const WORKFLOW_STILL_RUNNING_MESSAGE = 'The recovery is taking longer than this page waits. '
   + 'It keeps running, and this page reads its saved progress until it finishes.';
 
+const WRITE_IN_PROGRESS_MESSAGE = 'A hold or booking request is still waiting for Aurora. '
+  + 'Try again when it finishes.';
+
+const TRAVELER_CONTEXT_MESSAGE = 'Wait for traveler context to finish connecting before sending this request.';
+
 /** How long the page keeps reading a recovery it stopped waiting for. */
 export const WORKFLOW_READ_BACK_LIMIT_MS = 5 * 60_000;
 
 export function useMeridianShowcase(): MeridianShowcaseState {
-  const { traveler: signedIn, verifiedTravelerId } = useSession();
+  const { traveler: signedIn, verifiedTravelerId, identityPending } = useSession();
   // Requests say CURRENT_TRAVELER and the API resolves it from the verified credential. The id the
   // page knows is only a key for this browser's own saved state, so two people never share it.
   const travelerKey = useRef(CURRENT_TRAVELER);
-  travelerKey.current = verifiedTravelerId ?? signedIn?.travelerId ?? CURRENT_TRAVELER;
+  const resolvedTravelerId = verifiedTravelerId ?? signedIn?.travelerId ?? null;
+  travelerKey.current = resolvedTravelerId ?? CURRENT_TRAVELER;
   // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
   // with the simplest data path - direct SQL filters over Aurora - and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
@@ -437,6 +443,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
     writeController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
   }, []);
+
   useEffect(() => () => writeController.current?.abort(), []);
   // True once the latest bot reply's typewriter has finished revealing.
   // Reset to false at the moment a new chat request fires; flipped back
@@ -471,6 +478,15 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const travelersCount = chatFilters.travelers || conversationTravelers || travelerProfile?.party_size || previewProfile?.party_size || 1;
   const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const mounted = useRef(true);
+  const settleWrite = useCallback((controller: AbortController) => {
+    if (writeController.current !== controller) return;
+    writeController.current = null;
+    if (!mounted.current) return;
+    setIsLoading(false);
+    setPendingWrite(null);
+    setRequestStartedAt(null);
+    setError(current => (current === WRITE_IN_PROGRESS_MESSAGE ? null : current));
+  }, []);
 
   const savedTripIds = useMemo(
     () => new Set(workspace.savedTrips.map((product) => product.product_id)),
@@ -726,7 +742,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const submitPrompt = useCallback(
     async (overridePrompt?: string, phaseOverride?: Phase, options?: PromptOptions) => {
       if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
-        setError('Wait for traveler context to finish connecting before sending this request.');
+        setError(TRAVELER_CONTEXT_MESSAGE);
         return;
       }
       if ((phaseOverride ?? selectedPhase) === 5 && unresolvedWorkflow.current) {
@@ -734,7 +750,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         return;
       }
       const baseRaw = (overridePrompt ?? currentPrompt).trim();
-      if (!baseRaw || isLoading || chatController.current || writeController.current) return;
+      if (!baseRaw || chatController.current) return;
+      if (writeController.current) { setError(WRITE_IN_PROGRESS_MESSAGE); return; }
+      if (isLoading) return;
       const generation = ++requestGeneration.current;
       const controller = new AbortController();
       chatController.current = controller;
@@ -938,8 +956,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
     setAwaitingWorkflow(false);
-    setIsLoading(false);
-    setPendingWrite(null);
+    if (!writeController.current) {
+      setIsLoading(false);
+      setPendingWrite(null);
+    }
     setChatProgress('');
     setRequestStartedAt(null);
     setSelectedPhaseState(phase);
@@ -1051,11 +1071,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     };
     void restore();
     return () => { cancelled = true; controller.abort(); };
-  }, [rememberOrder]);
+  }, [rememberOrder, resolvedTravelerId]);
 
   const holdTrip = useCallback(
     async (product: Product) => {
-      if (isLoading || holdPending.current || writeController.current || chatController.current) return;
+      if (isLoading || holdPending.current || chatController.current) return;
+      if (writeController.current) { setError(WRITE_IN_PROGRESS_MESSAGE); return; }
+      if (identityPending) { setError(TRAVELER_CONTEXT_MESSAGE); return; }
       const existing = tripHolds.find(hold => hold.productId === product.product_id);
       if (existing?.order.status === 'confirmed'
         || (existing?.order.status === 'held' && parseDatabaseTime(existing.order.hold_expires_at) > Date.now())) {
@@ -1140,15 +1162,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         else setError(writeFailureMessage(err, 'hold was placed'));
       } finally {
         holdPending.current = false;
-        if (writeController.current === controller) writeController.current = null;
-        if (mounted.current && generation === requestGeneration.current) {
-          setIsLoading(false);
-          setPendingWrite(null);
-          setRequestStartedAt(null);
-        }
+        settleWrite(controller);
       }
     },
-    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, rememberOrder],
+    [isLoading, identityPending, settleWrite, selectedPhase, travelersCount, tripHolds, openTripDetails, rememberOrder],
   );
 
   const requestBookingConfirmation = useCallback((product: Product) => {
@@ -1164,7 +1181,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const confirmTrip = useCallback(
     async (product: Product) => {
       const hold = tripHolds.find(item => item.productId === product.product_id);
-      if (!hold || isLoading || bookingPending.current || writeController.current) return;
+      if (!hold || isLoading || bookingPending.current) return;
+      if (writeController.current) { setError(WRITE_IN_PROGRESS_MESSAGE); return; }
+      if (identityPending) { setError(TRAVELER_CONTEXT_MESSAGE); return; }
       bookingPending.current = true;
       const controller = new AbortController();
       writeController.current = controller;
@@ -1230,15 +1249,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         else setError(writeFailureMessage(err, 'booking was confirmed'));
       } finally {
         bookingPending.current = false;
-        if (writeController.current === controller) writeController.current = null;
-        if (mounted.current && generation === requestGeneration.current) {
-          setIsLoading(false);
-          setPendingWrite(null);
-          setRequestStartedAt(null);
-        }
+        settleWrite(controller);
       }
     },
-    [conversationId, isLoading, selectedPhase, tripHolds, rememberOrder, firstName],
+    [conversationId, identityPending, settleWrite, isLoading, selectedPhase, tripHolds, rememberOrder, firstName],
   );
 
   const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
@@ -1370,8 +1384,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
     setAwaitingWorkflow(false);
-    setIsLoading(false);
-    setPendingWrite(null);
+    if (!writeController.current) {
+      setIsLoading(false);
+      setPendingWrite(null);
+    }
     setChatProgress('');
     setRequestStartedAt(null);
     clearReplayTimers();

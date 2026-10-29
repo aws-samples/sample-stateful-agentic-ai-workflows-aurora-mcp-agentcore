@@ -527,9 +527,9 @@ async def _currency_call(
     Timed around every currency_convert call it makes.
     """
     target = (
-        "EUR" if "eur" in q
-        else "GBP" if "gbp" in q or "pound" in q
-        else "JPY" if "jpy" in q or "yen" in q
+        "EUR" if re.search(r"\beur(os?)?\b", q)
+        else "GBP" if re.search(r"\b(gbp|pounds?)\b", q)
+        else "JPY" if re.search(r"\b(jpy|yen)\b", q)
         else "EUR"
     )
     started = clock()
@@ -586,9 +586,9 @@ def _loyalty_program(q: str) -> str:
 
 
 def _named_in(q: str, names: tuple, default: str) -> str:
-    """The first of ``names`` the query mentions, or ``default``."""
+    """The first of ``names`` the query mentions at the start of a word, or ``default``."""
     for name in names:
-        if name.lower() in q:
+        if re.search(rf"\b{re.escape(name.lower())}", q):
             return name
     return default
 
@@ -1553,6 +1553,9 @@ def _stream_error_event(error: HTTPException) -> dict:
     }
 
 
+_WORKLOAD_REFUSED = "This traveler is not authorized for the current workload."
+
+
 async def _terminal_event(
     run: Callable[[Callable[[dict], None]], Awaitable[dict]], publish: Callable[[dict], None],
 ) -> dict:
@@ -1564,6 +1567,8 @@ async def _terminal_event(
     except CallerCredentialError as exc:
         logger.info("Streamed request refused: %s", exc.__class__.__name__)
         return _stream_error_event(credential_error(exc))
+    except TravelerAuthorizationError:
+        return _stream_error_event(HTTPException(403, _WORKLOAD_REFUSED))
     except Exception:
         logger.exception("Streamed request failed")
         return {

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backend.agents.budget import (
     budget_ceiling_from_facts,
     budget_ceiling_per_traveler_cents,
@@ -81,3 +83,15 @@ def test_no_saved_budget_leaves_the_context_untouched():
 
     ranked = [{"key": "home_airport", "value": "JFK"}]
     assert _with_budget_fact(ranked, [{"key": "pace", "value": "slow"}]) == ranked
+
+
+@pytest.mark.parametrize("text, largest", [
+    ("under $1500, 3 kids", 1500.0),
+    ("budget 200 keep it low", 200.0),
+    ("Prefers $2k-3.5k per person", 3500.0),
+    ("$2K", 2000.0),
+])
+def test_a_k_suffix_belongs_to_the_number_not_the_next_word(text, largest):
+    from backend.agents.budget import _dollars
+
+    assert max(_dollars(text)) == largest

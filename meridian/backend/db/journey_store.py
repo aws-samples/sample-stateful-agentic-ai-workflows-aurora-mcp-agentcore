@@ -79,6 +79,7 @@ RELEASE_SQL = """
 UPDATE journey_executions
    SET status = %s, ended_at = CURRENT_TIMESTAMP, lease_expires_at = NULL
  WHERE execution_id = %s AND status = 'running'
+RETURNING execution_id
 """
 
 
@@ -272,12 +273,16 @@ async def renew_lease(db: Any, execution_id: str, lease_seconds: int = 30) -> bo
     return bool(rows)
 
 
-async def release_execution(db: Any, execution_id: str, status: str) -> None:
+async def release_execution(db: Any, execution_id: str, status: str) -> bool:
     """Mark an execution finished with a terminal status.
 
     Args:
         db: Data API client.
         execution_id: The execution to close.
         status: The terminal status, e.g. ``succeeded`` or ``failed``.
+
+    Returns:
+        False when the execution was no longer running, so nothing changed.
     """
-    await db.execute(RELEASE_SQL, (status, execution_id))
+    rows = await db.execute(RELEASE_SQL, (status, execution_id))
+    return bool(rows)

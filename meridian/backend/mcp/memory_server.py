@@ -43,6 +43,7 @@ runs. RLS then filters every query to the workload's granted traveler.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -135,13 +136,21 @@ async def semantic_recall_interactions(
     Uses cohere.embed-v4:0 (1024 dims) → pgvector cosine via Aurora.
     """
     store = _store()
+    query_vector = await asyncio.to_thread(
+        store.prepare_embedding_vector, query, input_type="search_query"
+    )
     async with store.db.scoped_session(
         traveler_id=traveler_id,
         agent_type=DEFAULT_AGENT_TYPE,
         authorization=_authorization(),
     ) as tx:
         rows = await store.recall_similar_interactions(
-            traveler_id, query, limit=limit, transaction_id=tx
+            traveler_id,
+            query,
+            limit=limit,
+            transaction_id=tx,
+            query_vector=query_vector,
+            embedding_prepared=True,
         )
     return [
         {
@@ -164,6 +173,9 @@ async def persist_turn(
     if role not in ("user", "assistant", "system"):
         raise ValueError("role must be one of: user, assistant, system")
     store = _store()
+    vector = await asyncio.to_thread(
+        store.prepare_embedding_vector, content, input_type="search_document"
+    )
     async with store.db.scoped_session(
         traveler_id=traveler_id,
         agent_type=DEFAULT_AGENT_TYPE,
@@ -181,6 +193,8 @@ async def persist_turn(
             content=content,
             with_embedding=True,
             transaction_id=tx,
+            embedding_vector=vector,
+            embedding_prepared=True,
         )
     return {"message_id": message_id, "conversation_id": conversation_id}
 

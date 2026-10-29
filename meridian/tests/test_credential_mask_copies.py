@@ -37,6 +37,13 @@ MASKED = [
     ('body \\"token\\": \\"abc\\" end', 'body \\"token\\": <masked> end'),
     ("password=hunter2 key=y", "password=<masked> key=<masked>"),
     ("api_key: abcdefghijklmnop1234", "api_key: <masked>"),
+    ("accesskey=abc123", "accesskey=<masked>"),
+    ("secretkey=abc", "secretkey=<masked>"),
+    ("privatekey=abc", "privatekey=<masked>"),
+    ("apikey=abc", "apikey=<masked>"),
+    ("authkey=abc", "authkey=<masked>"),
+    ("SigningKey=abc", "SigningKey=<masked>"),
+    ('{"secretkey": "abc"}', '{"secretkey": <masked>}'),
 ]
 READABLE = [
     "Rejected a Cognito token: expired",

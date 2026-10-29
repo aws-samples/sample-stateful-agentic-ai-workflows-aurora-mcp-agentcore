@@ -9,6 +9,7 @@ from backend.agents.phase_05_workflow.governed_hold import RELEASE_TOOL
 from backend.agents.phase_05_workflow.governed_tools import GatewayToolError, tool_log_scope
 from backend.agents.phase_05_workflow.nodes import (
     RELEASE_LEASE_LOST,
+    RELEASE_NO_JOURNEY,
     RELEASE_NO_REQUEST,
     RELEASE_NOT_SENT,
     RELEASE_UNCONFIRMED,
@@ -106,6 +107,16 @@ async def test_a_snapshot_without_the_request_id_skips_the_call_and_never_sends_
     assert gateway.releases == [] and gateway.receipts["bk_1"]["status"] == "held"
     assert nodes.release_note == RELEASE_NO_REQUEST
     assert nodes.release_note not in (RELEASE_NOT_SENT, RELEASE_UNCONFIRMED, RELEASE_LEASE_LOST)
+
+
+async def test_a_snapshot_without_the_journey_id_skips_the_call_and_says_so():
+    gateway = GatewayFake()
+    gateway.receipts["bk_1"] = {"bookingId": "bk_1", "status": "held"}
+    state = {k: v for k, v in STATE.items() if k != "journey_id"}
+    nodes = _nodes(gateway)
+    assert await nodes.release_hold(state, expected_hold_id="bk_1") is False
+    assert gateway.releases == [] and gateway.receipts["bk_1"]["status"] == "held"
+    assert nodes.release_note == RELEASE_NO_JOURNEY
 
 
 @pytest.mark.parametrize(("state", "expected"), [

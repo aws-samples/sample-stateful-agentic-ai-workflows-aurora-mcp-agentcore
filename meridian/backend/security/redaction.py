@@ -40,7 +40,9 @@ _UUID_PREFIX = r"(?<![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}
 ACCOUNT_ID_PATTERN = re.compile(rf"{_BOUNDARY_BEFORE}{_UUID_PREFIX}\d{{12}}(?![0-9A-Za-z])")
 PLACEHOLDER = "<acct>"
 # Credential values, for password, secret, token, key (so ``access_token`` and ``api_key`` too)
-# and authorization. The name must not follow a letter (``monkey`` is not ``key``). Three forms:
+# and authorization. A bare ``key`` must not follow a letter (``monkey`` is not ``key``);
+# ``accesskey``, ``secretkey``, ``privatekey``, ``apikey``, ``authkey`` and
+# ``signingkey`` are names of their own. Three forms:
 # the JSON field (``"token": "v"``, a quote right after the name), masked whatever the value
 # because a quoted field is never a sentence; the assignment ``name=value``, masked whatever the
 # value; and ``name: value``, masked only when the value looks like a secret (a JWT, or 16 or more
@@ -49,7 +51,8 @@ PLACEHOLDER = "<acct>"
 # twice changes nothing. A quoted value is taken whole, quotes included.
 _TOKEN_CHARS = r"[A-Za-z0-9._~+/=-]"
 CREDENTIAL_PATTERN = re.compile(
-    r"""(?<![A-Za-z])(password|secret|token|key|authorization)("""
+    r"""((?<![A-Za-z])key|(?:access|secret|private|api|auth|signing)key|"""
+    r"""password|secret|token|authorization)("""
     r"""\\?["']\s*[:=]\s*|\s*=\s*|"""
     rf"""\s*:\s*(?=["']?(?:eyJ[\w-]{{5,}}\.[\w-]{{5,}}\.|{_TOKEN_CHARS}{{16,}}(?!{_TOKEN_CHARS}))))"""
     r"""(?!["']?(?:Bearer\b|<masked>|<token>))("[^"]*"|'[^']*'|\S+)""",

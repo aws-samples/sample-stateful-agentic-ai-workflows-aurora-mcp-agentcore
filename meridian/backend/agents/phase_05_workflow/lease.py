@@ -72,10 +72,14 @@ class AuroraLeaseStore:
     async def release(
         self, traveler_id: str, journey_id: str, execution_id: str, status: str
     ) -> None:
-        """Close the execution and settle the journey once nothing else runs."""
+        """Close the execution and settle the journey once nothing else runs.
+
+        An execution that already left ``running`` was settled by whoever took
+        the thread over, so the journey keeps the status that worker set.
+        """
         async with self._scoped(traveler_id) as db:
-            await release_execution(db, execution_id, status)
-            await db.execute(JOURNEY_SETTLED_SQL, (status, journey_id, journey_id))
+            if await release_execution(db, execution_id, status):
+                await db.execute(JOURNEY_SETTLED_SQL, (status, journey_id, journey_id))
 
     async def previous_worker(
         self, traveler_id: str, thread_id: str, execution_id: str

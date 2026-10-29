@@ -12,7 +12,7 @@ import { AuroraIcon } from './ServiceMark';
  * Self-contained: owns its own fetch/loading/error state (not threaded through
  * the showcase hook).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { BadgeCheck, Fingerprint, RefreshCw, ShieldX, UserCheck } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
@@ -38,13 +38,17 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const latestRequest = useRef(0);
+
   const run = () => {
+    const request = ++latestRequest.current;
+    const isLatest = () => request === latestRequest.current;
     setLoading(true);
     setError(null);
     fetchRlsProbe(travelerId)
-      .then((d) => setData(d))
-      .catch((e) => setError(e?.message ?? 'Probe failed'))
-      .finally(() => setLoading(false));
+      .then((d) => { if (isLatest()) setData(d); })
+      .catch((e) => { if (isLatest()) setError(e?.message ?? 'Probe failed'); })
+      .finally(() => { if (isLatest()) setLoading(false); });
   };
 
   useEffect(() => {

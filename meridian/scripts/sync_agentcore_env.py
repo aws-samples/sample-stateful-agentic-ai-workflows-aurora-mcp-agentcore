@@ -27,18 +27,18 @@ AWS docs:
   - AgentCore dev guide:
     https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/
 
+Printed values are masked (12-digit account ids show as <acct>). Only --write puts the real
+values in .env.
+
 Usage:
-    python scripts/sync_agentcore_env.py
-    python scripts/sync_agentcore_env.py --write
-    python scripts/sync_agentcore_env.py --fetch-gateway-token
+    python scripts/sync_agentcore_env.py          # print masked lines
+    python scripts/sync_agentcore_env.py --write  # write the real values to .env
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -47,41 +47,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import load_dotenv
 
-from backend.agentcore.cli_config import (
-    agentcore_project_dir,
-    resolve_agentcore_config,
-)
+from backend.agentcore.cli_config import resolve_agentcore_config
+from backend.security.redaction import mask_account_ids
 
 load_dotenv()
-
-
-def _fetch_gateway_access(name: str, project_dir: Path) -> dict | None:
-    try:
-        result = subprocess.run(
-            [
-                "agentcore",
-                "fetch",
-                "access",
-                "--name",
-                name,
-                "--type",
-                "gateway",
-                "--json",
-            ],
-            cwd=str(project_dir),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
 
 
 def env_lines(cfg) -> dict[str, str]:
@@ -105,44 +74,34 @@ def write_env(env_path: Path, lines: dict[str, str]) -> None:
     existing = env_path.read_text(encoding="utf-8") if env_path.is_file() else ""
     for key, value in lines.items():
         line = f"{key}={value}"
-        if f"{key}=" in existing:
-            existing = re.sub(rf"^{key}=.*$", line, existing, flags=re.MULTILINE)
+        if re.search(rf"^{re.escape(key)}=", existing, re.MULTILINE):
+            pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
+            existing = pattern.sub(lambda _match, text=line: text, existing)
         else:
             existing = existing.rstrip() + f"\n{line}\n"
     env_path.write_text(existing, encoding="utf-8")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--write",
         action="store_true",
-        help="Append/update AGENTCORE_* keys in meridian/.env",
-    )
-    parser.add_argument(
-        "--fetch-gateway-token",
-        action="store_true",
-        help="Run agentcore fetch access for the configured gateway",
+        help="Append/update AGENTCORE_* keys in meridian/.env with the real, unmasked values",
     )
     args = parser.parse_args()
 
     resolve_agentcore_config.cache_clear()
     cfg = resolve_agentcore_config()
-    project_dir = agentcore_project_dir()
-
     lines = env_lines(cfg)
 
-    if args.fetch_gateway_token and cfg.gateway_name:
-        access = _fetch_gateway_access(cfg.gateway_name, project_dir)
-        if access:
-            token = access.get("accessToken") or access.get("token")
-            if token:
-                lines["AGENTCORE_GATEWAY_ACCESS_TOKEN"] = token
-
-    print(f"# AgentCore CLI sync — sources: {', '.join(cfg.sources)}")
-    print(f"# Project dir: {cfg.cli_project_dir}")
+    print(mask_account_ids(f"# AgentCore CLI sync - sources: {', '.join(cfg.sources)}"))
+    print(mask_account_ids(f"# Project dir: {cfg.cli_project_dir}"))
+    print("# Printed values are masked; --write writes the real values to .env.")
     for key, value in lines.items():
-        print(f"{key}={value}")
+        print(mask_account_ids(f"{key}={value}"))
 
     if not cfg.configured_any:
         print("\n# No deployed AgentCore resources found.", file=sys.stderr)

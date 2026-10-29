@@ -1,5 +1,6 @@
 """Phase 5's memory branch: saved context, then catalog matches."""
 
+import asyncio
 from typing import List
 
 from backend.activity import ActivityEntry, Product, create_activity
@@ -27,6 +28,9 @@ async def workflow_memory_recall(
     store = get_memory_store()
     authorization = get_agentcore_identity().authorization_context()
     activities: List[ActivityEntry] = []
+    query_vector = await asyncio.to_thread(
+        store.prepare_embedding_vector, query, input_type="search_query"
+    )
 
     async with store.db.scoped_session(
         traveler_id=tid,
@@ -55,7 +59,12 @@ async def workflow_memory_recall(
             ))
 
         similar = await store.recall_similar_interactions(
-            tid, query, limit=3, transaction_id=tx
+            tid,
+            query,
+            limit=3,
+            transaction_id=tx,
+            query_vector=query_vector,
+            embedding_prepared=True,
         )
         activities.append(create_activity(
             activity_type="tool_call",

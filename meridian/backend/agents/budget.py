@@ -19,7 +19,7 @@ DEFAULT_CENTS = 400000
 # Jordan's seeded facts carry budget_cap ("$3,200") and per_person_range
 # ("Prefers $2k-3.5k per person"). The cap wins when both are present.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
-AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)
+AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)(k\b)?", re.I)
 
 
 def default_budget_cents(env: Mapping[str, str | None] | None = None) -> int:
@@ -50,13 +50,16 @@ def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
     show the same basis the gateway used instead of a second, unrelated number.
 
     Args:
-        facts: Aurora preference facts as ``{"key": ..., "value": ...}`` dicts.
+        facts: Aurora preference facts as ``{"key": ..., "value": ...}`` dicts, highest
+            confidence first. When rows share a key, the first one wins.
 
     Returns:
         The largest dollar figure in the first budget fact present, in cents, or
         ``None`` when the traveler has saved no budget fact at all.
     """
-    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
+    by_key: dict[str, str] = {}
+    for fact in facts:
+        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
     for key in BUDGET_KEYS:
         amounts = _dollars(by_key.get(key, ""))
         if amounts:

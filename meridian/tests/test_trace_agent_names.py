@@ -86,7 +86,12 @@ async def test_the_workflow_memory_branch_is_labelled_as_code(monkeypatch):
         async def recall_short_term(self, conversation_id, *, limit, transaction_id):
             return []
 
-        async def recall_similar_interactions(self, traveler_id, query, *, limit, transaction_id):
+        def prepare_embedding_vector(self, _text, *, input_type):
+            return "[0.1]"
+
+        async def recall_similar_interactions(
+            self, traveler_id, query, *, limit, transaction_id, query_vector, embedding_prepared
+        ):
             return []
 
     async def search(query, limit=5):

@@ -60,6 +60,23 @@ class OffLoopExecutor:
             self._busy -= 1
 
 
+async def wait_for_job(future: Future, seconds: float) -> Any:
+    """Await a worker's ``future`` for up to ``seconds``; a timeout abandons the wait, not the job.
+
+    ``asyncio.wait_for`` on a wrapped future cancels the underlying one, and a call still queued
+    for a worker is then dropped for good. This leaves the call queued or running.
+
+    Raises:
+        TimeoutError: The call had not finished in ``seconds``; it is still going.
+    """
+    waiter = asyncio.wrap_future(future)
+    waiter.add_done_callback(lambda late: late.cancelled() or late.exception())
+    done, _ = await asyncio.wait({waiter}, timeout=seconds)
+    if not done:
+        raise TimeoutError(f"the call had not finished in {seconds:g} seconds")
+    return waiter.result()
+
+
 class HistoryRepairs:
     """Orders each conversation's history repair before the next turn's first read or write.
 

@@ -75,9 +75,13 @@ const API_BASE = explicitApiBase?.trim()
   ? trimTrailingSlash(explicitApiBase.trim())
   : `${BACKEND_ORIGIN}/api`;
 
-export function healthOriginFor(apiBase: string, fallbackOrigin: string): string {
+export function healthOriginFor(
+  apiBase: string,
+  fallbackOrigin: string,
+  pageOrigin?: string,
+): string {
   try {
-    return new URL(apiBase, fallbackOrigin).origin;
+    return new URL(apiBase, pageOrigin ?? fallbackOrigin).origin;
   } catch {
     return fallbackOrigin;
   }
@@ -92,7 +96,11 @@ export function healthUrlsFor(origin: string): string[] {
   return [`${normalized}/api/health`];
 }
 
-const API_ORIGIN = healthOriginFor(API_BASE, BACKEND_ORIGIN);
+const API_ORIGIN = healthOriginFor(
+  API_BASE,
+  BACKEND_ORIGIN,
+  typeof window === 'undefined' ? undefined : window.location.origin,
+);
 const HEALTH_URL_CANDIDATES = healthUrlsFor(API_ORIGIN);
 // The access token goes to the API's origin and nowhere else.
 setBearerOrigin(API_ORIGIN);
