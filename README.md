@@ -24,14 +24,17 @@ workloads on Amazon Bedrock AgentCore.
   <img src="meridian/docs/meridian-showcase.jpg" width="900" alt="Meridian Concierge signed in as the sample traveler, showing destination photography, sample trip prices and the traveler's saved context">
 </p>
 
-Meridian is a sample travel concierge. It grows in five phases: from SQL queries to MCP
-tools, hybrid retrieval, a governed agent on AgentCore, and a Strands Graph workflow in its
-own AgentCore Runtime that resumes after its session stops. Every screen shows the SQL,
-tool calls, authorization decisions and stored records behind each answer.
+Meridian is a sample travel concierge for one fictional traveler, Jordan Morgan. Ask it for
+trips, let it remember Jordan's preferences, place a 12-hour hold, then cancel a flight and watch
+it rework the trip without placing a second hold. Every screen shows the SQL, tool calls,
+authorization decisions and stored records behind each answer, so you can see how the pieces fit.
 
-The data is sample travel packages and one fictional traveler, Jordan Morgan. Holds and
-confirmations change rows in Meridian's own database only. There is no supplier, airline or
-payment integration.
+The code grows in five phases, and each phase keeps what came before: SQL queries, then MCP
+tools, then hybrid retrieval, then a governed agent on AgentCore, then a Strands Graph workflow
+in its own AgentCore Runtime that resumes after its session stops.
+
+The data is a small catalog of sample travel packages. Holds and confirmations change rows in
+Meridian's own database only. There is no supplier, airline or payment integration.
 
 **Jump to:** [Architecture](#architecture) | [Quick start](#quick-start) | [Try it](#try-the-reference-app) | [Deploy](#deploy-to-your-account) | [Tests](#tests) | [Docs](#documentation)
 
@@ -59,49 +62,65 @@ policy language that AgentCore Policy evaluates before a tool runs.
 
 ## Architecture
 
+Three places do the work: your machine runs the web app and the backend, your AWS account runs
+the agents on Amazon Bedrock AgentCore, and Amazon Aurora PostgreSQL keeps everything that has
+to survive.
+
 ```mermaid
-flowchart TB
-    browser["Browser<br/>React, Vite"]
-    cognito["Amazon Cognito"]
-    backend["FastAPI backend<br/>Phases 1 to 3 run here"]
-    aurora[("Amazon Aurora PostgreSQL<br/>pgvector, RLS")]
-
-    browser -->|sign in| cognito
-    browser -->|API calls| backend
-    backend -->|RDS Data API| aurora
-
-    subgraph agentcore["Amazon Bedrock AgentCore"]
-        concierge["Runtime: MeridianConcierge<br/>Strands agent"]
-        workflow["Runtime: MeridianWorkflow<br/>Strands Graph"]
-        memory["AgentCore Memory"]
-        gateway["Gateway (MCP)"]
-        interceptor["Request interceptor<br/>pins travelerId to the token"]
-        cedar["Cedar policy engine<br/>ENFORCE"]
-        concierge --> memory
-        concierge -->|tool calls| gateway
-        workflow -->|search, hold, release| gateway
-        gateway --> interceptor --> cedar
+flowchart LR
+    cognito["Amazon Cognito<br/>sign-in"]
+    subgraph machine["Your machine"]
+        browser["Browser<br/>React app"]
+        backend["FastAPI backend<br/>Phases 1 to 3"]
     end
+    subgraph agentcore["Amazon Bedrock AgentCore, in your account"]
+        concierge["Concierge agent<br/>Phase 4"]
+        workflow["Recovery workflow<br/>Phase 5"]
+        gateway["Gateway<br/>checks every tool call"]
+        tools["Lambda tools<br/>catalog, holds"]
+    end
+    aurora[("Amazon Aurora PostgreSQL<br/>catalog, traveler data,<br/>holds, snapshots")]
 
-    backend -->|chat, holds| concierge
-    backend -->|run, resume, stop session| workflow
-    workflow -->|snapshots, as meridian_workflow| aurora
-
-    cedar --> catalog["Lambda: MeridianCatalog<br/>hybrid search, catalog tools"]
-    cedar --> holds["Lambda: MeridianHolds<br/>hold, confirm, release"]
-    catalog -->|Data API| aurora
-    holds -->|Data API| aurora
-
-    cognito -.->|access token verified| backend
-    cognito -.->|token verified by Runtimes and Gateway| agentcore
+    cognito -.->|token| browser
+    browser --> backend
+    backend --> aurora
+    backend --> concierge
+    backend --> workflow
+    concierge --> gateway
+    workflow --> gateway
+    gateway --> tools
+    tools --> aurora
+    workflow -->|snapshots| aurora
 ```
 
-The backend and frontend run on your machine; Aurora, the two Runtimes, the Gateway, Memory
-and the two Lambda functions run in your AWS account. Every hold, confirmation and release goes
-through the Gateway, where Cedar checks the call before a Lambda runs: the traveler confirmed,
-at most 12 hours and 6 travelers, within the saved budget, and a release names a hold and a
-journey. The models are Claude Sonnet 5.5 through its global cross-Region inference profile,
-Cohere Embed v4 and Cohere Rerank 3.5, all on Amazon Bedrock. See
+- **Your machine.** The browser talks to the FastAPI backend. Phases 1 to 3 (SQL, MCP tools,
+  hybrid retrieval) run inside the backend against Aurora.
+- **AgentCore.** The Concierge agent (Phase 4) answers chat; the recovery workflow (Phase 5) runs
+  the multi-step rebooking. Neither writes a hold itself. Every hold, confirmation and release
+  goes through the Gateway, which checks the caller, evaluates the policy and then runs a Lambda
+  tool. The workflow also writes its own snapshots to Aurora, so another worker can pick up a run.
+- **Aurora.** The catalog, Jordan's preferences and conversation, holds and bookings, and the
+  workflow's snapshots all live here. Row-level security limits each request to its own
+  traveler's rows.
+
+Jordan signs in with Amazon Cognito. The token travels with every request, and the backend, both
+Runtimes and the Gateway each verify it.
+
+**One hold, step by step**
+
+1. Jordan asks the Concierge to hold a trip. The browser sends the request with Jordan's token
+   to the backend, which verifies it and forwards the turn to the Concierge Runtime.
+2. The agent, Claude Sonnet 5.5 on Amazon Bedrock run by Strands, decides to call the hold tool.
+3. The Gateway verifies the token again. A request interceptor overwrites the `travelerId`
+   argument with the traveler named in the token, and AgentCore Policy evaluates the Cedar rules:
+   the traveler confirmed, at most 12 hours and 6 travelers, within the saved budget.
+4. The `MeridianHolds` Lambda checks its own grant for that traveler, steps down to a restricted
+   database role, and writes the hold inside one transaction, under row-level security.
+5. Aurora returns the hold with its number and expiry, and the agent tells Jordan. A retry with
+   the same request id returns that hold instead of a second one.
+
+The models are Claude Sonnet 5.5 through its global cross-Region inference profile, Cohere Embed
+v4 and Cohere Rerank 3.5, all on Amazon Bedrock. See
 [STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) for the state design and
 [meridian/README.md](meridian/README.md) for the API, schema and configuration.
 
