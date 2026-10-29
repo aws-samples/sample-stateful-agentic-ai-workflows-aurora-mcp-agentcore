@@ -34,6 +34,7 @@ def lambda_params(monkeypatch):
         seen["params"] = params
         return []
 
+    monkeypatch.setattr(catalog, "CONFIG", ("arn:cluster", "arn:gateway-secret", "meridian"))
     monkeypatch.setattr(catalog, "execute", fake_execute)
     return seen
 
