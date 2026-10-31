@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import backend.routers.chat as chat_router
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.agents.phase_04_production.memory_agent import MemoryAgent
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings
@@ -215,12 +215,14 @@ async def executed_scope_statements(monkeypatch):
 
 async def test_the_read_unit_display_matches_the_statements_that_run(monkeypatch):
     (pin, pin_values), (role, _none) = await executed_scope_statements(monkeypatch)
-    shown_names = re.findall(r"set_config\('([^']+)', %s, true\)", concierge_mod.READ_UNIT_SQL)
+    shown_names = re.findall(
+        r"set_config\('([^']+)', %s, true\)", production_agent_mod.READ_UNIT_SQL
+    )
     run_names = re.findall(r"set_config\('([^']+)', %s, true\)", pin)
     assert shown_names == ["app.current_traveler_id", "app.agent_type"]
     shown_values = [pin_values[run_names.index(name)] for name in shown_names]
     assert shown_values == ["trv_meridian_demo", "concierge_agent"]
-    assert concierge_mod.READ_UNIT_SQL.rstrip().splitlines()[-1] == f"{role};"
+    assert production_agent_mod.READ_UNIT_SQL.rstrip().splitlines()[-1] == f"{role};"
 
 
 async def test_the_similar_interactions_span_names_what_the_store_ran():
@@ -250,7 +252,7 @@ async def test_the_similar_interactions_span_names_what_the_store_ran():
 
 def test_the_catalog_refresh_span_binds_the_package_ids(monkeypatch):
     agent = build_agent([], runtime_decision(), [])
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     _packages, activities, *_ = asyncio.run(
         agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))

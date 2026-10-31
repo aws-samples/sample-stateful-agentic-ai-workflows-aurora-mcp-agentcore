@@ -157,7 +157,15 @@ class MemoryAgent:
 
     @tool
     async def recall_traveler_preferences(self, traveler_id: str, limit: int = 8) -> Dict[str, Any]:
-        """Recall long-term traveler preferences from traveler_preferences."""
+        """Recall long-term traveler preferences from traveler_preferences.
+
+        Args:
+            traveler_id: The traveler whose saved preferences to load.
+            limit: The most preferences to return, highest confidence first.
+
+        Returns:
+            A dict with ``facts``, the traveler's saved preferences.
+        """
         start = datetime.now(timezone.utc)
         facts = await self.store.recall_preferences(
             traveler_id, limit, transaction_id=self._transaction_id
@@ -303,8 +311,3 @@ def create_memory_agent(
     activity_callback: Optional[Callable[[ActivityEntry], Any]] = None,
 ) -> MemoryAgent:
     return MemoryAgent(activity_callback=activity_callback)
-
-
-# Backward-compatible aliases for older imports.
-TravelerMemoryAgent = MemoryAgent
-create_traveler_memory_agent = create_memory_agent

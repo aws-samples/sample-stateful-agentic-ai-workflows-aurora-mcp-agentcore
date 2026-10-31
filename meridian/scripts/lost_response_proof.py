@@ -2,7 +2,7 @@
 
 The fault is injected only in this CLI: after Gateway returns a committed hold,
 the wrapper discards that response and raises TimeoutError. Aurora, Gateway,
-Cedar, retrieval, and checkpointing are real. This is a lost-reply simulation,
+Cedar, retrieval, and snapshot saving are real. This is a lost-reply simulation,
 not a claim that the network itself failed.
 
 Usage: python scripts/lost_response_proof.py [--worker-login]
@@ -158,7 +158,7 @@ async def main(worker_login: bool = False) -> int:
         intent = values["hold_intent"]
         if values.get("hold_id") or intent["booking_id"] != before[0]["booking_id"]:
             raise AssertionError("Expected the prepared intent without a hold acknowledgement")
-        say("loss", "Aurora has the hold; the worker checkpoint has only the prepared intent")
+        say("loss", "Aurora has the hold; the worker snapshot has only the prepared intent")
         await asyncio.to_thread(check_denials, intent, thread_id)
 
         result = await run_takeover(thread_id, worker_login)
@@ -170,8 +170,10 @@ async def main(worker_login: bool = False) -> int:
             raise AssertionError("Replacement workflow did not finish its resume")
         if result.get("hold_id") != before[0]["booking_id"]:
             raise AssertionError("Replacement worker did not receive the persisted hold")
-        if result.get("resumed_from_checkpoint") != snapshot.get("created_at"):
-            raise AssertionError("Replacement worker resumed a different checkpoint")
+        # A Runtime deployed before the snapshot rename names the field resumed_from_checkpoint.
+        resumed_from = result.get("resumed_from_snapshot", result.get("resumed_from_checkpoint"))
+        if resumed_from != snapshot.get("created_at"):
+            raise AssertionError("Replacement worker resumed a different snapshot")
         executions = await client.execute(
             "SELECT status, worker_id FROM journey_executions "
             "WHERE thread_id = %s ORDER BY attempt", (thread_id,),

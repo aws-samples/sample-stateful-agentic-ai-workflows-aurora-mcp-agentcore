@@ -3,7 +3,7 @@ export interface BackendHealth {
   status: string;
   bedrock_model_id?: string;
   embedding_model_id?: string;
-  checkpoint_backend?: string;
-  checkpoint_durable?: boolean;
-  checkpoint_required?: boolean;
+  snapshot_store?: string;
+  snapshot_durable?: boolean;
+  snapshot_required?: boolean;
 }

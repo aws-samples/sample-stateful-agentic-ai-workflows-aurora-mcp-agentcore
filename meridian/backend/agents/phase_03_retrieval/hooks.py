@@ -17,7 +17,8 @@ from typing import Any, Callable, List, NamedTuple
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider
 
 from backend.activity import ActivityEntry, TraceTelemetry, create_activity
-from backend.agents.concierge_definition import package_rows, short_name, tool_payload
+from backend.agents.concierge_definition import package_rows, tool_payload
+from backend.tools.tool_names import bare_tool_name
 from backend.agents.phase_03_retrieval.mcp_session import MCP_TOOLS
 from backend.agents.phase_03_retrieval.tools import DETAIL_CHARS, LOCAL_TOOLS, TOOL_FAILED
 from backend.agents.strands_hooks import is_setup_error_text
@@ -137,7 +138,7 @@ class RetrievalTraceHooks(HookProvider):
         return entry
 
     def before(self, event: BeforeToolCallEvent) -> None:
-        name = short_name(event.tool_use["name"])
+        name = bare_tool_name(event.tool_use["name"])
         arguments = json.dumps(event.tool_use.get("input") or {}, ensure_ascii=False, default=str)
         self.started[event.tool_use["toolUseId"]] = self.clock()
         self.tools_called.append(name)
@@ -170,7 +171,7 @@ class RetrievalTraceHooks(HookProvider):
                 "content": [{"text": json.dumps({"error": TOOL_FAILED, "tool": name})}]}
 
     def after(self, event: AfterToolCallEvent) -> None:
-        name = short_name(event.tool_use["name"])
+        name = bare_tool_name(event.tool_use["name"])
         arguments = json.dumps(event.tool_use.get("input") or {}, ensure_ascii=False, default=str)
         began = self.started.pop(event.tool_use["toolUseId"], None)
         elapsed = round((self.clock() - began) * 1000) if began is not None else None

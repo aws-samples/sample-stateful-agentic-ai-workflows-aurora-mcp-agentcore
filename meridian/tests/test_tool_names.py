@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.agents.concierge_definition import short_name
+from backend.agents.concierge_definition import bare_tool_name as definition_bare_tool_name
 from backend.tools.tool_names import bare_tool_name
 
 
@@ -36,4 +36,4 @@ NAMES = [
 
 @pytest.mark.parametrize("name", NAMES)
 def test_the_concierge_definition_reads_a_target_prefix_by_the_same_rule(name):
-    assert short_name(name) == bare_tool_name(name)
+    assert definition_bare_tool_name(name) == bare_tool_name(name)

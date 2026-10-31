@@ -49,7 +49,7 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
             </div>
             <div>
               <span>Snapshot store</span>
-              <b>{workflow.checkpoint}</b>
+              <b>{workflow.snapshot}</b>
             </div>
           </div>
 
@@ -65,13 +65,13 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
             ))}
           </div>
 
-          <div className="mds-workflow-checkpoint">
+          <div className="mds-workflow-snapshot">
             <AuroraIcon size={14} aria-hidden="true" />
             <span>
-              {workflow.checkpointCount
+              {workflow.snapshotCount
                 ? workflow.durable
-                  ? `${workflow.checkpointCount} durable write${workflow.checkpointCount === 1 ? '' : 's'} to ${workflow.table}`
-                  : `${workflow.checkpointCount} write${workflow.checkpointCount === 1 ? '' : 's'} in worker memory; lost on restart`
+                  ? `${workflow.snapshotCount} durable write${workflow.snapshotCount === 1 ? '' : 's'} to ${workflow.table}`
+                  : `${workflow.snapshotCount} write${workflow.snapshotCount === 1 ? '' : 's'} in worker memory; lost on restart`
                 : `writes to ${workflow.table} after worker nodes`}
             </span>
           </div>

@@ -18,7 +18,7 @@ describe('execution evidence', () => {
   it('requires a completed resume receipt belonging to the latest execution', () => {
     const document = {
       active_thread_id: 'thread', executions: { status: 'observed', source: 'journey_executions', items: [execution] },
-      workflow: { status: 'observed', source: 'checkpoint', workflow_status: 'resumed', conversation_id: 'thread', resumed_from_checkpoint: 'cp-1', execution_id: 'exe-2' },
+      workflow: { status: 'observed', source: 'snapshot', workflow_status: 'resumed', conversation_id: 'thread', resumed_from_snapshot: 'cp-1', execution_id: 'exe-2' },
     } as JourneyDocument;
     expect(hasVerifiedResume(document)).toBe(false);
     document.executions = { status: 'observed', source: 'journey_executions', items: [{ ...execution, status: 'failed' }] };

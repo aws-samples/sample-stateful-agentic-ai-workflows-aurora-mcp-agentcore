@@ -10,33 +10,33 @@ const done = (id: RecoveryStepView['id'], source: string): RecoveryStepView => (
 
 function card(steps: RecoveryStepView[]) {
   return (
-    <RecoveryLaunchCard stage="checkpointed" steps={steps} live compact disabled
+    <RecoveryLaunchCard stage="saved" steps={steps} live compact disabled
       onStart={() => {}} />
   );
 }
 
-const checkpointRow = () => screen.getByText('Save a step in Aurora').closest('li')!;
+const snapshotRow = () => screen.getByText('Save a step in Aurora').closest('li')!;
 
 describe('RecoveryLaunchCard', () => {
-  it('keys the Aurora glow on the checkpoint step, wherever it sits in the list', () => {
+  it('keys the Aurora glow on the snapshot step, wherever it sits in the list', () => {
     const { container, rerender } = render(card([
-      pending('verify'), pending('checkpoint'), pending('search'), pending('understand'),
+      pending('verify'), pending('snapshot'), pending('search'), pending('understand'),
     ]));
-    // Search is confirmed and happens to sit third; the checkpoint is not confirmed.
+    // Search is confirmed and happens to sit third; the snapshot is not confirmed.
     rerender(card([
-      pending('checkpoint'), done('understand', 'Strands Graph'), done('search', 'Bedrock'),
+      pending('snapshot'), done('understand', 'Strands Graph'), done('search', 'Bedrock'),
       pending('verify'),
     ]));
     expect(container.querySelector('.mds-aurora-glow')).toBeNull();
-    expect(checkpointRow()).toHaveClass('is-pending');
+    expect(snapshotRow()).toHaveClass('is-pending');
     expect(screen.getByText('Search and rank').closest('li')).toHaveClass('is-visited');
 
     rerender(card([
-      done('checkpoint', 'Aurora Data API'), done('understand', 'Strands Graph'),
+      done('snapshot', 'Aurora Data API'), done('understand', 'Strands Graph'),
       done('search', 'Bedrock'), pending('verify'),
     ]));
     expect(container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
-    expect(checkpointRow().querySelector('.mds-aurora-glow')).not.toBeNull();
-    expect(checkpointRow()).toHaveTextContent('Aurora Data API');
+    expect(snapshotRow().querySelector('.mds-aurora-glow')).not.toBeNull();
+    expect(snapshotRow()).toHaveTextContent('Aurora Data API');
   });
 });

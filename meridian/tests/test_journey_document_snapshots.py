@@ -12,7 +12,7 @@ from backend.db.journey_document import (
     SNAPSHOT_WRITER_SQL,
     _snapshot,
     _workflow_document,
-    checkpoint_backend_is_durable,
+    snapshot_store_is_durable,
 )
 
 CLASSIFY_DELTA = json.dumps(
@@ -28,7 +28,7 @@ PAUSED = {"data": {"state": {
         "message": {"role": "assistant", "content": [{"text": CLASSIFY_DELTA}]},
     }}},
 }}}
-CHECKPOINT = {"status": "committed", "thread_id": "t1", "checkpoint_id": "7"}
+SAVED_SNAPSHOT = {"status": "committed", "thread_id": "t1", "snapshot_id": "7"}
 EXECUTIONS = {"status": "observed", "items": [
     {"execution_id": "exe_1", "worker_id": "worker-a", "status": "paused"},
 ]}
@@ -36,7 +36,7 @@ EXECUTIONS = {"status": "observed", "items": [
 
 def test_a_paused_snapshot_reads_as_paused_with_its_next_step():
     doc = _workflow_document(
-        PAUSED, CHECKPOINT, EXECUTIONS, latest_execution="exe_1", resumed_from=None
+        PAUSED, SAVED_SNAPSHOT, EXECUTIONS, latest_execution="exe_1", resumed_from=None
     )
     assert doc["workflow_status"] == "paused"
     assert doc["next_nodes"] == ["availability"]
@@ -54,11 +54,11 @@ def test_a_completed_run_after_a_restart_reads_as_resumed():
         {"execution_id": "exe_2", "worker_id": "worker-b", "status": "succeeded"},
     ]}
     doc = _workflow_document(
-        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from="5",
+        done, SAVED_SNAPSHOT, executions, latest_execution="exe_2", resumed_from="5",
         resumed_from_writer="worker-a",
     )
     assert doc["workflow_status"] == "resumed"
-    assert doc["resumed_from_checkpoint"] == "5"
+    assert doc["resumed_from_snapshot"] == "5"
     assert doc["resumed_after_restart"] is True
     assert doc["execution_id"] == "exe_2"
     assert doc["next_nodes"] == []
@@ -72,10 +72,10 @@ def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
         {"execution_id": "exe_2", "worker_id": "worker-b", "status": "succeeded"},
     ]}
     doc = _workflow_document(
-        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from=None
+        done, SAVED_SNAPSHOT, executions, latest_execution="exe_2", resumed_from=None
     )
     assert doc["workflow_status"] == "complete"
-    assert doc["resumed_from_checkpoint"] is None
+    assert doc["resumed_from_snapshot"] is None
     assert doc["resumed_after_restart"] is False
 
 
@@ -91,7 +91,7 @@ def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
     ],
 )
 def test_only_the_aurora_backed_kinds_are_durable(kind, durable):
-    assert checkpoint_backend_is_durable(kind) is durable
+    assert snapshot_store_is_durable(kind) is durable
 
 
 async def test_the_workflow_is_read_by_its_own_storage_key_not_just_the_session():
@@ -134,7 +134,7 @@ def test_a_resume_by_the_same_worker_that_wrote_the_snapshot_is_not_a_restart():
         {"execution_id": "exe_2", "worker_id": "worker-a", "status": "succeeded"},
     ]}
     doc = _workflow_document(
-        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from="5",
+        done, SAVED_SNAPSHOT, executions, latest_execution="exe_2", resumed_from="5",
         resumed_from_writer="worker-a",
     )
     assert doc["workflow_status"] == "resumed"

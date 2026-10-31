@@ -26,7 +26,7 @@ from backend.agents.phase_05_workflow.graph import (
     snapshot_key,
 )
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
-from backend.demo_prompts import PROMPT_LADDER
+from backend.prompt_ladder import PROMPT_LADDER
 from tests.phase5_support import GatewayFake, fake_availability, fake_search
 
 CANONICAL = PROMPT_LADDER[5].works[0]

@@ -153,7 +153,7 @@ def parse_search_query(query: str) -> SearchParams:
     )
 
 
-def results_to_packages(results: List[Dict]) -> List[Dict]:
+def rows_to_packages(results: List[Dict]) -> List[Dict]:
     return [
         {
             "package_id": row["package_id"],
@@ -172,6 +172,3 @@ def results_to_packages(results: List[Dict]) -> List[Dict]:
         for row in results
     ]
 
-
-# Back-compat alias used during migration
-results_to_products = results_to_packages

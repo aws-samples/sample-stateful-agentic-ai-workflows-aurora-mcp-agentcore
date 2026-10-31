@@ -67,7 +67,7 @@ describe('stepSourceLabel', () => {
     })).toBe(nb('Aurora Data API, 59 ms'));
     expect(label({
       name: 'Checkpoint · AuroraDataApiSaver.put',
-      component: 'Aurora: LangGraph checkpoint tables', category: 'memory_short', latencyMs: 106,
+      component: 'Aurora: LangGraph snapshot tables', category: 'memory_short', latencyMs: 106,
     })).toBe(nb('Aurora Data API, 106 ms'));
     expect(label({
       name: 'Snapshot saved: AuroraSnapshotStorage.write',

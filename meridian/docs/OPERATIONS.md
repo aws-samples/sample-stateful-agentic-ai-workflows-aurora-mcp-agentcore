@@ -78,6 +78,30 @@ run `python scripts/apply_migrations.py --dry-run`, which runs each pending migr
 a transaction and rolls it back. Apply it before deploying the backend that writes those
 columns.
 
+Migration `024_journeys_snapshot_store.sql` is the first half of a rename. It adds
+`journeys.snapshot_store` beside the older store column, backfills it and installs a trigger that
+keeps the two equal, so an insert or update that names either column fills the other. Code from
+before this commit and code from this commit both work against the same table. Order the release
+this way, and nothing breaks between the steps:
+
+1. Apply 024: `python scripts/apply_migrations.py --pending`, then `--dry-run`, then apply it only
+   when 024 is the one pending migration.
+2. Update the `meridian-catalog-tools` Lambda's code first. It accepts both the new and the old
+   `currency_convert` argument names; the Lambda before this commit reads only the old ones.
+3. Deploy the AgentCore stack (both Runtimes, the MeridianHolds Gateway target and the catalog
+   target's schema). The backend, the Holds Lambda and the Workflow Runtime from this commit read
+   and write only `snapshot_store`.
+4. Publish the web app. For one release the backend also sends each renamed response field under
+   its old name (`backend/legacy_field_names.py`) and the frontend reads either
+   (`frontend/src/api/legacyFieldNames.ts`), so the site and the backend can go out in either order.
+5. Verify with `curl http://127.0.0.1:8013/api/health` and a journey read.
+6. Apply migration 025 from the follow-up commit, which drops the old column and the trigger,
+   and ship the commit that removes the old argument names from the catalog Lambda.
+
+The same commit renames the `/api/health` fields to `snapshot_store`, `snapshot_durable` and
+`snapshot_required`, and the `currency_convert` arguments to `from_currency` and `to_currency`
+(see the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md#what-gets-deployed)).
+
 Each workload that sets a traveler scope needs its own grant: the backend's
 identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
 (`bind_gateway_workload.py`) and, for the hosted app, the App Runner instance
@@ -118,8 +142,8 @@ Confirm with `curl http://127.0.0.1:8013/api/health`:
 
 ```json
 {
-  "checkpoint_backend": "Aurora workflow_snapshots",
-  "checkpoint_durable": true,
+  "snapshot_store": "Aurora workflow_snapshots",
+  "snapshot_durable": true,
   "workflow_runtime_configured": true
 }
 ```
@@ -242,7 +266,7 @@ driver fails unless it is `meridian_workflow`.
   lost response is simulated.
 
 On System evidence, a successful recovery shows the replacement execution ID,
-`resumed_from_checkpoint`, the worker IDs, the hold creator, and the booking ID
+`resumed_from_snapshot`, the worker IDs, the hold creator, and the booking ID
 and expiry. A second execution alone does not prove that the resume succeeded.
 
 `stop_and_resume_proof.py` drives the running backend instead: it stops the

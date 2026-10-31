@@ -177,7 +177,7 @@ async def call_gateway_tool(
     return response
 
 
-def tool_payload(tool: str, response: Dict[str, Any]) -> Dict[str, Any]:
+def gateway_tool_payload(tool: str, response: Dict[str, Any]) -> Dict[str, Any]:
     """The JSON object a tool returned.
 
     Raises:
@@ -282,7 +282,7 @@ async def gateway_search(
     response = await caller(
         SEARCH_TOOL, {"query": query, "limit": limit}, caller_token=current_caller_token() or ""
     )
-    payload = tool_payload(SEARCH_TOOL, response)
+    payload = gateway_tool_payload(SEARCH_TOOL, response)
     products = _products(payload.get("packages"), limit)
     elapsed = int((utc_now() - started).total_seconds() * 1000)
     return products, [_search_span(payload, len(products), elapsed)]

@@ -253,7 +253,7 @@ def get_package_details(args: dict) -> dict:
     }
 
 
-def _authorize(traveler_id: str, tx: str) -> dict:
+def _check_traveler_grant(traveler_id: str, tx: str) -> dict:
     provider, subject_id, principal = SUBJECT
     binding = query(
         BINDING_SQL, {"provider": provider, "subject": subject_id, "traveler": traveler_id}, tx
@@ -277,7 +277,7 @@ def _authorize(traveler_id: str, tx: str) -> dict:
     }
 
 
-def _scope(traveler_id: str, tx: str) -> None:
+def _pin_traveler_scope(traveler_id: str, tx: str) -> None:
     query(
         "SELECT set_config('app.current_traveler_id', :traveler, true)",
         {"traveler": traveler_id},
@@ -296,7 +296,7 @@ def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
         return str(rows[0]["journey_id"])
     journey_id = f"jrn_{uuid.uuid4().hex[:12]}"
     query(
-        "INSERT INTO journeys (journey_id, traveler_id, checkpoint_backend) VALUES (:j, :t, :b)",
+        "INSERT INTO journeys (journey_id, traveler_id, snapshot_store) VALUES (:j, :t, :b)",
         {"j": journey_id, "t": traveler_id, "b": HOLD_BACKEND},
         tx,
     )
@@ -320,7 +320,7 @@ def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
 def _hold_terms(args: dict) -> dict:
     """Terms, identity and fingerprint for the hold.
 
-    A caller that checkpointed its own intent (the Phase 5 workflow) passes
+    A caller that saved its own intent (the Phase 5 workflow) passes
     ``holdRequestId`` and ``bookingId`` so a resumed run replays the same
     booking; otherwise both derive from the journey and the terms.
     """
@@ -493,7 +493,7 @@ def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[st
     """
     traveler_id = str(args["travelerId"])
     catalog_cents = _catalog_unit_price_cents(args, tx)
-    _scope(traveler_id, tx)
+    _pin_traveler_scope(traveler_id, tx)
     journey_ref = str(args["journeyRef"])
     query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
     if args.get("executionId"):
@@ -516,7 +516,7 @@ def create_courtesy_hold(args: dict) -> dict:
         resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
     )["transactionId"]
     try:
-        governance = _authorize(traveler_id, tx)
+        governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
@@ -586,11 +586,11 @@ def confirm_booking(args: dict) -> dict:
         resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
     )["transactionId"]
     try:
-        governance = _authorize(traveler_id, tx)
+        governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
-        _scope(traveler_id, tx)
+        _pin_traveler_scope(traveler_id, tx)
         query(
             "SELECT set_config('app.thread_id', :t, true)", {"t": str(args["journeyRef"])}, tx
         )
@@ -639,7 +639,7 @@ def _release_row(args: dict, tx: str) -> dict:
     traveler.
     """
     traveler_id = str(args["travelerId"])
-    _scope(traveler_id, tx)
+    _pin_traveler_scope(traveler_id, tx)
     if args.get("executionId"):
         _claim_execution(str(args["executionId"]), tx, str(args["journeyId"]))
     rows = query(OWNED_HOLD_SQL, {
@@ -666,7 +666,7 @@ def release_hold(args: dict) -> dict:
         resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
     )["transactionId"]
     try:
-        governance = _authorize(traveler_id, tx)
+        governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
@@ -827,11 +827,11 @@ def loyalty_balance(args: dict) -> dict:
         resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
     )["transactionId"]
     try:
-        governance = _authorize(traveler_id, tx)
+        governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
-        _scope(traveler_id, tx)
+        _pin_traveler_scope(traveler_id, tx)
         rows = query(LOYALTY_SQL, {"traveler": traveler_id}, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the caller gets a fixed code, the log the type

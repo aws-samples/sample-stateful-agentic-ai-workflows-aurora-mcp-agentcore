@@ -40,7 +40,7 @@ TOOL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "compare_packages": ("package_ids",),
     "price_range": ("destination",),
     "region_inventory": ("region", "trip_type"),
-    "currency_convert": ("amount", "from_ccy", "to_ccy"),
+    "currency_convert": ("amount", "from_currency", "to_currency"),
     "hybrid_trip_search": ("query", "limit"),
     "get_package_details": ("packageId",),
     "loyalty_balance": ("travelerId", "program"),
@@ -70,7 +70,7 @@ PROMPT_CORE = (
     "3. To compare named packages side by side, call compare_packages(package_ids).\n"
     "4. For what trips cost in a place, call price_range(destination). For how many trips and "
     "departure places a region has, call region_inventory(region, trip_type). To convert "
-    "prices, call currency_convert(amount, from_ccy, to_ccy); the rates are indicative.\n"
+    "prices, call currency_convert(amount, from_currency, to_currency); the rates are indicative.\n"
     "5. For durations and places left on one package, call get_package_details(packageId). Do "
     "this when the traveler asks about availability or a fact the answer needs is missing from "
     "the search results; independent detail checks may run together. A requested date window "
@@ -134,10 +134,10 @@ PHASE_RULES = {
 }
 
 
-def short_name(tool_name: str) -> str:
+def bare_tool_name(tool_name: str) -> str:
     """The tool's contract name: ``tool_name`` with one ``Target___`` prefix removed.
 
-    The rule of ``backend/tools/tool_names.bare_tool_name``, which this file cannot import:
+    A copy of ``backend/tools/tool_names.bare_tool_name``, which this file cannot import:
     only the first separator is a prefix, and a name with no target before it or no tool after
     it is returned unchanged. tests/test_tool_names.py keeps the two in step.
     """
@@ -179,7 +179,7 @@ class TravelerPinHook(HookProvider):
         registry.add_callback(BeforeToolCallEvent, self.before)
 
     def before(self, event: BeforeToolCallEvent) -> None:
-        name = short_name(event.tool_use["name"])
+        name = bare_tool_name(event.tool_use["name"])
         if TRAVELER_ARGUMENT not in TOOL_ARGUMENTS.get(name, ()):
             return
         arguments = event.tool_use.get("input")

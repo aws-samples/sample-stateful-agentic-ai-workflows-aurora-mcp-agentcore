@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
+from backend.prompt_ladder import PROMPT_LADDER  # noqa: E402
 from scripts.agentcore_caller import (  # noqa: E402
     TRAVELER_USERS, bearer_headers, require_token_safe_url, traveler_for_user,
 )

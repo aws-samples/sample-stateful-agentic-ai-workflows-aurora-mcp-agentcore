@@ -73,7 +73,7 @@ MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
 from backend.agentcore.auth_mode import IAM, JWT, MODES  # noqa: E402
-from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
+from backend.prompt_ladder import PROMPT_LADDER  # noqa: E402
 from scripts.identity_release import settings  # noqa: E402
 
 BACKEND_LOGIN = "meridian_backend"

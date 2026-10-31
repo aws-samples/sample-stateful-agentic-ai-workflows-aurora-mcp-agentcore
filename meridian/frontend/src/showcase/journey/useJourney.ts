@@ -144,7 +144,7 @@ function missingJourney(threadId: string | null | undefined): string {
 
 /** Read committed journey evidence, serially polling only during an active run.
  *
- * Aurora commits the lease, authorization and checkpoints during the request.
+ * Aurora commits the lease, authorization and snapshots during the request.
  * Each next read starts one second after the previous read ends. The transition
  * out of polling aborts that read and performs one final read of the outcome.
  * A refresh of saved evidence never animates or invents intermediate progress.

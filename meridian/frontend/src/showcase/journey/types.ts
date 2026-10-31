@@ -44,11 +44,10 @@ export type SessionStop = {
   last_step: string | null;
 };
 
-export type JourneyCheckpoint = {
+export type JourneySnapshot = {
   thread_id: string;
-  checkpoint_id: string;
-  parent_checkpoint_id: string | null;
-  checkpoint_ns: string;
+  snapshot_id: string;
+  parent_snapshot_id: string | null;
   committed_at: string | null;
   snapshot_count?: number;
   status?: string;
@@ -107,7 +106,7 @@ export type JourneyDocument = {
   journey_id: string;
   traveler_id: string;
   status: string;
-  checkpoint_backend: { kind: string; durable: boolean };
+  snapshot_store: { kind: string; durable: boolean };
   active_thread_id: string | null;
   workflow?: Evidence<{
     conversation_id: string;
@@ -118,12 +117,12 @@ export type JourneyDocument = {
     activities: ActivityEntry[];
     travelers_count: number;
     execution_id?: string | null;
-    resumed_from_checkpoint?: string | null;
+    resumed_from_snapshot?: string | null;
     resumed_after_restart: boolean;
   }>;
   executions: Evidence<{ items: JourneyExecution[] }>;
   session_stops?: Evidence<{ items: SessionStop[] }>;
-  checkpoint: Evidence<JourneyCheckpoint>;
+  snapshot: Evidence<JourneySnapshot>;
   selected_plan: Evidence<{ package_id: string }>;
   recommendations: Evidence<{ items: JourneyRecommendation[] }>;
   pending_decision: Evidence<{
@@ -142,7 +141,7 @@ export type JourneyDocument = {
 export type JourneySummary = {
   journey_id: string;
   status: string;
-  checkpoint_backend: string;
+  snapshot_store: string;
   active_thread_id: string | null;
   execution_count: number;
   created_at: string;

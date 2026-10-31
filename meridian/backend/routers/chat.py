@@ -36,12 +36,12 @@ from backend.chat_stream import chat_event_sink
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.phase_04_production.concierge import runtime_model_id
+from backend.agents.phase_04_production.production_agent import runtime_model_id
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.config import bedrock_model_label
 from backend.agents.phase_03_retrieval import run_retrieval_turn
-from backend.demo_prompts import tee_up_prompt, working_prompts
+from backend.prompt_ladder import tee_up_prompt, working_prompts
 from backend.timing import clock, elapsed_ms
 from backend.trace_names import (
     BOUNDARY_CODE, MCP_CODE, PRODUCTION_CODE, SQL_CODE, WORKFLOW_CODE,
@@ -58,7 +58,7 @@ from backend.token_expiry import credential_error, error_code
 from backend.search_utils import (
     PACKAGE_COLUMNS,
     parse_search_query,
-    results_to_packages,
+    rows_to_packages,
     display_sql,
     search_title,
 )
@@ -539,7 +539,7 @@ async def _currency_call(
             amount = float(package.get("price_per_person") or 0)
             converted = await cli.call(
                 "currency_convert",
-                {"amount": amount, "from_ccy": "USD", "to_ccy": target},
+                {"amount": amount, "from_currency": "USD", "to_currency": target},
             )
             if isinstance(converted, dict):
                 conversions.append({
@@ -562,7 +562,7 @@ async def _currency_call(
     else:
         result = await cli.call(
             "currency_convert",
-            {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
+            {"amount": 2500.0, "from_currency": "USD", "to_currency": target},
         )
         args = {"amount": 2500.0, "to": target}
     return {
@@ -902,7 +902,7 @@ async def mcp_search(
         agent_file="backend/routers/chat.py",
     ))
 
-    product_dicts = results_to_packages(results)
+    product_dicts = rows_to_packages(results)
     products = [Product(**row_to_api_product(p)) for p in product_dicts]
 
     return products, activities, domain_text
@@ -1161,13 +1161,13 @@ async def _handoff_destination(query: str) -> Optional[str]:
         return None
 
 
-def _needs_checkpointed_workflow(query: str) -> bool:
+def _needs_saved_step_workflow(query: str) -> bool:
     """Detect Phase 4 prompts that should bridge to the durable workflow.
 
     Production mode can recall memory, search, and persist a turn, but a prompt
     that asks for multiple dependent travel-planning steps should not be framed
     as completed in one fluent paragraph. Phase 5 owns that story because the
-    graph can checkpoint search -> availability -> synthesis/resume.
+    graph can save a snapshot after search -> availability -> synthesis/resume.
 
     A cancelled-flight replan qualifies as its own multi-step plan: reworking
     the itinerary is a re-search step and confirming which departures are still
@@ -1338,7 +1338,7 @@ def _refuse_unusable_workflow_request(request: ChatRequest, resume: bool) -> Non
         )
 
 
-async def orchestration_workflow(
+async def run_workflow_turn(
     query: str,
     traveler_id: str,
     conversation_id: Optional[str] = None,
@@ -1457,7 +1457,7 @@ async def production_search(
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
-    from backend.agents.phase_04_production.concierge import create_production_agent
+    from backend.agents.phase_04_production.production_agent import create_production_agent
     from backend.memory.store import DEMO_TRAVELER_ID
 
     tid = customer_id or DEMO_TRAVELER_ID
@@ -1510,9 +1510,11 @@ def _is_workflow_resume_query(query: str) -> bool:
         "resume workflow",
         "resume workflow from the saved step",
         "resume workflow from checkpoint",
+        "resume workflow from snapshot",
         "continue workflow",
         "continue from the saved step",
         "continue from checkpoint",
+        "continue from snapshot",
     }
 
 
@@ -1723,7 +1725,11 @@ async def chat(
     # The finished product offers a reviewable recovery, never a teaching-mode
     # instruction. Opening the plan is a separate explicit action; this reply
     # does not run a workflow or authorize an inventory write.
-    if request.experience == "concierge" and request.phase == 4 and _needs_checkpointed_workflow(request.message):
+    if (
+        request.experience == "concierge"
+        and request.phase == 4
+        and _needs_saved_step_workflow(request.message)
+    ):
         destination = await _handoff_destination(request.message)
         place = f"your {destination} trip" if destination else "your trip"
         return _complete_chat_turn(ChatResponse(
@@ -1752,7 +1758,7 @@ async def chat(
                     "conversations, or AgentCore Memory. No memory writeback occurred."
                 ),
                 agent_name=PRODUCTION_CODE,
-                agent_file="agents/phase_04_production/concierge.py",
+                agent_file="agents/phase_04_production/production_agent.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
@@ -1775,7 +1781,7 @@ async def chat(
                 turn_started,
             )
 
-        if _needs_checkpointed_workflow(request.message):
+        if _needs_saved_step_workflow(request.message):
             # Decided before the Runtime is called: a multi-step prompt is not answered in
             # one fluent paragraph, and no Runtime turn is spent on text that would be dropped.
             destination = await _handoff_destination(request.message)
@@ -1813,7 +1819,7 @@ async def chat(
             title="Processing with Production concierge (Runtime + Gateway + Memory)",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
             agent_name=PRODUCTION_CODE,
-            agent_file="agents/phase_04_production/concierge.py",
+            agent_file="agents/phase_04_production/production_agent.py",
         ))
         try:
             products, search_activities, raw_message, conv_id, memory_facts = await production_search(
@@ -1869,7 +1875,7 @@ async def chat(
                     else "The Production concierge failed. "
                 ) + f"Reference {error_ref}.",
                 agent_name=PRODUCTION_CODE,
-                agent_file="agents/phase_04_production/concierge.py",
+                agent_file="agents/phase_04_production/production_agent.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
@@ -1907,7 +1913,7 @@ async def chat(
                 workflow_status,
                 resumed_after_restart,
                 plan_package_id,
-            ) = await orchestration_workflow(
+            ) = await run_workflow_turn(
                 request.message,
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
@@ -1939,7 +1945,7 @@ async def chat(
                         ))
                 except Exception as exc:
                     log_error("workflow_memory_fetch", error=str(exc))
-            # Return the checkpointed operational result verbatim. A second
+            # Return the saved operational result verbatim. A second
             # model rewrite can contradict the hold/lease result and adds an
             # avoidable wait after the durable workflow already completed.
             message = raw_message
@@ -1970,7 +1976,7 @@ async def chat(
             # Preserve authorization/conflict HTTP status from the workflow.
             raise
         except HoldOutcomeUnknown as e:
-            log_error("orchestration_workflow", error=str(e))
+            log_error("run_workflow_turn", error=str(e))
             raise HTTPException(
                 status_code=503,
                 detail=f"{e} Re-read the saved journey before retrying.",
@@ -1983,9 +1989,9 @@ async def chat(
             # not a Python exception string.
             error_ref = uuid.uuid4().hex[:8]
             logger.exception(
-                "orchestration_workflow failed (ref=%s)", error_ref
+                "run_workflow_turn failed (ref=%s)", error_ref
             )
-            log_error("orchestration_workflow", error=str(e), ref=error_ref)
+            log_error("run_workflow_turn", error=str(e), ref=error_ref)
             raise HTTPException(
                 status_code=503,
                 detail=("Recovery was interrupted. Re-read the saved journey before retrying. "
@@ -2340,7 +2346,10 @@ async def production_hold(
     Cedar policy permits the hold only with it. Nothing here writes to Aurora.
     ``authorization_subject`` is the verified Cognito subject the audit row names, or None.
     """
-    from backend.agents.phase_04_production.concierge import HoldTarget, create_production_agent
+    from backend.agents.phase_04_production.production_agent import (
+        HoldTarget,
+        create_production_agent,
+    )
 
     row, pkg = await _package_for_hold(request.product_id)
     duration = _requested_duration(row, request.size)
@@ -2531,7 +2540,10 @@ async def production_booking(
     booking from held to confirmed, or refuses by name. ``authorization_subject``
     is the verified Cognito subject the audit row names, or None.
     """
-    from backend.agents.phase_04_production.concierge import BookingTarget, create_production_agent
+    from backend.agents.phase_04_production.production_agent import (
+        BookingTarget,
+        create_production_agent,
+    )
 
     line = await _traveler_booking(request.traveler_id, request.booking_id)
     _row, pkg = await _package_for_hold(str(line["package_id"]))
@@ -2594,7 +2606,7 @@ async def process_order(
 
     The phase selects the demonstration view, never the authorization path.
     Missing AgentCore configuration fails closed; no direct SQL write fallback.
-    Phase 5 automatic holds still use their checkpointed workflow intent.
+    Phase 5 automatic holds still use their saved workflow intent.
     """
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})

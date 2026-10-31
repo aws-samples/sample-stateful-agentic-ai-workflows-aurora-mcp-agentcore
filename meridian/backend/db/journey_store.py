@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 CREATE_JOURNEY_SQL = """
-INSERT INTO journeys (journey_id, traveler_id, checkpoint_backend)
+INSERT INTO journeys (journey_id, traveler_id, snapshot_store)
 VALUES (%s, %s, %s)
 """
 
@@ -116,25 +116,25 @@ class ExecutionClaim:
     conflict: Optional[dict]
 
 
-async def create_journey(db: Any, traveler_id: str, checkpoint_backend: str) -> str:
+async def create_journey(db: Any, traveler_id: str, snapshot_store: str) -> str:
     """Open a journey for a traveler.
 
     Args:
         db: Data API client.
         traveler_id: The owner. Journey rows are traveler-scoped by RLS.
-        checkpoint_backend: The backend serving this journey, recorded so a
+        snapshot_store: The backend serving this journey, recorded so a
             later resume can tell what actually persisted the state.
 
     Returns:
         The new journey id.
     """
     journey_id = f"jrn_{uuid.uuid4().hex[:12]}"
-    await db.execute(CREATE_JOURNEY_SQL, (journey_id, traveler_id, checkpoint_backend))
+    await db.execute(CREATE_JOURNEY_SQL, (journey_id, traveler_id, snapshot_store))
     return journey_id
 
 
 async def bind_thread(db: Any, journey_id: str, thread_id: str) -> None:
-    """Attach a checkpoint thread to a journey and make it the active one.
+    """Attach a workflow thread to a journey and make it the active one.
 
     Idempotent: resume re-binds the thread the journey already owns.
 
@@ -167,7 +167,7 @@ async def journey_for_thread(db: Any, thread_id: str) -> Optional[str]:
 
 
 async def ensure_journey(
-    db: Any, traveler_id: str, thread_id: str, checkpoint_backend: str
+    db: Any, traveler_id: str, thread_id: str, snapshot_store: str
 ) -> str:
     """Return the thread's journey, creating and binding one if it has none.
 
@@ -175,19 +175,19 @@ async def ensure_journey(
         db: Data API client, inside a traveler-scoped session.
         traveler_id: The owner.
         thread_id: The workflow thread id.
-        checkpoint_backend: The backend serving this journey.
+        snapshot_store: The backend serving this journey.
 
     Returns:
         The journey id the thread is bound to.
     """
-    # Serialize the first binding, including the interval before any checkpoint
+    # Serialize the first binding, including the interval before any snapshot
     # exists. RLS then verifies the winning binding belongs to this traveler.
     await db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (thread_id,))
     existing = await journey_for_thread(db, thread_id)
     if existing:
         return existing
 
-    journey_id = await create_journey(db, traveler_id, checkpoint_backend)
+    journey_id = await create_journey(db, traveler_id, snapshot_store)
     await bind_thread(db, journey_id, thread_id)
     return journey_id
 

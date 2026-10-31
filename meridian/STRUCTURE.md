@@ -31,7 +31,7 @@ Retrieval, Production and Workflow import their agent modules at runtime:
 
 - `backend/agents/phase_03_retrieval/`: one Strands agent built from `backend/agents/concierge_definition.py`; Phase 2's tools over one stdio MCP client per worker, `hybrid_trip_search` and `get_package_details` in process
 - `backend/agents/concierge_definition.py`: the tool contract, prompt core, traveler pin and `build_agent` shared by Phase 3 and the Concierge Runtime; copied into the Runtime by `scripts/stage_concierge_runtime.py`
-- `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, the RLS read, the turn's audit row and the memory write around the managed runtime; `process_hold()` and `process_booking()` for a hold or confirmation from the UI
+- `backend/agents/phase_04_production/production_agent.py`: identity, traveler grant, the RLS read, the turn's audit row and the memory write around the managed runtime; `process_hold()` and `process_booking()` for a hold or confirmation from the UI
 - `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
 - `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles; `governed_tools.py` calls Gateway tools (search) and `governed_hold.py` the hold and release tools, with the caller's token; `run_audit.py` writes one audit row per run
@@ -75,7 +75,7 @@ uses the governed Gateway path.
 | `backend/memory/` | Aurora traveler memory store and audit writer |
 | `backend/authorization.py` | Workload-to-traveler authorization types |
 | `backend/http_auth.py` | HTTP principal and traveler binding |
-| `backend/demo_prompts.py` | The five-phase prompt ladder |
+| `backend/prompt_ladder.py` | The five-phase prompt ladder |
 | `backend/catalog_compat.py` | Maps `trip_packages` rows to the frontend's `Product` shape |
 | `backend/launch.py` | Container entry point that opens the port before the app loads |
 

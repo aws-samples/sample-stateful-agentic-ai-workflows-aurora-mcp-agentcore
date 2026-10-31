@@ -3,8 +3,8 @@
 The durable-recovery sequence, run for real:
 
   1. Worker one claims the thread's single execution slot and runs the
-     workflow to its interrupt point, committing a checkpoint.
-  2. The committed checkpoint id is read back out of Aurora.
+     workflow to its interrupt point, committing a snapshot.
+  2. The committed snapshot id is read back out of Aurora.
   3. Worker one is SIGKILLed. Nothing is given a chance to clean up.
   4. Worker two tries to claim the slot and is refused, because the dead
      worker's lease has not expired yet.
@@ -234,10 +234,10 @@ async def run_takeover(thread_id: str, worker_login: bool) -> dict:
 # ------------------------------------------------------------------- driver
 
 
-async def _read_committed_checkpoint(client, thread_id: str) -> dict | None:
+async def _read_committed_snapshot(client, thread_id: str) -> dict | None:
     rows = await client.execute(
         """
-        SELECT snapshot_seq::TEXT AS checkpoint_id, status
+        SELECT snapshot_seq::TEXT AS snapshot_id, status
           FROM workflow_snapshots WHERE session_id = %s
          ORDER BY snapshot_seq DESC LIMIT 1
         """,
@@ -384,7 +384,7 @@ async def _wait_for_pause(child, expect_login: bool = False) -> str:
                 raise RuntimeError("Worker did not report a claimed, paused execution")
             if expect_login:
                 require_worker_login(reported_user)
-            say("worker 1", "workflow paused at a checkpoint")
+            say("worker 1", "workflow paused at a saved step")
             return first_worker
     raise RuntimeError("Worker exited before reaching its pause; inspect the worker output")
 
@@ -422,11 +422,11 @@ async def main(keep: bool, worker_login: bool = False) -> int:
             _wait_for_pause(child, worker_login), timeout=240
         )
 
-        committed = await _read_committed_checkpoint(client, thread_id)
+        committed = await _read_committed_snapshot(client, thread_id)
         if not committed:
-            say("abort", "no checkpoint reached Aurora", RED)
+            say("abort", "no snapshot reached Aurora", RED)
             return 1
-        say("aurora", f"committed checkpoint {committed['checkpoint_id']}", GREEN)
+        say("aurora", f"committed snapshot {committed['snapshot_id']}", GREEN)
 
         original_holds = await _holds_for(client, journey_id)
         if len(original_holds) != 1:

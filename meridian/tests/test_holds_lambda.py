@@ -207,7 +207,7 @@ def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
     assert hold_params["request_id"].startswith("hrq_")
 
 
-def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(config, monkeypatch):
+def test_a_workflow_caller_replays_its_saved_identity_under_its_lease(config, monkeypatch):
     api = FakeDataApi({
         **CATALOG_PRICE,
         **SAVED_BUDGET,
@@ -221,14 +221,14 @@ def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(con
         "FROM bookings": RECEIPT,
     })
     monkeypatch.setattr(holds, "RDS", api)
-    args = {**_hold_args(), "journeyRef": "phase5-thread", "holdRequestId": "hrq_checkpointed",
+    args = {**_hold_args(), "journeyRef": "phase5-thread", "holdRequestId": "hrq_saved",
             "bookingId": "HLD-CHK", "executionId": "exe_1"}
     result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
     assert result["hold"]["replayed"] is True
     assert result["hold"]["bookingId"] == "HLD-CHK"
-    assert result["hold"]["holdRequestId"] == "hrq_checkpointed"
+    assert result["hold"]["holdRequestId"] == "hrq_saved"
     hold_params = api.parameters[api.statements.index(holds.HOLD_SQL)]
-    assert hold_params["request_id"] == "hrq_checkpointed"
+    assert hold_params["request_id"] == "hrq_saved"
     assert hold_params["booking_id"] == "HLD-CHK"
     joined = "\n".join(api.statements)
     assert "FOR UPDATE" in joined and "set_config('app.execution_id'" in joined

@@ -1,5 +1,5 @@
 /* Operational recovery refresh.
-   The underlying memory, product, proof, and checkpoint components remain
+   The underlying memory, product, proof, and snapshot components remain
    intact. This layer removes decorative dashboard treatment and makes the
    hierarchy read like a real traveler decision workspace. */
 
@@ -48,7 +48,7 @@
 }
 
 .mds-recovery-workspace
-  :is(.mds-decision-status, .mds-checkpoint-badge) {
+  :is(.mds-decision-status, .mds-snapshot-badge) {
   min-height: 24px;
   padding: 0 8px;
   border-radius: var(--mds-radius-s);
@@ -285,7 +285,7 @@
   :is(
     .mds-concierge-assistance-card,
     .mds-agent-proof-card,
-    .mds-checkpointed-plan-card
+    .mds-saved-plan-card
   ) {
   min-height: 0;
 }
@@ -325,15 +325,15 @@
 .mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-ready .mds-recovery-overview-meta strong,
   .mds-decision-status.is-ready,
-  .mds-checkpoint-badge.is-ready
+  .mds-snapshot-badge.is-ready
 ) {
   color: var(--mds-green);
 }
 
 .mds-root .mds-recovery-workspace :is(
-  .mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong,
-  .mds-decision-status.is-checkpointed,
-  .mds-checkpoint-badge.is-checkpointed
+  .mds-recovery-overview.is-saved .mds-recovery-overview-meta strong,
+  .mds-decision-status.is-saved,
+  .mds-snapshot-badge.is-saved
 ) {
   color: var(--mds-cyan);
 }
@@ -341,7 +341,7 @@
 .mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-running .mds-recovery-overview-meta strong,
   .mds-decision-status.is-running,
-  .mds-checkpoint-badge.is-running
+  .mds-snapshot-badge.is-running
 ) {
   color: var(--mds-tint);
 }

@@ -46,7 +46,7 @@ def test_the_readmes_do_not_name_the_removed_pieces():
 def test_the_quick_start_expects_the_runtime_unconfigured_before_a_deploy():
     readme = read("../README.md")
     assert "`\"workflow_runtime_configured\"` is `false` until you deploy" in readme
-    assert "`\"checkpoint_backend\": \"Aurora workflow_snapshots\"`" in readme
+    assert "`\"snapshot_store\": \"Aurora workflow_snapshots\"`" in readme
     assert "seed_data.py` calls Amazon Bedrock" in readme
 
 

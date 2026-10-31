@@ -1,7 +1,7 @@
-"""Hold intent: allocated once, checkpointed, then executed.
+"""Hold intent: allocated once, saved, then executed.
 
 The database constraint on (journey_id, hold_request_id) is the second line of
-defence. The first is that the identity is decided and durably checkpointed
+defence. The first is that the identity is decided and durably saved
 before the business action runs, so every retry and every later execution
 reuses it instead of allocating a new one.
 """
@@ -122,11 +122,11 @@ def _travelers(quantity: int) -> str:
     return f"{quantity} traveler" if quantity == 1 else f"{quantity} travelers"
 
 
-def prepare_hold_node(state: dict) -> Dict[str, Any]:
+def prepare_hold_intent(state: dict) -> Dict[str, Any]:
     """Graph node that establishes the hold intent before the hold runs.
 
     Returns the existing intent unchanged when the state already carries one,
-    so a resumed graph replays with the identity it checkpointed rather than
+    so a resumed graph replays with the identity it saved rather than
     allocating a second one. Returns nothing when there is no ranked option,
     matching the hold node, which skips rather than fails in that case. When the
     package counts its places and no duration seats the whole party, returns

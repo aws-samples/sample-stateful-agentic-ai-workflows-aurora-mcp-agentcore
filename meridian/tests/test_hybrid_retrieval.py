@@ -92,13 +92,13 @@ def test_gate_drops_over_budget_sold_out_and_unknown_and_keeps_order():
     rows = [row("A", 1500), row("B", 2600), row("C", 1700), row("D", 1600), row("E", 1000)]
     places = {"A": 2, "B": 5, "C": 0, "D": 1}   # E is missing: unknown stock is not stock
 
-    kept = hybrid.apply_gate(rows, 2000.0, places)
+    kept = hybrid.keep_eligible(rows, 2000.0, places)
 
     assert [r["package_id"] for r in kept] == ["A", "D"]
 
 
 def test_gate_without_a_ceiling_still_requires_places():
-    kept = hybrid.apply_gate([row("A", 9000), row("B", 100)], None, {"A": 1, "B": 0})
+    kept = hybrid.keep_eligible([row("A", 9000), row("B", 100)], None, {"A": 1, "B": 0})
     assert [r["package_id"] for r in kept] == ["A"]
 
 

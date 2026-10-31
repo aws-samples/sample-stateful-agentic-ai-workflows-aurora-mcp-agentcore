@@ -34,7 +34,7 @@ export function hasVerifiedResume(document: JourneyDocument): boolean {
   const executions = isObserved(document.executions) ? document.executions.items : [];
   const latest = executions[executions.length - 1];
   return isObserved(workflow) && workflow.workflow_status === 'resumed'
-    && Boolean(workflow.resumed_from_checkpoint)
+    && Boolean(workflow.resumed_from_snapshot)
     && workflow.conversation_id === document.active_thread_id
     && Boolean(latest) && latest.status === 'succeeded'
     && workflow.execution_id === latest.execution_id;

@@ -1,7 +1,7 @@
 """Live Aurora reachability probe backing `/api/health`.
 
 `/api/health` used to hardcode `status: "healthy"` and only ever read
-startup-time checkpoint state - so it kept reporting healthy on a running
+startup-time snapshot state - so it kept reporting healthy on a running
 process whose AWS credentials had since expired, while every real Aurora
 read (`/api/products`, `/api/packages`, chat) was already failing. This
 module runs a real query, the `to_regclass` check for the workflow snapshot table, so

@@ -10,7 +10,7 @@ MIDDLE_DOT = "·"
 # backend/routers/diagnostics.py stands in for the diagnostics emitter (there is no
 # backend/db/diagnostics.py); journey_document.py builds the replayed journey record.
 SCANNED = (
-    "backend/agents/phase_04_production/concierge.py",
+    "backend/agents/phase_04_production/production_agent.py",
     "backend/routers/chat.py",
     "backend/mcp/*client*.py",
     "backend/routers/diagnostics.py",

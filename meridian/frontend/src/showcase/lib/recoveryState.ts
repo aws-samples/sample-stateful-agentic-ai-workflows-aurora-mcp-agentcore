@@ -1,10 +1,10 @@
-import { hasDurableCheckpoint } from './showcaseProof';
+import { hasDurableSnapshot } from './showcaseProof';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
 import { isDurableField, isSnapshotTitle } from './spanTitles';
 import { formatLatency, stepService, stepSourceLabel } from './stepSource';
 
-export type RecoveryStage = 'action' | 'running' | 'checkpointed' | 'ready';
+export type RecoveryStage = 'action' | 'running' | 'saved' | 'ready';
 
 export interface RecoveryEvidence {
   searchObserved: boolean;
@@ -12,8 +12,8 @@ export interface RecoveryEvidence {
   availabilityObserved: boolean;
   loyaltyObserved: boolean;
   memoryObserved: boolean;
-  checkpointObserved: boolean;
-  durableCheckpoint: boolean;
+  snapshotObserved: boolean;
+  durableSnapshot: boolean;
 }
 
 function spanText(
@@ -50,7 +50,7 @@ export function deriveRecoveryStage(state: MeridianShowcaseState): RecoveryStage
     return 'action';
   }
   if (state.isLoading) return 'running';
-  if (state.workflowStatus === 'paused') return 'checkpointed';
+  if (state.workflowStatus === 'paused') return 'saved';
   if (
     state.workflowStatus === 'resumed' ||
     state.workflowStatus === 'complete'
@@ -65,13 +65,13 @@ export function deriveRecoveryEvidence(
 ): RecoveryEvidence {
   if (state.selectedPhase !== 5) return {
     searchObserved: false, alternativesObserved: false, availabilityObserved: false,
-    loyaltyObserved: false, memoryObserved: false, checkpointObserved: false, durableCheckpoint: false,
+    loyaltyObserved: false, memoryObserved: false, snapshotObserved: false, durableSnapshot: false,
   };
   const texts = (state.traceSpans ?? []).map((_, index) =>
     spanText(state, index),
   );
   const recommendationCount = state.recommendations?.length ?? 0;
-  const checkpointSpans = texts.filter((text) =>
+  const snapshotSpans = texts.filter((text) =>
     /checkpoint|snapshot saved|saved step|postgres.?saver|workflow state/.test(text),
   );
 
@@ -98,14 +98,14 @@ export function deriveRecoveryEvidence(
         text,
       ),
     ),
-    checkpointObserved: checkpointSpans.length > 0,
-    durableCheckpoint:
-      hasDurableCheckpoint(state.traceSpans ?? []),
+    snapshotObserved: snapshotSpans.length > 0,
+    durableSnapshot:
+      hasDurableSnapshot(state.traceSpans ?? []),
   };
 }
 
 export type RecoveryStepState = 'is-ready' | 'is-pending' | 'is-current' | 'is-visited';
-export type RecoveryStepId = 'understand' | 'search' | 'checkpoint' | 'verify';
+export type RecoveryStepId = 'understand' | 'search' | 'snapshot' | 'verify';
 
 /** One of the four recovery workflow steps, as the backend has reported it. */
 export interface RecoveryStepView {
@@ -140,23 +140,23 @@ function nodeSource(spans: ShowcaseTraceSpan[], node: RegExp): string | null {
     .filter(Boolean).join(', ');
 }
 
-/** The checkpoint written after the search node, and only a durable one. */
-function checkpointSource(spans: ShowcaseTraceSpan[]): string | null {
+/** The snapshot written after the search node, and only a durable one. */
+function snapshotSource(spans: ShowcaseTraceSpan[]): string | null {
   const search = spans.findIndex(span => SEARCH_NODE.test(span.name));
-  const checkpoint = search < 0
+  const snapshot = search < 0
     ? undefined
     : spans.slice(search + 1).find(span => isSnapshotTitle(span.name));
-  const durable = checkpoint?.fields
+  const durable = snapshot?.fields
     .some(field => isDurableField(field.label) && field.value === 'true');
-  return checkpoint && checkpoint.status === 'ok' && durable ? stepSourceLabel(checkpoint) : null;
+  return snapshot && snapshot.status === 'ok' && durable ? stepSourceLabel(snapshot) : null;
 }
 
-const STEP_IDS: RecoveryStepId[] = ['understand', 'search', 'checkpoint', 'verify'];
+const STEP_IDS: RecoveryStepId[] = ['understand', 'search', 'snapshot', 'verify'];
 
 const pending = (id: RecoveryStepId): RecoveryStepView => (
   { id, state: 'is-pending', source: null });
 
-/** Understand, search, checkpoint and verify, each confirmed only by the spans
+/** Understand, search, snapshot and verify, each confirmed only by the spans
  *  the backend returned. A fresh run in flight claims no step: the trace arrives
  *  with the response. */
 export function deriveRecoverySteps(
@@ -172,7 +172,7 @@ export function deriveRecoverySteps(
   const sources: Record<RecoveryStepId, string | null> = {
     understand: nodeSource(spans, CLASSIFY_NODE),
     search: nodeSource(spans, SEARCH_NODE),
-    checkpoint: checkpointSource(spans),
+    snapshot: snapshotSource(spans),
     verify: nodeSource(spans, VERIFY_NODE),
   };
   return STEP_IDS.map((id): RecoveryStepView => {

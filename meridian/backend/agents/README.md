@@ -14,10 +14,10 @@ numbered guide for the running code, sample prompt, evidence and takeaway.
 | 1 | **SQL Agent** | `phase_01_sql/agent.py` | Strands `@tool` + direct RDS Data API |
 | 2 | **MCP Agent** | `phase_02_mcp/agent.py` | Strands + `MCPClient` (postgres-mcp-server) |
 | 3 | **Retrieval Agent** | `phase_03_retrieval/agent.py` | One Strands agent over the cumulative tools: hybrid search and package details in process, the Phase 2 tools over MCP stdio |
-| 4 | **Production Agent** | `phase_04_production/concierge.py` | Identity, traveler grant, RLS read and write around the managed runtime |
+| 4 | **Production Agent** | `phase_04_production/production_agent.py` | Identity, traveler grant, RLS read and write around the managed runtime |
 | 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold and booking confirmation |
 | 4 | Traveler Memory Agent | `phase_04_production/memory_agent.py` | `@tool` recall / persist for Aurora memory |
-| 5 | **Orchestration Agent** | `phase_05_workflow/graph.py` | Strands `Graph` built by `GraphBuilder`, run by the `MeridianWorkflow` Runtime, with Aurora `workflow_snapshots`; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`); the search node and the release step call Gateway tools the same way (`phase_05_workflow/governed_tools.py`) |
+| 5 | **Workflow** | `phase_05_workflow/graph.py` | Strands `Graph` built by `GraphBuilder`, run by the `MeridianWorkflow` Runtime, with Aurora `workflow_snapshots`; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`); the search node and the release step call Gateway tools the same way (`phase_05_workflow/governed_tools.py`) |
 
 ## Live API routing (`backend/routers/chat.py`)
 
@@ -26,8 +26,8 @@ numbered guide for the running code, sample prompt, evidence and takeaway.
 | 1 | `sql_search()`: code calls the typed `search_trips`, one parameterized statement | No (reference only) |
 | 2 | `mcp_search()`: code calls typed tools on the `meridian-concierge` MCP server, `search_trips` for a filter | No (reference only; the reference agent uses postgres-mcp-server) |
 | 3 | `retrieval_agent_search()` → `run_retrieval_turn()`: one Strands agent on Bedrock | **Yes** (the agent and its cumulative tools) |
-| 4 | `production_search()` → `ProductionAgent.process_turn()` → AgentCore Runtime (which calls the gateway tools); `production_hold()` → `process_hold()` for the one-click hold and `production_booking()` → `process_booking()` for its confirmation | **Yes** (concierge + TravelerMemoryAgent; the runtime agent lives in `meridian_agentcore/app/MeridianConcierge`) |
-| 5 | `orchestration_workflow()` → `WorkflowRuntimeClient` → the `MeridianWorkflow` Runtime, which runs `WorkflowRunner` | **Yes**, in the Runtime (Strands `Graph`; snapshots saved in Aurora) |
+| 4 | `production_search()` → `ProductionAgent.process_turn()` → AgentCore Runtime (which calls the gateway tools); `production_hold()` → `process_hold()` for the one-click hold and `production_booking()` → `process_booking()` for its confirmation | **Yes** (ProductionAgent + MemoryAgent; the runtime agent lives in `meridian_agentcore/app/MeridianConcierge`) |
+| 5 | `run_workflow_turn()` → `WorkflowRuntimeClient` → the `MeridianWorkflow` Runtime, which runs `WorkflowRunner` | **Yes**, in the Runtime (Strands `Graph`; snapshots saved in Aurora) |
 
 The Phase 1 and 2 agent modules show the Strands structure for those patterns. The API runs those two phases in code, without a model loop (`search_trips` directly, then over the `meridian-concierge` MCP server), so their results do not depend on model tool selection. Phases 3 to 5 import their agent modules at runtime.
 

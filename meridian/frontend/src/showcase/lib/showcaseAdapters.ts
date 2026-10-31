@@ -57,7 +57,7 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.',
   ],
   // Tokyo proves memory and RLS; the flight disruption is the same prompt Phase 5
-  // owns - Production answers it in one turn, teeing up the checkpointed A/B.
+  // owns - Production answers it in one turn, teeing up the saved A/B.
   4: [
     'Find Tokyo trips that fit my saved preferences.',
     'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.',
@@ -266,7 +266,7 @@ export function healthResponseToStatus(response: unknown): BackendStatus {
   const isMeridianHealth =
     'bedrock_model_id' in response &&
     'embedding_model_id' in response &&
-    'checkpoint_backend' in response;
+    'snapshot_store' in response;
   if (!isMeridianHealth) return 'offline';
   const status = 'status' in response ? String(response.status).toLowerCase() : '';
   return status === 'healthy' || status === 'ok' ? 'online' : 'offline';

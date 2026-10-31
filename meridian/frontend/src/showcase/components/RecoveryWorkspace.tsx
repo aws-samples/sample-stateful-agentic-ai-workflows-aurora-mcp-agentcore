@@ -45,7 +45,7 @@ type RecoveryLayout = 'command' | 'focus' | 'journey';
  *
  * A request clears the trace until its response arrives, so a resume shows the
  * steps the paused run confirmed. A resumed run returns the earlier spans again
- * without the checkpoint write time measured after that pause; the time is
+ * without the snapshot write time measured after that pause; the time is
  * carried over by span id, never re-derived.
  */
 function useRecoveryStepSpans(
@@ -169,7 +169,7 @@ function workflowErrorDetailOf(spans: ShowcaseTraceSpan[]): string | null {
 function recoveryStatusLabel(stage: RecoveryStage, error: string | null): string {
   return stage === 'ready'
     ? 'Recovery plan ready'
-    : stage === 'checkpointed'
+    : stage === 'saved'
       ? 'Shortlist saved, ready to verify'
       : stage === 'running'
         ? 'Recovery in progress'
@@ -210,7 +210,7 @@ function RecoveryContext({ stage, state }: {
 }) {
   return (
     <>
-      {(stage === 'checkpointed' || stage === 'action') && (
+      {(stage === 'saved' || stage === 'action') && (
         <p className="mc-recovery-action-note">
           Recovery checks package availability and requests a 15-minute courtesy hold on the
           leading option. No payment is taken; booking confirmation happens later in Concierge.
@@ -427,7 +427,7 @@ function RecoveryDecisionDashboard({
       void state.submitPrompt('Resume workflow from the saved step', 5);
     }
   };
-  const waitingForReview = stage === 'checkpointed' && state.workflowStatus === 'paused';
+  const waitingForReview = stage === 'saved' && state.workflowStatus === 'paused';
   const reviewRecoveryPlan = () => {
     const briefing = briefingRef.current;
     if (!briefing) return;
@@ -440,7 +440,7 @@ function RecoveryDecisionDashboard({
     briefing.querySelector<HTMLElement>('summary')?.focus();
   };
   const runPrimaryAction = () => {
-    if (stage === 'checkpointed') {
+    if (stage === 'saved') {
       resumeRecovery();
     } else if (stage === 'ready') {
       if (planOption) state.openTripDetails(planOption);
@@ -455,7 +455,7 @@ function RecoveryDecisionDashboard({
   const primaryActionLabel =
     stage === 'ready'
       ? 'Review this plan'
-      : stage === 'checkpointed'
+      : stage === 'saved'
         ? 'Resume and request hold'
         : 'Start recovery';
 
@@ -531,8 +531,8 @@ function RecoveryConsole({
   onStart: () => void;
   onOpenProof: () => void;
 }) {
-  const showDecisionDashboard = stage === 'checkpointed' || stage === 'ready';
-  // One console for running, checkpointed and ready, so the step card stays
+  const showDecisionDashboard = stage === 'saved' || stage === 'ready';
+  // One console for running, saved and ready, so the step card stays
   // mounted and each step's change reads as a change, not a new card.
   if (stage === 'running' || showDecisionDashboard) {
     return (
@@ -656,13 +656,13 @@ export function RecoveryWorkspace({
   const briefingRef = useRef<HTMLElement>(null);
   const { headingRef, consoleRef } = useRecoveryDeskFocus(state.isLoading, prefersReducedMotion);
   const { recoveryLayout, layoutReviewEnabled, selectRecoveryLayout } = useRecoveryLayout();
-  const isResumingFromCheckpoint =
+  const isResumingFromSnapshot =
     recoveryStage === 'running' &&
     state.workflowStatus === 'paused' &&
-    /resume|checkpoint/i.test(state.lastPrompt ?? '');
+    /resume|checkpoint|snapshot/i.test(state.lastPrompt ?? '');
   const stepSpans = useRecoveryStepSpans(state.traceSpans, state.conversationId);
   const recoverySteps = deriveRecoverySteps(stepSpans, recoveryStage, {
-    resumeMode: isResumingFromCheckpoint,
+    resumeMode: isResumingFromSnapshot,
     failed: Boolean(workflowErrorDetail),
   });
   const liveCues = useLiveCues(state.conversationId, state.isLoading);
@@ -706,7 +706,7 @@ export function RecoveryWorkspace({
 
       <RecoveryConsole
         state={state} stage={recoveryStage} evidence={recoveryEvidence}
-        steps={recoverySteps} live={liveCues} resumeMode={isResumingFromCheckpoint}
+        steps={recoverySteps} live={liveCues} resumeMode={isResumingFromSnapshot}
         errorDetail={workflowErrorDetail} consoleRef={consoleRef} briefingRef={briefingRef}
         onStart={startRecovery} onOpenProof={onOpenProof}
       />

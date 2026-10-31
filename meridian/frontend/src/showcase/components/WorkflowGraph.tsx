@@ -2,7 +2,7 @@
  * Phase 5 Strands Graph execution view.
  *
  * The right rail is narrow, so this renders the executed route as large,
- * readable cards instead of a dense canvas. The route, facts, checkpoints, and
+ * readable cards instead of a dense canvas. The route, facts, snapshots, and
  * replay focus still come from real workflow trace spans.
  */
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -33,8 +33,8 @@ const NODE_RE = /Workflow node:\s*(classify|search|availability|memory_recall|pr
 interface GraphActivation {
   litNodes: Set<GraphNodeName>;
   intent: string | null;
-  checkpointer: string | null;
-  checkpointAfter: Set<NodeName>;
+  snapshotStore: string | null;
+  snapshotAfter: Set<NodeName>;
   currentNode: GraphNodeName | null;
   nextNode: GraphNodeName | null;
   pathNodes: GraphNodeName[];
@@ -55,10 +55,10 @@ function deriveActivation(
   replayIndex: number,
 ): GraphActivation {
   const litNodes = new Set<GraphNodeName>();
-  const checkpointAfter = new Set<NodeName>();
+  const snapshotAfter = new Set<NodeName>();
   const nodeFacts = new Map<NodeName, string>();
   let intent: string | null = null;
-  let checkpointer: string | null = null;
+  let snapshotStore: string | null = null;
   let lastNode: NodeName | null = null;
 
   spans.forEach((span, index) => {
@@ -79,8 +79,8 @@ function deriveActivation(
       const ck = SNAPSHOT_STORE_FIELDS
         .map((label) => fieldValue(span, label))
         .find(Boolean) ?? null;
-      if (ck) checkpointer = ck;
-      if (lastNode) checkpointAfter.add(lastNode);
+      if (ck) snapshotStore = ck;
+      if (lastNode) snapshotAfter.add(lastNode);
     }
   });
 
@@ -99,8 +99,8 @@ function deriveActivation(
   return {
     litNodes,
     intent,
-    checkpointer,
-    checkpointAfter,
+    snapshotStore,
+    snapshotAfter,
     currentNode,
     nextNode,
     pathNodes,
@@ -154,8 +154,8 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
   const {
     litNodes,
     intent,
-    checkpointer,
-    checkpointAfter,
+    snapshotStore,
+    snapshotAfter,
     currentNode,
     nextNode,
     pathNodes,
@@ -219,7 +219,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
           const next = nextNode === node;
           const step = stepForNode(node, pathNodes);
           const fact = nodeFacts.get(node as NodeName);
-          const checkpointed = checkpointAfter.has(node as NodeName);
+          const saved = snapshotAfter.has(node as NodeName);
 
           return (
             <div className="mds-wfgraph-route-row" key={node}>
@@ -238,7 +238,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
                   <b>{NODE_LABELS[node]}</b>
                   <span className="mds-wfgraph-route-meta">
                     {fact && <em>{fact}</em>}
-                    {checkpointed && (
+                    {saved && (
                       <span className="mds-wfgraph-route-ckpt">
                         saved
                       </span>
@@ -251,10 +251,10 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
         })}
       </div>
 
-      {checkpointer && (
+      {snapshotStore && (
         <div className="mds-wfgraph-foot">
           <span className="mds-wfgraph-ckpt-dot" aria-hidden="true" />
-          Saved step, {checkpointer}
+          Saved step, {snapshotStore}
         </div>
       )}
     </div>

@@ -248,9 +248,9 @@ it('retains a confirmed hold and workflow evidence without placing it again on r
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   act(() => result.current.setSelectedPhase(5));
   await act(async () => { await result.current.submitPrompt('My flight was canceled. Rework the trip.', 5); });
-  const checkpointTrace = result.current.traceSpans;
+  const snapshotTrace = result.current.traceSpans;
   await act(async () => { await result.current.holdTrip(product); });
-  expect(result.current.traceSpans).toEqual(expect.arrayContaining(checkpointTrace));
+  expect(result.current.traceSpans).toEqual(expect.arrayContaining(snapshotTrace));
   expect(result.current.conversationId).toBe('same-thread');
   act(() => result.current.closeTripDetails());
   act(() => result.current.openTripDetails(product));
@@ -282,15 +282,15 @@ it('keeps a late hold receipt without overwriting a new phase conversation', asy
 });
 
 
-it.each(['Resume workflow from the saved step', 'Resume workflow from checkpoint'])('restores a saved recovery and sends "%s" to its original thread', async (prompt) => {
+it.each(['Resume workflow from the saved step', 'Resume workflow from snapshot'])('restores a saved recovery and sends "%s" to its original thread', async (prompt) => {
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   const document = {
     traveler_id: 'trv_meridian_demo', active_thread_id: 'saved-thread',
-    workflow: { status: 'observed', source: 'checkpoint', conversation_id: 'saved-thread',
+    workflow: { status: 'observed', source: 'snapshot', conversation_id: 'saved-thread',
       query: 'My Tokyo flight was canceled. Rework the trip.', message: 'Shortlist saved.',
       workflow_status: 'paused', next_nodes: ['availability'], activities: [], travelers_count: 3 },
-    recommendations: { status: 'observed', source: 'checkpoint', items: [] },
+    recommendations: { status: 'observed', source: 'snapshot', items: [] },
   } as unknown as JourneyDocument;
   act(() => result.current.restoreJourney(document));
   expect(result.current.selectedPhase).toBe(5);
@@ -323,10 +323,10 @@ it('restores the held package of a saved recovery after a refresh', async () => 
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   const document = {
     traveler_id: 'trv_meridian_demo', active_thread_id: 'saved-thread',
-    workflow: { status: 'observed', source: 'checkpoint', conversation_id: 'saved-thread',
+    workflow: { status: 'observed', source: 'snapshot', conversation_id: 'saved-thread',
       query: 'My Tokyo flight was canceled. Rework the trip.', message: 'Held.',
       workflow_status: 'resumed', next_nodes: [], activities: [], travelers_count: 2 },
-    recommendations: { status: 'observed', source: 'checkpoint', items: [
+    recommendations: { status: 'observed', source: 'snapshot', items: [
     { product_id: 'TKY-003', name: 'Tokyo Culture Week', price: 1949 },
     { product_id: 'KYO-001', name: 'Kyoto Rail Extension', price: 2100 },
     { product_id: 'OSA-002', name: 'Osaka Food Weekend', price: 1500 },
@@ -359,7 +359,7 @@ it.each(['phase', 'clear'])('ignores late responses after %s and leaves newer lo
 
 const healthyService = {
   status: 'healthy', bedrock_model_id: 'configured-model',
-  embedding_model_id: 'configured-embedding', checkpoint_backend: 'AuroraDataApiSaver',
+  embedding_model_id: 'configured-embedding', snapshot_store: 'AuroraDataApiSaver',
 };
 
 describe('Live connection readiness', () => {

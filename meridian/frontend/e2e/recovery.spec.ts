@@ -42,7 +42,7 @@ test.beforeEach(async ({ page }) => {
       });
     }
     const health = { status: 'healthy', bedrock_model_id: 'fixture',
-      embedding_model_id: 'fixture', checkpoint_backend: 'fixture' };
+      embedding_model_id: 'fixture', snapshot_store: 'fixture' };
     const memory = { traveler_id: 'trv_meridian_demo', facts: [] };
     return route.fulfill({ json: path.endsWith('/health')
       ? health
@@ -67,7 +67,7 @@ test('recovery alternative cards keep the route on one line at 1440', async ({ p
 });
 
 for (const motion of ['no-preference', 'reduce'] as const) {
-  test(`checkpoint confirmation with ${motion} motion`, async ({ page }) => {
+  test(`snapshot confirmation with ${motion} motion`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: motion });
     await page.route(isChatCall, route => fulfillChat(
       route, pausedRecovery(products, route.request().postDataJSON().conversation_id),
@@ -85,10 +85,10 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       }).observe(document.body, { childList: true, subtree: true });
     });
     await page.getByRole('button', { name: 'Start recovery' }).click();
-    const checkpoint = page.locator('.mds-recovery-launch-steps li')
+    const snapshot = page.locator('.mds-recovery-launch-steps li')
       .filter({ hasText: 'Save a step in Aurora' });
-    await expect(checkpoint).toHaveClass(/is-visited/);
-    await expect(checkpoint.locator('.mds-step-source')).toHaveText('Aurora Data API, 458 ms');
+    await expect(snapshot).toHaveClass(/is-visited/);
+    await expect(snapshot.locator('.mds-step-source')).toHaveText('Aurora Data API, 458 ms');
     await expect(page.locator('.mds-decision-status')).toHaveText('Shortlist saved');
     await expect(page.locator('.mds-aurora-glow')).toHaveCount(motion === 'reduce' ? 0 : 1);
     if (motion === 'no-preference') {
@@ -98,7 +98,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     if (motion === 'reduce') {
       await expect.poll(() => page.evaluate(() => document.getAnimations()
         .filter(animation => animation.playState === 'running').length)).toBe(0);
-      expect(await checkpoint.locator('.mds-recovery-step-icon').evaluate(el => el.style.opacity))
+      expect(await snapshot.locator('.mds-recovery-step-icon').evaluate(el => el.style.opacity))
         .not.toBe('0');
     }
   });
@@ -160,7 +160,7 @@ async function routeJourney(
   await page.route(url => url.pathname === '/api/journeys', route => {
     const thread = new URL(route.request().url()).searchParams.get('thread_id') ?? state.thread;
     return route.fulfill({ json: { journeys: thread ? [{
-      journey_id: 'jrn_e2e', status: 'active', checkpoint_backend: 'AuroraDataApiSaver',
+      journey_id: 'jrn_e2e', status: 'active', snapshot_store: 'AuroraDataApiSaver',
       active_thread_id: thread, execution_count: 1,
       created_at: '2026-10-07 09:59:00+00', updated_at: '2026-10-07 09:59:00+00',
     }] : [] } });

@@ -172,7 +172,7 @@ PRICE_CASES = {
     "price_range": ({"MIN(price_per_person)": [
         {"min_price": 1200.0, "avg_price": 1950.0, "max_price": 3300.0, "sample_size": 4}]},
         {"destination": "Tokyo"}),
-    "currency_convert": ({}, {"amount": 100, "from_ccy": "USD", "to_ccy": "USD"}),
+    "currency_convert": ({}, {"amount": 100, "from_currency": "USD", "to_currency": "USD"}),
     "hybrid_trip_search": (HYBRID_ROWS, {"query": "Japan under $2,500", "limit": 5}),
 }
 

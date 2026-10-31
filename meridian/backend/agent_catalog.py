@@ -67,7 +67,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
                 ("compare_packages", "compare_packages(package_ids)"),
                 ("price_range", "price_range(destination)"),
                 ("region_inventory", "region_inventory(region, trip_type)"),
-                ("currency_convert", "currency_convert(amount, from_ccy, to_ccy)"),
+                ("currency_convert", "currency_convert(amount, from_currency, to_currency)"),
                 ("loyalty_balance", "loyalty_balance(travelerId, program)"),
             )
         ),
@@ -97,7 +97,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
                       "region_inventory(region, trip_type) over MCP stdio",
                       "mcp/concierge_server.py"),
             SkillSpec("currency_convert", "meridian-concierge",
-                      "currency_convert(amount, from_ccy, to_ccy) over MCP stdio",
+                      "currency_convert(amount, from_currency, to_currency) over MCP stdio",
                       "mcp/concierge_server.py"),
             SkillSpec("loyalty_balance", "meridian-concierge",
                       "loyalty_balance(travelerId, program) over MCP stdio",
@@ -108,7 +108,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
         phase=4,
         label="Production Agent",
         primary_agent=PRODUCTION_CODE,
-        agent_file="agents/phase_04_production/concierge.py",
+        agent_file="agents/phase_04_production/production_agent.py",
         method="Identity + RLS around AgentCore Runtime; the runtime agent calls Gateway tools under Cedar policy",
         specialists=(MEMORY_CODE, "MeridianConcierge runtime"),
         skills=(
@@ -151,7 +151,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
     ),
     5: PhaseSpec(
         phase=5,
-        label="Orchestration Agent",
+        label="Workflow",
         primary_agent="WorkflowRunner",
         agent_file="agents/phase_05_workflow/graph.py",
         method="Strands Graph (classify → branch → synthesize)",

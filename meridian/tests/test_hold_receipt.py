@@ -17,7 +17,7 @@ from backend.agents.phase_05_workflow.nodes import (
 from backend.db.journey_document import _hold, _pending_decision, _recommendations, _selected_plan
 
 
-CHECKPOINT = {"status": "committed", "thread_id": "thread-test", "checkpoint_id": "cp-test"}
+SAVED_SNAPSHOT = {"status": "committed", "thread_id": "thread-test", "snapshot_id": "cp-test"}
 HOLD_INTENT = {"hold_request_id": "request-test", "package_id": "PKG-1"}
 
 
@@ -32,39 +32,42 @@ async def unused_step(*_args, **_kwargs):
 ])
 def test_completed_intent_is_not_a_pending_decision(completed):
     values = {"hold_intent": HOLD_INTENT, **completed}
-    result = _pending_decision(CHECKPOINT, values, workflow_status=values.get("workflow_status"))
+    result = _pending_decision(
+        SAVED_SNAPSHOT, values, workflow_status=values.get("workflow_status")
+    )
     assert result["status"] == "unavailable"
 
 
 def test_prepared_intent_remains_pending_and_identifies_selected_package():
     values = {"hold_intent": HOLD_INTENT, "workflow_status": "paused"}
-    decision = _pending_decision(CHECKPOINT, values, workflow_status=values["workflow_status"])
+    decision = _pending_decision(SAVED_SNAPSHOT, values, workflow_status=values["workflow_status"])
     assert decision["status"] == "observed"
     assert decision["hold_request_id"] == "request-test"
-    selection = _selected_plan(CHECKPOINT, values)
+    selection = _selected_plan(SAVED_SNAPSHOT, values)
     assert selection["package_id"] == "PKG-1"
     assert selection["source"].endswith("#channel:hold_intent")
 
 
 def test_completed_hold_keeps_its_selection_without_a_pending_decision():
     values = {"hold_id": "booking-test", "hold_package": "PKG-1", "hold_intent": HOLD_INTENT}
-    assert _pending_decision(CHECKPOINT, values)["status"] == "unavailable"
-    selection = _selected_plan(CHECKPOINT, values)
+    assert _pending_decision(SAVED_SNAPSHOT, values)["status"] == "unavailable"
+    selection = _selected_plan(SAVED_SNAPSHOT, values)
     assert selection["package_id"] == "PKG-1"
     assert selection["source"].endswith("#channel:hold_package")
 
 
 def test_legacy_selection_is_preserved_but_recommendations_are_not_a_selection():
-    selection = _selected_plan(CHECKPOINT, {"selected_package": "PKG-1"})
+    selection = _selected_plan(SAVED_SNAPSHOT, {"selected_package": "PKG-1"})
     assert selection["package_id"] == "PKG-1"
     assert selection["source"].endswith("#channel:selected_package")
-    assert _selected_plan(CHECKPOINT, {"packages": [{"product_id": "PKG-1"}]})["status"] == "unavailable"
+    plan = _selected_plan(SAVED_SNAPSHOT, {"packages": [{"product_id": "PKG-1"}]})
+    assert plan["status"] == "unavailable"
 
 
 @pytest.mark.parametrize("channel", ["packages", "recommendations"])
-def test_recommendation_evidence_cites_its_actual_checkpoint_channel(channel):
+def test_recommendation_evidence_cites_its_actual_snapshot_channel(channel):
     packages = [{"product_id": "PKG-1"}]
-    result = _recommendations(CHECKPOINT, {channel: packages})
+    result = _recommendations(SAVED_SNAPSHOT, {channel: packages})
     assert result["items"] == packages
     assert result["source"].endswith(f"#channel:{channel}")
 

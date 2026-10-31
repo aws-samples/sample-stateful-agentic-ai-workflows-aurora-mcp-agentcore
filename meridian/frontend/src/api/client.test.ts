@@ -41,7 +41,7 @@ describe('bounded evidence and profile operations', () => {
 describe('session receipt', () => {
   it('keeps an unavailable count as null rather than zero', async () => {
     const body = {
-      traveler_id: 't', since: 'last 90 minutes', durable_checkpoints: false,
+      traveler_id: 't', since: 'last 90 minutes', durable_snapshots: false,
       lines: [{ label: 'Authorization decisions', table: 'traveler_access_audit',
         count: null, detail: 'audit counts unavailable (ref abc)', scoped: false }],
     };

@@ -205,7 +205,7 @@ def _choice_to_record(prior: Optional[Dict[str, Any]], command: WorkflowCommand)
     return None if chosen == saved else chosen
 
 
-def _authorize(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> None:
+def _check_thread_owner(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> None:
     """Refuse another traveler's thread, re-checked on every resume."""
     if prior is None:
         return
@@ -390,7 +390,7 @@ class WorkflowRunner:
         """
         _validate(command)
         prior = await self._read_snapshot(command)
-        _authorize(prior, command)
+        _check_thread_owner(prior, command)
         _check_against(prior, command)
         _choice_to_record(prior, command)
         try:
@@ -487,7 +487,7 @@ class WorkflowRunner:
         # The pre-claim read only refuses obvious conflicts; every decision below
         # uses the snapshot as it stands now that this execution holds the lease.
         prior = await self._read_snapshot(command)
-        _authorize(prior, command)
+        _check_thread_owner(prior, command)
         _check_against(prior, command, claimed=True)
         write_ms: List[int] = []
         storage = ResumableStorage(
@@ -635,7 +635,7 @@ class WorkflowRunner:
                 **base,
                 "workflow_status": "paused",
                 "resumed_after_restart": False,
-                "resumed_from_checkpoint": None,
+                "resumed_from_snapshot": None,
                 "activities": activities + [_paused_span(thread_id, pending)],
                 "response": (
                     f"Workflow paused after a saved step. Resume thread "
@@ -647,7 +647,7 @@ class WorkflowRunner:
                 **base,
                 "workflow_status": "complete",
                 "resumed_after_restart": False,
-                "resumed_from_checkpoint": None,
+                "resumed_from_snapshot": None,
             }
         restarted = bool(previous_worker and previous_worker != self._worker_id)
         resumed_nodes = next_nodes(prior)
@@ -655,7 +655,7 @@ class WorkflowRunner:
             **base,
             "workflow_status": "resumed",
             "resumed_after_restart": restarted,
-            "resumed_from_checkpoint": prior.get("created_at"),
+            "resumed_from_snapshot": prior.get("created_at"),
             "activities": activities + [_resumed_span(thread_id, resumed_nodes, restarted)],
             "response": (
                 f"Continued from the saved {', '.join(resumed_nodes)} step. "

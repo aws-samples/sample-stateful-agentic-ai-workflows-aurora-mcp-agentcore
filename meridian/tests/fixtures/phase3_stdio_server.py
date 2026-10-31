@@ -48,9 +48,9 @@ def catalog():
         os._exit(1)
 
     @app.tool()
-    def currency_convert(amount: float, from_ccy: str, to_ccy: str) -> dict:
+    def currency_convert(amount: float, from_currency: str, to_currency: str) -> dict:
         """Answers a currency it does not know with a normal result."""
-        return {"error": "unsupported_currency", "currency": to_ccy}
+        return {"error": "unsupported_currency", "currency": to_currency}
 
     @app.tool()
     def loyalty_balance(travelerId: str, program: str) -> dict:

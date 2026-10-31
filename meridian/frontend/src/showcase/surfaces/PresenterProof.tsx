@@ -9,10 +9,10 @@ import { isObserved } from '../journey/types';
 import { useSession } from '../../auth/SessionContext';
 import type { SignedInTraveler } from '../../auth/claims';
 
-type TabId = 'checkpoint' | 'authorization' | 'business';
+type TabId = 'snapshot' | 'authorization' | 'business';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'checkpoint', label: 'Saved step' },
+  { id: 'snapshot', label: 'Saved step' },
   { id: 'authorization', label: 'Authorization' },
   { id: 'business', label: 'Business result' },
 ];
@@ -125,7 +125,7 @@ function SessionCard({
 /** Presenter proof: the durable state, read back from Aurora.
  *
  * Every value here is served by `GET /api/journeys/{id}`, which assembles it
- * from `checkpoints`, `journey_executions`, `hold_requests`, `bookings` and
+ * from `snapshots`, `journey_executions`, `hold_requests`, `bookings` and
  * `traveler_access_audit`. Nothing on this surface is simulated, so where the
  * database has no evidence the surface says so instead of showing a number.
  */
@@ -162,7 +162,7 @@ export function PresenterProof({
   onRefresh: () => void;
   onOpenRecovery?: () => void;
 }) {
-  const [tab, setTab] = useState<TabId>('checkpoint');
+  const [tab, setTab] = useState<TabId>('snapshot');
   const now = useEvidenceClock(document);
   const { traveler: signedIn, verifiedTravelerId } = useSession();
   const signedInFact = describeSignedIn(signedIn, verifiedTravelerId);
@@ -205,7 +205,7 @@ export function PresenterProof({
   const executions = isObserved(document.executions) ? document.executions.items : [];
   const first = executions[0] ?? null;
   const latest = executions.length > 1 ? executions[executions.length - 1] : null;
-  const checkpoint = document.checkpoint;
+  const snapshot = document.snapshot;
   const hold = document.hold;
   const auth = document.authorization;
   const restarted = sessionChanged(first, latest);
@@ -227,14 +227,14 @@ export function PresenterProof({
       <header className="mds-proof-head">
         <div>
           <h1>
-            {restarted ? 'The session changed.' : isObserved(checkpoint) ? 'The plan is saved.' : 'The journey has started.'}
-            <span>{resumed ? 'The saved plan resumed.' : isObserved(checkpoint) ? 'The saved step remains.' : 'The evidence follows.'}</span>
+            {restarted ? 'The session changed.' : isObserved(snapshot) ? 'The plan is saved.' : 'The journey has started.'}
+            <span>{resumed ? 'The saved plan resumed.' : isObserved(snapshot) ? 'The saved step remains.' : 'The evidence follows.'}</span>
           </h1>
         </div>
         <div className="mds-proof-head-meta">
           <p>A Tokyo recovery plan.</p>
           <p>
-            {isObserved(checkpoint) ? 'Saved step recorded.' : 'Awaiting saved step.'}
+            {isObserved(snapshot) ? 'Saved step recorded.' : 'Awaiting saved step.'}
             {' '}{holdSummary}
           </p>
           <button
@@ -263,7 +263,7 @@ export function PresenterProof({
         <div className="mds-proof-store">
           <div className="mds-proof-store-head">
             <AuroraIcon size={19} aria-hidden="true" />
-            <strong>{document.checkpoint_backend.kind}</strong>
+            <strong>{document.snapshot_store.kind}</strong>
           </div>
           <p className="mds-proof-store-table">workflow_snapshots</p>
           <dl className="mds-proof-store-rows">
@@ -275,16 +275,16 @@ export function PresenterProof({
               <dt>Thread</dt>
               <dd>{document.active_thread_id ?? NOT_RECORDED}</dd>
             </div>
-            {isObserved(checkpoint) && (
+            {isObserved(snapshot) && (
               <>
                 <div>
                   <dt>Snapshots</dt>
-                  <dd>{checkpoint.snapshot_count ?? NOT_RECORDED}</dd>
+                  <dd>{snapshot.snapshot_count ?? NOT_RECORDED}</dd>
                 </div>
                 <div>
                   <dt>Latest snapshot</dt>
                   <dd>
-                    {checkpoint.status ?? NOT_RECORDED}
+                    {snapshot.status ?? NOT_RECORDED}
                     {nextNode ? `, next ${nextNode}` : ''}
                   </dd>
                 </div>
@@ -300,11 +300,11 @@ export function PresenterProof({
           </dl>
           <p
             className={`mds-proof-store-foot${
-              isObserved(checkpoint) ? ' is-good' : ''
+              isObserved(snapshot) ? ' is-good' : ''
             }`}
           >
             <ShieldCheck size={15} aria-hidden="true" />
-            {isObserved(checkpoint) ? 'Saved step kept' : 'Awaiting saved step'}
+            {isObserved(snapshot) ? 'Saved step kept' : 'Awaiting saved step'}
           </p>
         </div>
         <span className="mds-proof-arrow" aria-hidden="true">
@@ -353,12 +353,12 @@ export function PresenterProof({
         id={`proof-panel-${tab}`}
         aria-labelledby={`proof-tab-${tab}`}
       >
-        {tab === 'checkpoint' && (
+        {tab === 'snapshot' && (
           <div className="mds-proof-facts">
             <Fact
               label="Snapshot ID"
               mono
-              value={isObserved(checkpoint) ? checkpoint.checkpoint_id : NOT_RECORDED}
+              value={isObserved(snapshot) ? snapshot.snapshot_id : NOT_RECORDED}
             />
             <Fact label="Owner" value={document.traveler_id} />
             <Fact label={signedInFact.label} value={signedInFact.value} />
@@ -445,8 +445,8 @@ export function PresenterProof({
       <footer className="mds-proof-foot">
         <span>Aurora, MCP, AgentCore, Strands Graph</span>
         <span>
-          Read from {document.checkpoint_backend.kind}
-          {document.checkpoint_backend.durable ? ', survives restart' : document.checkpoint_backend.kind === 'MemorySaver (in-process)' ? ', worker memory only' : ', durability not verified'}
+          Read from {document.snapshot_store.kind}
+          {document.snapshot_store.durable ? ', survives restart' : document.snapshot_store.kind === 'MemorySaver (in-process)' ? ', worker memory only' : ', durability not verified'}
         </span>
       </footer>
     </section>

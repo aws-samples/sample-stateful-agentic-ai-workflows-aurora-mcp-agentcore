@@ -18,7 +18,7 @@ from backend.agents.phase_05_workflow.runner import (
     WorkflowRequestError,
     WorkflowRunner,
 )
-from backend.demo_prompts import PROMPT_LADDER
+from backend.prompt_ladder import PROMPT_LADDER
 from tests.phase5_support import GatewayFake, InMemoryLease
 
 RECOVERY = "My flight was canceled. Rework my Tokyo trip and check availability."

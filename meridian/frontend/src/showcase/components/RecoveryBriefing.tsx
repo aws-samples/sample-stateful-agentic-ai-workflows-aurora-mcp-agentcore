@@ -61,9 +61,9 @@ export function RecoveryBriefing({
   const followUps = botMessage?.follow_ups ?? [];
   const recoveryStage = deriveRecoveryStage(state);
   const evidence = deriveRecoveryEvidence(state);
-  const checkpointReady = recoveryStage === 'checkpointed';
-  const visibleFollowUps = checkpointReady
-    ? followUps.filter((prompt) => !/resume|checkpoint/i.test(prompt))
+  const snapshotReady = recoveryStage === 'saved';
+  const visibleFollowUps = snapshotReady
+    ? followUps.filter((prompt) => !/resume|checkpoint|snapshot/i.test(prompt))
     : followUps;
   const { markLatestStreamComplete } = state;
 
@@ -103,7 +103,7 @@ export function RecoveryBriefing({
                 <CheckCircle2 size={20} aria-hidden="true" />
                 <span>
                   <small>
-                    {checkpointReady
+                    {snapshotReady
                       ? 'Saved step ready'
                       : state.workflowStatus === 'resumed'
                         ? 'Recovery resumed'
@@ -127,7 +127,7 @@ export function RecoveryBriefing({
                 </div>
               </dl>
               <p>
-                {checkpointReady
+                {snapshotReady
                   ? 'The shortlist is saved. Resume to verify duration inventory for the leading options.'
                   : planIsChoice
                     ? 'The option you chose from the shortlist. Open the response for trade-offs and details.'

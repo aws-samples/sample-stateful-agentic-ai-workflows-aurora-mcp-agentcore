@@ -59,7 +59,7 @@ async def test_a_custom_server_that_answered_is_counted(monkeypatch) -> None:
     """The positive control: a completed call must still be claimed."""
     answered = {
         "tool": "currency_convert",
-        "args": {"amount": 2500, "from_ccy": "USD", "to_ccy": "EUR"},
+        "args": {"amount": 2500, "from_currency": "USD", "to_currency": "EUR"},
         "result": {"amount": 2500.0, "from": "USD", "to": "EUR", "converted": 2300.0},
     }
     activities, _ = await _run(monkeypatch, answered)

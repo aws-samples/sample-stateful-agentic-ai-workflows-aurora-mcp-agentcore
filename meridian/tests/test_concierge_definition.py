@@ -101,10 +101,10 @@ def test_the_prompts_follow_the_copy_rules():
         assert "demo" not in text.lower(), phase
 
 
-def test_short_name_strips_one_gateway_target_prefix():
-    assert definition.short_name("MeridianHolds___loyalty_balance") == "loyalty_balance"
-    assert definition.short_name("hybrid_trip_search") == "hybrid_trip_search"
-    assert definition.short_name("MeridianHolds___batch___confirm") == "batch___confirm"
+def test_bare_tool_name_strips_one_gateway_target_prefix():
+    assert definition.bare_tool_name("MeridianHolds___loyalty_balance") == "loyalty_balance"
+    assert definition.bare_tool_name("hybrid_trip_search") == "hybrid_trip_search"
+    assert definition.bare_tool_name("MeridianHolds___batch___confirm") == "batch___confirm"
 
 
 def test_pin_traveler_argument_overwrites_what_the_model_sent():

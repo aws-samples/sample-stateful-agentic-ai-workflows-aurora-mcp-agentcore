@@ -26,7 +26,7 @@ INSERT_BOOKING = ("INSERT INTO bookings (booking_id, traveler_id, status, total_
                   "VALUES (%s, %s, 'held', 1)")
 
 
-INSERT_JOURNEY = ("INSERT INTO journeys (journey_id, traveler_id, checkpoint_backend) "
+INSERT_JOURNEY = ("INSERT INTO journeys (journey_id, traveler_id, snapshot_store) "
                   "VALUES (%s, %s, 'aurora')")
 INSERT_HOLD_REQUEST = ("INSERT INTO hold_requests (journey_id, hold_request_id, booking_id, "
                        "fingerprint, thread_id) VALUES (%s, %s, %s, 'idp-test', 'idp-test')")

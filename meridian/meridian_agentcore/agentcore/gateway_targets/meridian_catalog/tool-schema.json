@@ -30,7 +30,7 @@
   },
   {
     "name": "compare_packages",
-    "description": "Return aligned comparison rows for up to 4 trip packages.",
+    "description": "Return rows comparing up to four trip packages side by side.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -67,7 +67,7 @@
   },
   {
     "name": "region_inventory",
-    "description": "Return how many distinct trip packages we sell in a region, with aggregate availability across all duration options.",
+    "description": "Return how many distinct trip packages a traveler can choose from in a region. The answer also gives the places left across all duration options.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -94,21 +94,21 @@
       "properties": {
         "amount": {
           "type": "number",
-          "description": "numeric amount in `from_ccy`."
+          "description": "numeric amount in `from_currency`."
         },
-        "from_ccy": {
+        "from_currency": {
           "type": "string",
           "description": "ISO 4217 code (e.g. 'USD', 'EUR')."
         },
-        "to_ccy": {
+        "to_currency": {
           "type": "string",
           "description": "ISO 4217 code."
         }
       },
       "required": [
         "amount",
-        "from_ccy",
-        "to_ccy"
+        "from_currency",
+        "to_currency"
       ],
       "additionalProperties": false
     }

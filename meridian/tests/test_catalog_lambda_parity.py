@@ -65,7 +65,7 @@ GATE_ROWS = [
     {"A": 1},
 ])
 def test_the_price_and_stock_gate_is_the_modules(ceiling, places):
-    assert catalog.apply_gate(GATE_ROWS, ceiling, places) == hybrid.apply_gate(
+    assert catalog.keep_eligible(GATE_ROWS, ceiling, places) == hybrid.keep_eligible(
         GATE_ROWS, ceiling, places)
 
 
@@ -184,8 +184,8 @@ def test_compare_packages_gives_the_same_rows_through_both_paths(monkeypatch):
 def test_an_unknown_currency_gets_the_same_answer_through_both_paths(monkeypatch):
     _both(monkeypatch, {})
     via_module = asyncio.run(catalog_tools.currency_convert(1.0, "XXX", "USD"))
-    assert call("currency_convert", {"amount": 1.0, "from_ccy": "XXX", "to_ccy": "USD"}) == (
-        via_module)
+    args = {"amount": 1.0, "from_currency": "XXX", "to_currency": "USD"}
+    assert call("currency_convert", args) == via_module
 
 
 @pytest.mark.parametrize(("amount", "source", "target"), [
@@ -195,8 +195,8 @@ def test_a_supported_conversion_gives_the_same_answer_through_both_paths(
         monkeypatch, amount, source, target):
     _both(monkeypatch, {})
     via_module = asyncio.run(catalog_tools.currency_convert(amount, source, target))
-    assert call("currency_convert", {"amount": amount, "from_ccy": source,
-                                     "to_ccy": target}) == via_module
+    assert call("currency_convert", {"amount": amount, "from_currency": source,
+                                     "to_currency": target}) == via_module
 
 
 @pytest.mark.parametrize("arguments", [

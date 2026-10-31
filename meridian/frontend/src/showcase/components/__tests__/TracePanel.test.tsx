@@ -281,7 +281,7 @@ describe('TracePanel collapse behavior', () => {
     expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
   });
 
-  it('does not credit a failed query or a checkpoint write as completed traveler recall', () => {
+  it('does not credit a failed query or a snapshot write as completed traveler recall', () => {
     render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [
       { ...traceSpan, status: 'error' },
       { ...traceSpan, id: 'cp', category: 'memory_short', name: 'Checkpoint persisted', sql: undefined },

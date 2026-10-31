@@ -11,7 +11,7 @@ export const PAUSED_ACTIVITIES = [
   telemetry: { category: 'orchestration', component, status: 'ok', fields },
 }));
 
-/** The `/api/chat` reply for a recovery paused at its checkpoint.
+/** The `/api/chat` reply for a recovery paused at its snapshot.
  *
  * @param products The ranked options the reply carries.
  * @param conversationId The thread the request named, echoed back as the backend does.

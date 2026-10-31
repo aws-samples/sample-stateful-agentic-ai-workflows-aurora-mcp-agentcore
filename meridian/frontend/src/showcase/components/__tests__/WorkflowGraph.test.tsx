@@ -42,7 +42,7 @@ describe('WorkflowGraph', () => {
     expect(screen.getByText('Request governed hold')).toBeInTheDocument();
   });
 
-  it('renders the routed Strands Graph path with branch labels and checkpoint badges', () => {
+  it('renders the routed Strands Graph path with branch labels and snapshot badges', () => {
     render(
       <WorkflowGraph
         state={state([
@@ -64,7 +64,7 @@ describe('WorkflowGraph', () => {
             ],
           }),
           span({
-            id: 'checkpoint-search',
+            id: 'snapshot-search',
             name: 'Checkpoint · PostgresSaver.put',
             fields: [{ label: 'checkpointer', value: 'PostgresSaver' }],
           }),

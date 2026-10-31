@@ -724,7 +724,7 @@
   color: var(--mds-blue);
 }
 
-.mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong {
+.mds-recovery-overview.is-saved .mds-recovery-overview-meta strong {
   color: var(--mds-cyan);
 }
 
@@ -1414,7 +1414,7 @@
 
 /* Once steps are confirmed, each shows its service and measured time instead of
    the plan's description, which keeps the decision cards higher on the stage. */
-.mds-recovery-launch-card.is-compact:is(.is-checkpointed, .is-ready)
+.mds-recovery-launch-card.is-compact:is(.is-saved, .is-ready)
   .mds-recovery-launch-steps small {
   display: none;
 }
@@ -1880,7 +1880,7 @@
 }
 
 /* The one emphasis: a ring leaves the Aurora mark once, when a watched run's
-   response confirms the checkpoint. It is only rendered for that change. */
+   response confirms the snapshot. It is only rendered for that change. */
 .mds-aurora-glow {
   position: absolute;
   inset: -2px;
@@ -2081,7 +2081,7 @@
   animation: mds-recovery-spin 1s linear infinite;
 }
 
-.mds-decision-status.is-checkpointed {
+.mds-decision-status.is-saved {
   color: var(--mds-cyan);
   background: var(--mds-cyan-fill);
 }
@@ -2987,7 +2987,7 @@
     :is(
       .mds-concierge-assistance-card,
       .mds-agent-proof-card,
-      .mds-checkpointed-plan-card
+      .mds-saved-plan-card
     ) {
     min-height: 232px;
   }
@@ -2997,7 +2997,7 @@
     grid-template-areas:
       "plan concierge"
       "alternatives alternatives"
-      "proof checkpoint";
+      "proof snapshot";
     align-items: stretch;
   }
 

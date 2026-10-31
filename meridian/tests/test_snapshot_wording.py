@@ -11,9 +11,9 @@ from backend.db.journey_document import (
     _selected_plan,
     _workflow_document,
 )
-from tests.test_journey_document_snapshots import CHECKPOINT, EXECUTIONS, PAUSED
+from tests.test_journey_document_snapshots import SAVED_SNAPSHOT, EXECUTIONS, PAUSED
 
-UNCOMMITTED = {"status": "pending", "thread_id": "t1", "checkpoint_id": "7"}
+UNCOMMITTED = {"status": "pending", "thread_id": "t1", "snapshot_id": "7"}
 
 
 def _no_checkpoint(text: str) -> None:
@@ -22,7 +22,7 @@ def _no_checkpoint(text: str) -> None:
 
 def test_a_paused_journey_message_says_saved_step():
     doc = _workflow_document(
-        PAUSED, CHECKPOINT, EXECUTIONS, latest_execution="exe_1", resumed_from=None
+        PAUSED, SAVED_SNAPSHOT, EXECUTIONS, latest_execution="exe_1", resumed_from=None
     )
     _no_checkpoint(doc["message"])
     assert "saved step" in doc["message"]
@@ -32,11 +32,11 @@ def test_a_paused_journey_message_says_saved_step():
     "reason",
     [
         _selected_plan(UNCOMMITTED, None)["reason"],
-        _selected_plan(CHECKPOINT, None)["reason"],
+        _selected_plan(SAVED_SNAPSHOT, None)["reason"],
         _recommendations(UNCOMMITTED, None)["reason"],
-        _recommendations(CHECKPOINT, None)["reason"],
+        _recommendations(SAVED_SNAPSHOT, None)["reason"],
         _pending_decision(UNCOMMITTED, None)["reason"],
-        _pending_decision(CHECKPOINT, None)["reason"],
+        _pending_decision(SAVED_SNAPSHOT, None)["reason"],
         _hold_absent({"hold_id": "HLD-1"})["reason"],
     ],
 )
@@ -46,5 +46,5 @@ def test_unavailable_evidence_reasons_say_snapshot(reason):
 
 
 def test_the_empty_channel_reasons_are_json_text_the_ui_can_show():
-    reasons = [_selected_plan(CHECKPOINT, None), _recommendations(CHECKPOINT, None)]
+    reasons = [_selected_plan(SAVED_SNAPSHOT, None), _recommendations(SAVED_SNAPSHOT, None)]
     _no_checkpoint(json.dumps(reasons))

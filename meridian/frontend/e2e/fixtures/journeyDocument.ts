@@ -12,7 +12,7 @@ type FixtureOptions = {
   stoppedDuring?: 'waiting' | 'running';
   /** The last step the run saved before a mid-run stop. */
   lastStep?: string | null;
-  /** The ranked options the saved checkpoint holds. */
+  /** The ranked options the saved snapshot holds. */
   products?: object[];
 };
 
@@ -31,11 +31,11 @@ export function pausedJourneyDocument(
     journey_id: 'jrn_e2e',
     traveler_id: 'trv_meridian_demo',
     status: 'active',
-    checkpoint_backend: { kind: 'Aurora workflow_snapshots', durable: true },
+    snapshot_store: { kind: 'Aurora workflow_snapshots', durable: true },
     active_thread_id: threadId,
     workflow: {
       status: 'observed',
-      source: 'checkpoint',
+      source: 'snapshot',
       conversation_id: threadId,
       query: 'My flight to Tokyo was cancelled. Find me alternatives.',
       message: 'Workflow paused after a saved step.',
@@ -65,10 +65,10 @@ export function pausedJourneyDocument(
         }],
       }
       : { status: 'unavailable', reason: 'No Runtime session was stopped for this journey.' },
-    checkpoint: unavailable,
+    snapshot: unavailable,
     selected_plan: unavailable,
     recommendations: products.length
-      ? { status: 'observed', source: 'checkpoint', items: products }
+      ? { status: 'observed', source: 'snapshot', items: products }
       : unavailable,
     pending_decision: unavailable,
     conversation: unavailable,

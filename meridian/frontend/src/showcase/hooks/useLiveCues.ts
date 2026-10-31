@@ -5,8 +5,8 @@ import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 export const STATE_CHANGE = { duration: 0.24, ease: [0.22, 0.61, 0.36, 1] } as const;
 /** A new trace step arriving: a short rise with a fade. */
 export const STEP_ENTER = { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] } as const;
-/** The one emphasis: Aurora confirming the checkpoint is saved. */
-export const CHECKPOINT_GLOW = { duration: 0.9, ease: 'easeOut' } as const;
+/** The one emphasis: Aurora confirming the snapshot is saved. */
+export const SNAPSHOT_GLOW = { duration: 0.9, ease: 'easeOut' } as const;
 
 /** Whether a surface may animate what changes next.
  *
@@ -30,7 +30,7 @@ export function useLiveCues(identity: string | null | undefined, running: boolea
 
 /** Whether `confirmed` turned true while the surface was watching.
  *
- * A fact already confirmed when watching began, such as a checkpoint in a
+ * A fact already confirmed when watching began, such as a snapshot in a
  * saved journey, never counts, so a resume cannot replay its emphasis.
  *
  * @param confirmed Whether the backend has confirmed the fact.

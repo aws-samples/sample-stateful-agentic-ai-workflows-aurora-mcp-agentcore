@@ -13,13 +13,13 @@ export interface McpContract {
 }
 
 export interface WorkflowStateProof {
-  status: 'ready' | 'running' | 'checkpointed' | 'ephemeral';
+  status: 'ready' | 'running' | 'saved' | 'ephemeral';
   intent: string;
   path: string[];
   visited: string[];
   nextNode: string;
-  checkpoint: string;
-  checkpointCount: number;
+  snapshot: string;
+  snapshotCount: number;
   table: string;
   durable: boolean;
   /** The workflow thread. Identical before and after a restart is the proof. */
@@ -59,8 +59,8 @@ export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract
 }
 
 /** Explicit run telemetry wins; known legacy saver names are only a fallback. */
-export function hasDurableCheckpoint(traceSpans: ShowcaseTraceSpan[]): boolean {
-  const spans = traceSpans.filter(isCheckpointSpan);
+export function hasDurableSnapshot(traceSpans: ShowcaseTraceSpan[]): boolean {
+  const spans = traceSpans.filter(isSnapshotSpan);
   const explicit = spans.flatMap(span => span.fields.filter(field => isDurableField(field.label)));
   if (explicit.length) return explicit[explicit.length - 1].value === 'true';
   return spans.some(span => /\b(AuroraDataApiSaver|AsyncPostgresSaver|PostgresSaver)\b/i.test(firstFieldValue(span, SNAPSHOT_STORE_FIELDS) ?? span.name));
@@ -77,17 +77,17 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
       .map((span) => fieldValue(span, 'intent'))
       .find(Boolean) ?? 'awaiting prompt';
   const path = workflowPathFor(intent, traceSpans);
-  const checkpointSpans = traceSpans.filter(isCheckpointSpan);
-  const checkpoint =
+  const snapshotSpans = traceSpans.filter(isSnapshotSpan);
+  const snapshot =
     traceSpans
       .map((span) => firstFieldValue(span, SNAPSHOT_STORE_FIELDS))
       .find(Boolean) ?? 'not observed';
-  const durable = hasDurableCheckpoint(traceSpans);
+  const durable = hasDurableSnapshot(traceSpans);
   const table =
     traceSpans
       .map((span) => firstFieldValue(span, SNAPSHOT_TABLE_FIELDS))
       .find(Boolean) ??
-    (checkpoint.toLowerCase().includes('memorysaver')
+    (snapshot.toLowerCase().includes('memorysaver')
       ? 'process memory'
       : durable ? 'workflow_snapshots' : 'not observed');
   const holdSpan = [...traceSpans].reverse().find(span => fieldValue(span, 'hold_id'));
@@ -95,8 +95,8 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
   const nextNode = path.find((node) => !visited.includes(node)) ?? 'complete';
 
   return {
-    status: checkpointSpans.length
-      ? durable ? 'checkpointed' : 'ephemeral'
+    status: snapshotSpans.length
+      ? durable ? 'saved' : 'ephemeral'
       : visited.length ? 'running' : 'ready',
     intent,
     path,
@@ -112,8 +112,8 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     holdObservedAt: holdField('hold_observed_at'),
     holdStatus: holdField('hold_status'),
     holdSeatsRemaining: holdField('seats_remaining'),
-    checkpoint,
-    checkpointCount: checkpointSpans.length,
+    snapshot,
+    snapshotCount: snapshotSpans.length,
     table,
     durable,
   };
@@ -226,7 +226,7 @@ function firstFieldValue(span: ShowcaseTraceSpan, labels: readonly string[]): st
   return null;
 }
 
-function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {
+function isSnapshotSpan(span: ShowcaseTraceSpan): boolean {
   return span.status === 'ok' && /checkpoint|snapshot saved|saved step/i.test(
     [span.name, span.details, span.sql, span.component].filter(Boolean).join(' '),
   );

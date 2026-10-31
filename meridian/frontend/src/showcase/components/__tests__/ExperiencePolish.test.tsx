@@ -572,13 +572,13 @@ describe('Experience presentation polish', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('continues at verification while resuming a checkpoint', () => {
+  it('continues at verification while resuming a snapshot', () => {
     render(
       <RecoveryWorkspace
         state={makeState({
           selectedPhase: 5,
           phaseLabel: 'Workflow',
-          lastPrompt: 'Resume workflow from checkpoint',
+          lastPrompt: 'Resume workflow from snapshot',
           workflowStatus: 'paused',
           isLoading: true,
           messages: [
@@ -603,8 +603,8 @@ describe('Experience presentation polish', () => {
       id: name, name, category: 'orchestration', type: 'tool_call', status: 'ok',
       latencyMs: null, fields: [], ...extra,
     });
-    const checkpoint = traceSpan('Checkpoint · AuroraDataApiSaver.put', {
-      component: 'Aurora · LangGraph checkpoint tables', latencyMs: 106,
+    const snapshot = traceSpan('Checkpoint · AuroraDataApiSaver.put', {
+      component: 'Aurora · LangGraph snapshot tables', latencyMs: 106,
       fields: [{ label: 'checkpoint_durable', value: 'true' }],
     });
     const paused = [
@@ -616,7 +616,7 @@ describe('Experience presentation polish', () => {
       }),
       traceSpan('Embedding generated', { latencyMs: 221 }),
       traceSpan('Hybrid candidates fetched', { latencyMs: 338, sql: 'SELECT 1' }),
-      checkpoint,
+      snapshot,
     ];
     const base = {
       selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-thread',
@@ -636,7 +636,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Paused at a saved step')).toBeInTheDocument();
 
     rerender(<RecoveryWorkspace state={makeState({
-      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      ...base, lastPrompt: 'Resume workflow from snapshot', workflowStatus: 'paused',
       isLoading: true, traceSpans: [],
     })} />);
     expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');
@@ -644,9 +644,9 @@ describe('Experience presentation polish', () => {
 
     // The resumed run returns the paused run's spans without the write time.
     rerender(<RecoveryWorkspace state={makeState({
-      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'resumed',
+      ...base, lastPrompt: 'Resume workflow from snapshot', workflowStatus: 'resumed',
       traceSpans: [
-        ...paused.slice(0, 4), { ...checkpoint, latencyMs: null },
+        ...paused.slice(0, 4), { ...snapshot, latencyMs: null },
         traceSpan('Workflow node: availability fan-out', { latencyMs: 54 }),
         traceSpan('Availability: Finding package', { latencyMs: 40 }),
       ],
@@ -656,11 +656,11 @@ describe('Experience presentation polish', () => {
     expect(step('Verify after resume')).toHaveTextContent('Aurora, 54 ms');
   });
 
-  it('glows the Aurora mark once, when a watched run confirms the checkpoint', () => {
-    const checkpoint = {
+  it('glows the Aurora mark once, when a watched run confirms the snapshot', () => {
+    const snapshot = {
       id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph checkpoint tables',
+      component: 'Aurora · LangGraph snapshot tables',
       fields: [{ label: 'checkpoint_durable', value: 'true' }],
     };
     const search = {
@@ -671,21 +671,21 @@ describe('Experience presentation polish', () => {
       selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-glow',
       lastPrompt: SHOWCASE_FINALE_PROMPT,
     };
-    const checkpointed = makeState({
-      ...base, workflowStatus: 'paused', traceSpans: [search, checkpoint],
+    const saved = makeState({
+      ...base, workflowStatus: 'paused', traceSpans: [search, snapshot],
       messages: [
         { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
         { role: 'bot' as const, text: 'Paused.' },
       ],
     });
-    const { container, unmount } = render(<RecoveryWorkspace state={checkpointed} />);
+    const { container, unmount } = render(<RecoveryWorkspace state={saved} />);
     expect(container.querySelector('.mds-aurora-glow')).toBeNull();
     unmount();
 
     const watched = render(<RecoveryWorkspace state={makeState({
       ...base, isLoading: true, messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
     })} />);
-    watched.rerender(<RecoveryWorkspace state={checkpointed} />);
+    watched.rerender(<RecoveryWorkspace state={saved} />);
     expect(watched.container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
     const mark = screen.getByText('Save a step in Aurora').closest('li')!
       .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
@@ -702,10 +702,10 @@ describe('Experience presentation polish', () => {
         </motion.div>
       </AnimatePresence>
     );
-    const checkpoint = {
+    const snapshot = {
       id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph checkpoint tables',
+      component: 'Aurora · LangGraph snapshot tables',
       fields: [{ label: 'checkpoint_durable', value: 'true' }],
     };
     const search = {
@@ -721,7 +721,7 @@ describe('Experience presentation polish', () => {
       ...base, isLoading: true, messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
     })} />));
     view.rerender(inFirstView(<RecoveryWorkspace state={makeState({
-      ...base, workflowStatus: 'paused', traceSpans: [search, checkpoint],
+      ...base, workflowStatus: 'paused', traceSpans: [search, snapshot],
       messages: [
         { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
         { role: 'bot' as const, text: 'Paused.' },
@@ -734,11 +734,11 @@ describe('Experience presentation polish', () => {
     expect(mark.style.opacity).toBe('0');
   });
 
-  it('does not glow or animate a checkpoint confirmed before the resume it watches', () => {
-    const checkpoint = {
+  it('does not glow or animate a snapshot confirmed before the resume it watches', () => {
+    const snapshot = {
       id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph checkpoint tables',
+      component: 'Aurora · LangGraph snapshot tables',
       fields: [{ label: 'checkpoint_durable', value: 'true' }],
     };
     const search = {
@@ -747,7 +747,7 @@ describe('Experience presentation polish', () => {
     };
     const base = {
       selectedPhase: 5 as const, phaseLabel: 'Workflow' as const,
-      conversationId: 'phase5-restored', traceSpans: [search, checkpoint],
+      conversationId: 'phase5-restored', traceSpans: [search, snapshot],
       messages: [
         { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
         { role: 'bot' as const, text: 'Paused.' },
@@ -758,7 +758,7 @@ describe('Experience presentation polish', () => {
       ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused',
     })} />);
     view.rerender(<RecoveryWorkspace state={makeState({
-      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      ...base, lastPrompt: 'Resume workflow from snapshot', workflowStatus: 'paused',
       isLoading: true,
     })} />);
     expect(view.container.querySelector('.mds-aurora-glow')).toBeNull();
@@ -800,13 +800,13 @@ describe('Experience presentation polish', () => {
           ],
           traceSpans: [
             {
-              id: 'checkpoint-error',
+              id: 'snapshot-error',
               name: 'LangGraph workflow error',
               category: 'error',
               type: 'error',
               status: 'error',
               latencyMs: 3000,
-              details: 'Aurora checkpoint connection unavailable.',
+              details: 'Aurora snapshot connection unavailable.',
               fields: [],
             },
           ],
@@ -894,18 +894,18 @@ describe('Experience presentation polish', () => {
       conversationId: 'phase5-demo',
       backendHealth: {
         status: 'healthy',
-        checkpoint_durable: true,
+        snapshot_durable: true,
       },
       recommendations: [product],
       traceSpans: [
         {
-          id: 'checkpoint',
+          id: 'snapshot',
           name: 'Checkpoint · PostgresSaver.put',
           category: 'memory_short',
           type: 'tool_call',
           status: 'ok',
           latencyMs: 12,
-          component: 'Aurora · LangGraph checkpoint tables',
+          component: 'Aurora · LangGraph snapshot tables',
           fields: [
             { label: 'checkpointer', value: 'PostgresSaver (Aurora · pooled)' },
           ],
@@ -918,9 +918,9 @@ describe('Experience presentation polish', () => {
         },
         {
           role: 'bot',
-          text: 'I ranked the Tokyo options and saved the workflow checkpoint.',
+          text: 'I ranked the Tokyo options and saved the workflow snapshot.',
           products: [product],
-          follow_ups: ['Resume workflow from checkpoint'],
+          follow_ups: ['Resume workflow from snapshot'],
         },
       ],
       submitPrompt,
@@ -1043,7 +1043,7 @@ describe('Experience presentation polish', () => {
     expect(media).toHaveAttribute('data-theme', 'dark');
   });
 
-  it('marks only the Checkpointed chip with the checkpoint tone', () => {
+  it('marks only the Saved chip with the snapshot tone', () => {
     const product = {
       product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
       brand: 'ANA Holidays',
@@ -1060,8 +1060,8 @@ describe('Experience presentation polish', () => {
       </article>,
     );
 
-    expect(screen.getByText('Saved step').closest('span')).toHaveClass('is-checkpoint');
-    expect(screen.getByText('Lounge access').closest('span')).not.toHaveClass('is-checkpoint');
+    expect(screen.getByText('Saved step').closest('span')).toHaveClass('is-snapshot');
+    expect(screen.getByText('Lounge access').closest('span')).not.toHaveClass('is-snapshot');
     expect(screen.getByText('Lounge access').closest('span')?.className).toBe('');
   });
 
@@ -1069,7 +1069,7 @@ describe('Experience presentation polish', () => {
     'Snapshot saved: AuroraSnapshotStorage.write',
     'Workflow resumed from a saved step',
     'Checkpoint · AuroraSnapshotStorage.write',
-  ])('shows the Checkpointed chip once a "%s" span is in the trace', (name) => {
+  ])('shows the Saved chip once a "%s" span is in the trace', (name) => {
     const product = {
       product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
       brand: 'ANA Holidays', description: 'Lounge access included.',
@@ -1180,7 +1180,7 @@ describe('Experience presentation polish', () => {
     ).toBeEnabled();
   });
 
-  it('keeps failed inventory, memory, and checkpoint operations unverified', () => {
+  it('keeps failed inventory, memory, and snapshot operations unverified', () => {
     const state = makeState({ traceSpans: [{
       id: 'failed', name: 'Checkpoint · AuroraDataApiSaver.put',
       details: 'availability fan-out, traveler memory, and loyalty failed',
@@ -1189,7 +1189,7 @@ describe('Experience presentation polish', () => {
     }] });
     expect(deriveRecoveryEvidence(state)).toMatchObject({
       availabilityObserved: false, loyaltyObserved: false, memoryObserved: false,
-      checkpointObserved: false, durableCheckpoint: false,
+      snapshotObserved: false, durableSnapshot: false,
     });
   });
 

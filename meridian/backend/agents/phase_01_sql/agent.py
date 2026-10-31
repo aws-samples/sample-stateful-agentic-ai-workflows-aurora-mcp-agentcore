@@ -70,10 +70,10 @@ class SQLAgent:
         self.agent = Agent(
             model=self.model,
             tools=[
-                self._lookup_trip_package,
-                self._search_trip_packages,
-                self._check_departure_availability,
-                self._calculate_booking_total
+                self.get_package_details,
+                self.search_trips,
+                self.check_availability,
+                self.estimate_trip_total
             ],
             system_prompt=self._get_system_prompt()
         )
@@ -125,7 +125,7 @@ Trip types in the catalog:
         self.activity_callback(entry)
     
     @tool
-    async def _lookup_trip_package(self, package_id: str) -> dict:
+    async def get_package_details(self, package_id: str) -> dict:
         """
         Look up a trip package by its ID.
 
@@ -164,7 +164,7 @@ Trip types in the catalog:
         return dict(result)
     
     @tool
-    async def _search_trip_packages(
+    async def search_trips(
         self,
         query: str,
         trip_type: Optional[str] = None,
@@ -214,7 +214,7 @@ Trip types in the catalog:
         return [dict(r) for r in results]
     
     @tool
-    async def _check_departure_availability(
+    async def check_availability(
         self,
         package_id: str,
         duration: Optional[str] = None
@@ -269,7 +269,7 @@ Trip types in the catalog:
         }
     
     @tool
-    async def _calculate_booking_total(self, items: List[dict]) -> dict:
+    async def estimate_trip_total(self, items: List[dict]) -> dict:
         """
         Estimate the catalog total for trip line items.
 

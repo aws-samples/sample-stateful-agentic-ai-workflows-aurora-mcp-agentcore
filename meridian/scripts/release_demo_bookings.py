@@ -5,7 +5,7 @@ does: it counts against the package's capacity for good, which is the point of
 confirming it. After a few rehearsals of the "bring it home" beat the Tokyo
 package would refuse new holds with ``insufficient_inventory``. This removes
 the demo traveler's bookings, their lines and their hold-request identities.
-Journeys and checkpoints stay, so System evidence keeps its history.
+Journeys and snapshots stay, so System evidence keeps its history.
 
 Usage:
     python scripts/release_demo_bookings.py            # list the demo bookings, delete nothing

@@ -5,7 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.authorization import AuthorizationContext, AuthorizationDecision
 from backend.db.journey_document import _authorization
 from backend.http_auth import HttpPrincipal
@@ -66,7 +66,7 @@ def test_the_phase_4_trace_fields_are_masked(monkeypatch):
         iam_identity=ARN,
         authorization=SimpleNamespace(provider="aws_iam", subject_id="AROATEST", principal=ARN),
     ))
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     _packages, activities, *_ = asyncio.run(
         agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5)

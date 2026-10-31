@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from backend.activity import ActivityEntry
 from backend.db.rds_data_client import get_rds_data_client
 from backend.retrieval import hybrid
-from backend.search_utils import PACKAGE_COLUMNS, numbered_sql, results_to_packages
+from backend.search_utils import PACKAGE_COLUMNS, numbered_sql, rows_to_packages
 
 MAX_LIMIT = 20
 MAX_QUERY_CHARS = 500
@@ -46,7 +46,7 @@ def _where(
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
 
-def _bounded(limit: int) -> int:
+def _clamp_limit(limit: int) -> int:
     """``limit`` clamped to 1 through ``MAX_LIMIT``, as every catalog tool reads it."""
     return max(1, min(int(limit), MAX_LIMIT))
 
@@ -71,14 +71,14 @@ async def search_trips(
         "parameters": [<the bound values, in order>]}``.
     """
     where, params = _where(trip_type, max_price_per_person, text)
-    params.append(_bounded(limit))
+    params.append(_clamp_limit(limit))
     statement = " ".join(
         f"SELECT {PACKAGE_COLUMNS} FROM trip_packages{where} "
         "ORDER BY price_per_person ASC, package_id ASC LIMIT %s".split()
     )
     rows = await get_rds_data_client().execute(statement, tuple(params))
     return {
-        "packages": results_to_packages(rows),
+        "packages": rows_to_packages(rows),
         "sql": numbered_sql(statement),
         "parameters": params,
     }
@@ -110,13 +110,13 @@ UNSUPPORTED_CURRENCY = "unsupported_currency"
 
 
 async def compare_packages(package_ids: List[str]) -> List[Dict[str, Any]]:
-    """Return aligned comparison rows for up to 4 trip packages.
+    """Return rows comparing up to four trip packages side by side.
 
     Args:
         package_ids: list of package_id strings (e.g. ['CTY-002', 'CTY-019']).
 
-    Each row includes pricing, duration list, and the top 3 highlights so an
-    agent can answer "compare these" without writing comparison SQL itself.
+    Each row includes pricing, the duration list and the top three highlights, enough to
+    answer "compare these" without another lookup.
     """
     if not package_ids:
         return []
@@ -187,8 +187,9 @@ async def price_range(destination: str) -> Dict[str, Any]:
 
 
 async def region_inventory(region: str, trip_type: Optional[str] = None) -> Dict[str, Any]:
-    """Return how many distinct trip packages we sell in a region, with
-    aggregate availability across all duration options.
+    """Return how many distinct trip packages a traveler can choose from in a region.
+
+    The answer also gives the places left across all duration options.
 
     Args:
         region: region name (e.g. 'Europe', 'Asia', 'South America').
@@ -225,19 +226,19 @@ async def region_inventory(region: str, trip_type: Optional[str] = None) -> Dict
     }
 
 
-async def currency_convert(amount: float, from_ccy: str, to_ccy: str) -> Dict[str, Any]:
+async def currency_convert(amount: float, from_currency: str, to_currency: str) -> Dict[str, Any]:
     """Convert an amount between supported currencies using indicative rates.
 
     Args:
-        amount: numeric amount in `from_ccy`.
-        from_ccy: ISO 4217 code (e.g. 'USD', 'EUR').
-        to_ccy: ISO 4217 code.
+        amount: numeric amount in `from_currency`.
+        from_currency: ISO 4217 code (e.g. 'USD', 'EUR').
+        to_currency: ISO 4217 code.
 
     Returns the converted amount + the rate used. Indicative only,
     not for settlement. A currency outside the table is answered with
     ``{"error": "unsupported_currency", "supported": [...]}``.
     """
-    source, target = (from_ccy or "").upper(), (to_ccy or "").upper()
+    source, target = (from_currency or "").upper(), (to_currency or "").upper()
     if source not in FX_PER_USD or target not in FX_PER_USD:
         return {"error": UNSUPPORTED_CURRENCY, "supported": sorted(FX_PER_USD)}
     usd = amount / FX_PER_USD[source]
@@ -273,7 +274,7 @@ async def hybrid_trip_search_with_spans(
     refusal = _query_refusal(query)
     if refusal:
         return refusal, []
-    rows, spans, counts = await hybrid.retrieval_rows(query.strip(), _bounded(limit))
+    rows, spans, counts = await hybrid.retrieval_rows(query.strip(), _clamp_limit(limit))
     result = {
         "packages": [hybrid.package_payload(row) for row in rows],
         "candidates": {key: counts[key] for key in ("semantic", "lexical", "merged")},

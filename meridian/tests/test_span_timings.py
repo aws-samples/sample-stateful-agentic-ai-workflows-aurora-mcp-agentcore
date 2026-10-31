@@ -18,7 +18,7 @@ import backend.retrieval.hybrid as hybrid
 import backend.routers.chat as chat_router
 from backend import timing
 from backend.agentcore.runtime import RuntimeDecision, _apply_result
-from backend.agents.phase_04_production.concierge import ProductionAgent
+from backend.agents.phase_04_production.production_agent import ProductionAgent
 from backend.authorization import AuthorizationContext
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings
 from backend.tools import catalog_tools

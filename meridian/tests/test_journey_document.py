@@ -100,8 +100,8 @@ async def test_the_document_names_the_journey_its_owner_and_backend(
     assert doc["journey_id"] == journey.journey_id
     assert doc["traveler_id"] == TRAVELER
     assert doc["active_thread_id"] == journey.thread_id
-    assert doc["checkpoint_backend"]["kind"] == "Aurora workflow_snapshots"
-    assert doc["checkpoint_backend"]["durable"] is True
+    assert doc["snapshot_store"]["kind"] == "Aurora workflow_snapshots"
+    assert doc["snapshot_store"]["durable"] is True
 
 
 async def test_a_journey_the_caller_does_not_own_is_not_readable(
@@ -123,9 +123,9 @@ async def test_an_unknown_journey_is_not_found(journey: Fixture) -> None:
 async def test_missing_evidence_says_so_rather_than_being_omitted(
     journey: Fixture,
 ) -> None:
-    """A fresh journey has no checkpoint and no hold. Both must be explicit."""
+    """A fresh journey has no snapshot and no hold. Both must be explicit."""
     doc = await _document(journey)
-    for section in ("checkpoint", "hold", "recommendations", "selected_plan"):
+    for section in ("snapshot", "hold", "recommendations", "selected_plan"):
         assert section in doc, f"{section} must never be omitted"
         assert doc[section]["status"] == "unavailable"
         assert doc[section]["reason"], f"{section} must say why it is unavailable"
@@ -135,7 +135,7 @@ async def test_every_present_section_carries_its_source(journey: Fixture) -> Non
     doc = await _document(journey)
     for name, section in doc.items():
         if isinstance(section, dict) and section.get("status") != "unavailable":
-            if name in ("checkpoint_backend",):
+            if name in ("snapshot_store",):
                 continue
             assert section.get("source"), f"{name} must name its source"
 
@@ -166,7 +166,7 @@ async def test_executions_report_workers_attempts_and_status(
     assert executions[1]["execution_id"] == second.execution_id
 
 
-# ---------------------------------------------------------------- checkpoint
+# ---------------------------------------------------------------- snapshot
 
 
 def _workflow_snapshot(fx: Fixture, status: str, next_nodes: list) -> dict:
@@ -214,17 +214,17 @@ async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) ->
         await storage.write(snapshot_key(journey.thread_id), json.dumps(snapshot).encode())
 
     doc = await _document(journey)
-    checkpoint = doc["checkpoint"]
-    assert checkpoint["status"] == "committed"
-    assert checkpoint["source"] == "workflow_snapshots"
-    assert checkpoint["thread_id"] == journey.thread_id
-    assert checkpoint["snapshot_count"] == 2
-    assert int(checkpoint["parent_checkpoint_id"]) < int(checkpoint["checkpoint_id"])
+    snapshot = doc["snapshot"]
+    assert snapshot["status"] == "committed"
+    assert snapshot["source"] == "workflow_snapshots"
+    assert snapshot["thread_id"] == journey.thread_id
+    assert snapshot["snapshot_count"] == 2
+    assert int(snapshot["parent_snapshot_id"]) < int(snapshot["snapshot_id"])
     assert doc["workflow"]["workflow_status"] == "paused"
     assert doc["workflow"]["next_nodes"] == ["synthesize"]
     plan = doc["selected_plan"]
     assert plan["package_id"] == "TKY-003"
-    expected = f"snapshot:{journey.thread_id}/{checkpoint['checkpoint_id']}#channel:hold_package"
+    expected = f"snapshot:{journey.thread_id}/{snapshot['snapshot_id']}#channel:hold_package"
     assert plan["source"] == expected
 
 
@@ -254,7 +254,7 @@ async def test_another_key_in_the_same_session_is_not_read_as_the_workflow(
     doc = await _document(journey)
     assert doc["workflow"]["workflow_status"] == "paused"
     assert doc["workflow"]["next_nodes"] == ["synthesize"]
-    assert doc["checkpoint"]["snapshot_count"] == 1
+    assert doc["snapshot"]["snapshot_count"] == 1
 
 
 async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fixture) -> None:
@@ -289,7 +289,7 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
     doc = await _document(journey)
     workflow = doc["workflow"]
     assert workflow["workflow_status"] == "resumed"
-    assert workflow["resumed_from_checkpoint"] == first_seq
+    assert workflow["resumed_from_snapshot"] == first_seq
     assert workflow["execution_id"] == second.execution_id
     assert workflow["resumed_after_restart"] is True
     assert workflow["next_nodes"] == []
@@ -316,8 +316,8 @@ async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(
     )
 
     doc = await _document(journey)
-    assert doc["checkpoint"]["status"] == "committed"
-    assert doc["checkpoint"]["snapshot_count"] >= 1
+    assert doc["snapshot"]["status"] == "committed"
+    assert doc["snapshot"]["snapshot_count"] >= 1
     assert doc["workflow"]["workflow_status"] == "paused"
     assert doc["workflow"]["next_nodes"] == ["synthesize"]
 

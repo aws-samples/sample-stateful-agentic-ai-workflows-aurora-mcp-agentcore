@@ -17,6 +17,25 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`. The Gateway serves eleven tools; the Concierge model is offered ten, because `release_hold` is for the Phase 5 workflow |
 | Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the catalog tools, `get_package_details` and `loyalty_balance`; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget; `meridian_release_governance` permits a release only when the call names a hold request and a journey. In `jwt` mode the render adds a fifth rule, `meridian_traveler_binding`, which covers `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
 
+To move an existing deployment to the commit that renames the `journeys` store column to
+`snapshot_store` and the `currency_convert` arguments to `from_currency` and `to_currency`,
+go in this order. In this order nothing breaks between the steps:
+
+1. Apply migration `024_journeys_snapshot_store.sql` (see
+   [Prepare the database](OPERATIONS.md#prepare-the-database)). It only adds the new column and
+   a trigger that keeps it equal to the old one, so the deployed code keeps working.
+2. Update the catalog Lambda's code (step 2) before the stack. The new code accepts both argument
+   spellings; the code before this commit reads only `from_ccy` and `to_ccy`, so a stack deployed
+   first would send it names it cannot read.
+3. Deploy the AgentCore stack (step 5). It carries the regenerated `tool-schema.json`, which
+   advertises only the new argument names.
+4. Publish the web app. For one release the backend also sends each renamed response field under
+   its old name and the frontend reads either, so the site and the backend can go out in either
+   order.
+5. Verify.
+6. Apply migration 025 from the follow-up commit, which drops the old column and the trigger, and
+   ship that commit, which also removes the old argument names and the old response field names.
+
 The resources are declared in
 [`meridian_agentcore/agentcore/agentcore.template.json`](../meridian_agentcore/agentcore/agentcore.template.json).
 The AgentCore CLI deploys them as one CloudFormation stack,
@@ -187,7 +206,7 @@ invoke price_range '{"destination":"Tokyo"}'
 invoke search_trips '{"trip_type":"City Breaks","limit":3}'
 invoke compare_packages '{"package_ids":["CTY-002"]}'
 invoke region_inventory '{"region":"Asia"}'
-invoke currency_convert '{"amount":100,"from_ccy":"USD","to_ccy":"EUR"}'
+invoke currency_convert '{"amount":100,"from_currency":"USD","to_currency":"EUR"}'
 invoke hybrid_trip_search '{"query":"quiet boutique city stay in Tokyo under $3,000","limit":3}'
 ```
 
@@ -200,6 +219,10 @@ shortcut.
 To deploy a code change later, run the `TARGET=` and `zip -j` lines again, then
 `aws lambda update-function-code --region "$REGION" --function-name meridian-catalog-tools --zip-file fileb://meridian-catalog-tools.zip`.
 The CDK app grants the gateway role permission to invoke the function.
+
+The `currency_convert` argument names are part of the target's `tool-schema.json`, which the
+CDK deploy in step 5 publishes. The Lambda accepts the new and the old names while the Gateway
+schema and the code are deployed separately.
 
 ## 3. Publish the holds Lambda's settings
 

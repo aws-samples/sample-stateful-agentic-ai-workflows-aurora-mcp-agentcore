@@ -35,7 +35,7 @@ from strands.types.exceptions import MCPClientInitializationError, ToolProviderE
 
 from backend.agents import strands_hooks
 from backend.agents.phase_03_retrieval import agent as phase3
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.agents.strands_hooks import StopOnToolSetupError, ToolSetupError
 from backend.audit_vocabulary import ToolCall
 from backend.tools import catalog_tools
@@ -347,7 +347,7 @@ def stored_after(monkeypatch, yielded, operation):
     Returns:
         The one audit row the backend committed, and the error that reached its caller.
     """
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     rows = []
 
     async def write_audit(**row):

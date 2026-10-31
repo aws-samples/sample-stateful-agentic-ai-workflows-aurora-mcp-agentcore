@@ -151,7 +151,7 @@ def test_the_unused_outbound_identity_path_and_postgres_mcp_client_are_gone():
     assert not (MERIDIAN / "backend/mcp/mcp_client.py").exists()
     identity = read("backend/agentcore/identity.py")
     assert "get_resource_api_key" not in identity and "resource_provider" not in identity
-    concierge = read("backend/agents/phase_04_production/concierge.py")
+    concierge = read("backend/agents/phase_04_production/production_agent.py")
     assert "AgentCore Identity resolved" not in concierge
 
 

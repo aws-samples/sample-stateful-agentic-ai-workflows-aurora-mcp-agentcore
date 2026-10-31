@@ -10,7 +10,7 @@ from backend.routers.chat import (
     _format_domain_reply,
     _is_memory_recall_query,
     _is_semantic_intent_query,
-    _needs_checkpointed_workflow,
+    _needs_saved_step_workflow,
     _wants_domain_tool,
 )
 from scripts.travel_catalog import (
@@ -20,7 +20,7 @@ from scripts.travel_catalog import (
 )
 
 
-from backend.demo_prompts import PROMPT_LADDER
+from backend.prompt_ladder import PROMPT_LADDER
 
 COMPARE_AND_FX = PROMPT_LADDER[1].tee_up
 MCP_SEASONAL = PROMPT_LADDER[2].works[1]
@@ -119,10 +119,10 @@ def test_the_recall_prompt_is_the_only_retrieval_shortcut() -> None:
     assert not _is_memory_recall_query(TUSCANY_AVAILABILITY)
 
 
-def test_production_stretch_requires_checkpointed_workflow() -> None:
-    assert _needs_checkpointed_workflow(WORKFLOW_PLAN)
-    assert _needs_checkpointed_workflow(WORKFLOW_PLAN_KYOTO)
-    assert not _needs_checkpointed_workflow(TUSCANY_AVAILABILITY)
+def test_production_stretch_requires_saved_step_workflow() -> None:
+    assert _needs_saved_step_workflow(WORKFLOW_PLAN)
+    assert _needs_saved_step_workflow(WORKFLOW_PLAN_KYOTO)
+    assert not _needs_saved_step_workflow(TUSCANY_AVAILABILITY)
 
 
 def test_multi_price_fx_reply_names_every_compared_package() -> None:
@@ -176,7 +176,7 @@ def test_compare_prompt_converts_each_package_price(monkeypatch) -> None:
             amount = args["amount"]
             return {
                 "from": "USD",
-                "to": args["to_ccy"],
+                "to": args["to_currency"],
                 "amount": amount,
                 "converted": round(amount * 0.92, 2),
                 "rate": 0.92,
@@ -244,7 +244,7 @@ def test_loyalty_tool_uses_authenticated_traveler(monkeypatch) -> None:
 
 def test_prompt_ladder_matches_documented_prompts() -> None:
     """The shipped ladder must stay in step with the prompts meridian/README.md documents."""
-    from backend.demo_prompts import PROMPT_LADDER, tee_up_prompt
+    from backend.prompt_ladder import PROMPT_LADDER, tee_up_prompt
 
     assert set(PROMPT_LADDER) == {1, 2, 3, 4, 5}
     assert tee_up_prompt(1) == COMPARE_AND_FX
@@ -257,7 +257,7 @@ def test_prompt_ladder_matches_documented_prompts() -> None:
 
 def test_follow_ups_always_offer_the_next_rung() -> None:
     """The hand-off prompt must be one click away on every phase."""
-    from backend.demo_prompts import tee_up_prompt
+    from backend.prompt_ladder import tee_up_prompt
     from backend.routers.chat import generate_follow_ups
 
     for phase in (1, 2, 3, 4):

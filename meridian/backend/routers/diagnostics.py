@@ -31,7 +31,7 @@ AWS docs:
 from typing import Any, List, NamedTuple, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
@@ -42,6 +42,7 @@ from backend.http_auth import (
     authorize_traveler,
     require_http_principal,
 )
+from backend.legacy_field_names import with_legacy_names
 from backend.logging_config import log_exception
 from backend.security.redaction import mask_payload
 
@@ -239,7 +240,7 @@ async def rls_probe(
 #
 # The closing beat. Each phase claims to persist something: authorization
 # decisions, RLS-scoped reads, conversation turns, interaction embeddings, a
-# courtesy hold, workflow checkpoints. This counts the rows behind those claims
+# courtesy hold, workflow snapshots. This counts the rows behind those claims
 # so the close can point at them rather than restate them.
 #
 # The receipt records its own authorization checks: each scoped session writes one
@@ -251,7 +252,7 @@ async def rls_probe(
 
 # The workflow snapshot table exists once migration 014 has run. Its absence is
 # a legitimate answer ("the durable store was never configured"), not an error.
-CHECKPOINT_TABLES = ("workflow_snapshots",)
+SNAPSHOT_TABLES = ("workflow_snapshots",)
 
 
 class ReceiptLine(BaseModel):
@@ -264,15 +265,19 @@ class ReceiptLine(BaseModel):
 
 
 class SessionReceiptResponse(BaseModel):
+    # For one release the receipt also carries its fields' names from before the snapshot
+    # rename (backend.legacy_field_names), so a site published before the backend reads it.
+    model_config = ConfigDict(extra="allow")
+
     traveler_id: str
     since: str
     lines: List[ReceiptLine]
     authorization_subject: Optional[str] = None
-    durable_checkpoints: bool = False
+    durable_snapshots: bool = False
     # Named so the receipt can say which backend it is talking about rather
     # than asserting a mechanism it never checked.
-    checkpoint_backend: Optional[str] = None
-    checkpoint_backend_durable: bool = False
+    snapshot_store: Optional[str] = None
+    snapshot_store_durable: bool = False
 
 
 class SessionReceiptRequest(BaseModel):
@@ -280,7 +285,7 @@ class SessionReceiptRequest(BaseModel):
     # Minutes of history to attribute to this session. The default covers a
     # 60-minute slot plus setup.
     window_minutes: int = Field(default=90, ge=1, le=1440)
-    # The workflow thread this session ran, so checkpoint rows can be counted
+    # The workflow thread this session ran, so snapshot rows can be counted
     # for it rather than for the whole table. Without one there is no thread to
     # make a durability claim about.
     conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
@@ -386,7 +391,7 @@ def _decision_line(allow: Probed, deny: Probed) -> ReceiptLine:
     )
 
 
-def _checkpoint_detail(
+def _snapshot_detail(
     exists: Probed, total: Probed, thread_id: Optional[str], owned: Probed = Probed(True)
 ) -> str:
     """What to say about the snapshot rows, distinguishing absent, unknown and zero."""
@@ -433,7 +438,7 @@ async def _snapshot_line(
     after the thread is confirmed to belong to the caller. Counting the table whole would let
     an earlier rehearsal satisfy a claim about the run on screen.
     """
-    exists = await _tables_exist(db, CHECKPOINT_TABLES)
+    exists = await _tables_exist(db, SNAPSHOT_TABLES)
     total = Probed(0)
     if not (exists.value and thread_id and owned is not None):
         owned = Probed(True)
@@ -443,9 +448,9 @@ async def _snapshot_line(
     counted = bool(owned.value) and not unknown
     line = ReceiptLine(
         label="Workflow snapshot rows",
-        table=", ".join(CHECKPOINT_TABLES),
+        table=", ".join(SNAPSHOT_TABLES),
         count=total.value if counted else None,
-        detail=_checkpoint_detail(exists, total, thread_id, owned),
+        detail=_snapshot_detail(exists, total, thread_id, owned),
     )
     return line, bool(exists.value and owned.value and total.value)
 
@@ -549,12 +554,13 @@ async def session_receipt(
     backend_kind = str(backend_status.get("kind") or "not initialized")
     backend_durable = bool(backend_status.get("durable"))
 
-    return SessionReceiptResponse(
+    receipt = SessionReceiptResponse(
         traveler_id=traveler_id,
         since=f"last {request.window_minutes} minutes",
         lines=lines,
         authorization_subject=authorization.subject_id if authorization else None,
-        durable_checkpoints=durable,
-        checkpoint_backend=backend_kind,
-        checkpoint_backend_durable=backend_durable,
+        durable_snapshots=durable,
+        snapshot_store=backend_kind,
+        snapshot_store_durable=backend_durable,
     )
+    return SessionReceiptResponse.model_validate(with_legacy_names(receipt.model_dump()))

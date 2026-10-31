@@ -1,6 +1,6 @@
 import { motion, PresenceContext } from 'motion/react';
 import { AuroraIcon } from './ServiceMark';
-import { CHECKPOINT_GLOW, STATE_CHANGE, useConfirmedLive } from '../hooks/useLiveCues';
+import { SNAPSHOT_GLOW, STATE_CHANGE, useConfirmedLive } from '../hooks/useLiveCues';
 import {
 AlertTriangle,
   ArrowRight,
@@ -110,7 +110,7 @@ const LAUNCH_STEPS: {
     detail: 'Retrieve and rerank live Tokyo options.',
   },
   {
-    id: 'checkpoint',
+    id: 'snapshot',
     icon: AuroraIcon,
     label: 'Save a step in Aurora',
     detail: 'Persist the shortlist before verification.',
@@ -132,7 +132,7 @@ function timelineNote(
 ): string {
   if (failed) return 'Check saved progress before retrying';
   if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
-  if (stage === 'checkpointed') return 'Paused at a saved step';
+  if (stage === 'saved') return 'Paused at a saved step';
   if (stage === 'ready') return 'Workflow complete';
   return 'Runs after you confirm';
 }
@@ -245,7 +245,7 @@ function travelerContextReasons(
 
 function stageBadge(stage: RecoveryStage): string {
   if (stage === 'ready') return 'Ready for review';
-  if (stage === 'checkpointed') return 'Shortlist saved';
+  if (stage === 'saved') return 'Shortlist saved';
   if (stage === 'running') return 'Ranking live options';
   return 'Awaiting recovery';
 }
@@ -420,8 +420,8 @@ function RecoveryStepList({ steps, live, running, failed }: {
   failed: boolean;
 }) {
   // The one emphasis, only when a watched run's response confirms the save.
-  const checkpointGlow = useConfirmedLive(
-    stepView(steps, 'checkpoint').state === 'is-visited', live,
+  const snapshotGlow = useConfirmedLive(
+    stepView(steps, 'snapshot').state === 'is-visited', live,
   );
   // A step settles into place only when a response confirms it. While a
   // request is in flight nothing has been confirmed yet, so nothing moves.
@@ -441,8 +441,8 @@ function RecoveryStepList({ steps, live, running, failed }: {
         {LAUNCH_STEPS.map((step) => {
           const Icon = step.icon;
           const { state: stepState, source } = stepView(steps, step.id);
-          // The checkpoint step keeps its Aurora mark once Aurora confirms it.
-          const aurora = step.id === 'checkpoint';
+          // The snapshot step keeps its Aurora mark once Aurora confirms it.
+          const aurora = step.id === 'snapshot';
           const done = stepState === 'is-visited' && !aurora;
           return (
             <li
@@ -463,13 +463,13 @@ function RecoveryStepList({ steps, live, running, failed }: {
                     ? <Check size={15} strokeWidth={3} aria-hidden="true" />
                     : <Icon size={16} aria-hidden="true" />}
                 </motion.span>
-                {checkpointGlow && aurora && (
+                {snapshotGlow && aurora && (
                   <motion.span
                     className="mds-aurora-glow"
                     aria-hidden="true"
                     initial={{ opacity: 0.9, scale: 1 }}
                     animate={{ opacity: 0, scale: 1.9 }}
-                    transition={CHECKPOINT_GLOW}
+                    transition={SNAPSHOT_GLOW}
                   />
                 )}
               </span>
@@ -578,7 +578,7 @@ export function RecommendedRecoveryPlanCard({
         </span>
         <span className={`mds-decision-status is-${stage}`}>
           {stage === 'running' && <Loader2 size={13} aria-hidden="true" />}
-          {stage === 'checkpointed' && <AuroraIcon size={13} aria-hidden="true" />}
+          {stage === 'saved' && <AuroraIcon size={13} aria-hidden="true" />}
           {stage === 'ready' && <Check size={13} aria-hidden="true" />}
           {stageBadge(stage)}
         </span>
@@ -617,9 +617,9 @@ export function RecommendedRecoveryPlanCard({
               <Clock3 size={14} aria-hidden="true" />
               {availabilityLabel(product, evidence.availabilityObserved)}
             </span>
-            <span className={evidence.checkpointObserved ? 'is-verified' : ''}>
+            <span className={evidence.snapshotObserved ? 'is-verified' : ''}>
               <AuroraIcon size={14} aria-hidden="true" />
-              {evidence.checkpointObserved
+              {evidence.snapshotObserved
                 ? 'Plan state saved'
                 : 'Saved step created during recovery'}
             </span>
@@ -704,7 +704,7 @@ export function RecommendedRecoveryPlanCard({
           onClick={primaryAction.onClick}
           disabled={primaryAction.disabled}
         >
-          {stage === 'checkpointed' ? (
+          {stage === 'saved' ? (
             <AuroraIcon size={16} aria-hidden="true" />
           ) : stage === 'ready' ? (
             <CheckCircle2 size={16} aria-hidden="true" />
@@ -980,13 +980,13 @@ export function AgentProofCard({
         <ProofRow
           label="Durable workflow"
           detail={
-            evidence.checkpointObserved
-              ? evidence.durableCheckpoint
+            evidence.snapshotObserved
+              ? evidence.durableSnapshot
                 ? 'Saved step kept in Aurora'
                 : 'Saved step seen on current worker'
               : 'Saved step not observed yet'
           }
-          status={statusFor(evidence.checkpointObserved)}
+          status={statusFor(evidence.snapshotObserved)}
         />
       </ul>
       <button type="button" onClick={onViewProof}>

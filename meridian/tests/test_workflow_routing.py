@@ -8,7 +8,7 @@ from backend.agents.phase_05_workflow.routing import (
     pauses_after_search,
 )
 from backend.agents.phase_05_workflow.state import activity, hold_key
-from backend.demo_prompts import PROMPT_LADDER
+from backend.prompt_ladder import PROMPT_LADDER
 
 CANONICAL_RECOVERY = PROMPT_LADDER[5].works[0]
 

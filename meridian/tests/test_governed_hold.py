@@ -1,4 +1,4 @@
-"""The workflow's hold goes through the gateway tool with its checkpointed identity."""
+"""The workflow's hold goes through the gateway tool with its saved identity."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ INTENT = {
 }
 
 
-def test_arguments_carry_the_checkpointed_identity_and_the_worker_lease():
+def test_arguments_carry_the_saved_identity_and_the_worker_lease():
     args = hold_arguments(
         INTENT, traveler_id="trv_meridian_demo", journey_ref="phase5-thread",
         budget_ceiling_cents=640000, hold_minutes=15, execution_id="exe_1",

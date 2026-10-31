@@ -20,7 +20,7 @@ from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 from backend.security.redaction import mask_payload
 
 JOURNEY_SQL = """
-SELECT journey_id, traveler_id, checkpoint_backend, active_thread_id, status,
+SELECT journey_id, traveler_id, snapshot_store, active_thread_id, status,
        created_at, updated_at, CURRENT_TIMESTAMP::TEXT AS observed_at
   FROM journeys WHERE journey_id = %s
 """
@@ -108,7 +108,7 @@ def _iso(value: Any) -> Optional[str]:
     return parsed.isoformat()
 
 
-def checkpoint_backend_is_durable(kind: str) -> bool:
+def snapshot_store_is_durable(kind: str) -> bool:
     """Only the workflow snapshot store can support the durability claim."""
     return kind == SNAPSHOT_STORE
 
@@ -125,18 +125,18 @@ def restarted(resumed_from_writer: Optional[str], latest_worker: Optional[str]) 
 
 
 def _channel(values: Any, name: str) -> Any:
-    """Read one channel out of a checkpoint's loaded values."""
+    """Read one channel out of a snapshot's loaded values."""
     return values.get(name) if isinstance(values, dict) else None
 
 
 def _workflow_document(
-    snapshot, checkpoint, executions, *, latest_execution, resumed_from, resumed_from_writer=None
+    snapshot, section, executions, *, latest_execution, resumed_from, resumed_from_writer=None
 ):
     """The workflow section, folded from the newest snapshot with the steps' own fold.
 
     Args:
         snapshot: The newest parsed snapshot on the thread, or None.
-        checkpoint: The checkpoint section, used to name the document's source.
+        section: The snapshot section, used to name the document's source.
         executions: The executions section, oldest attempt first.
         latest_execution: The execution that wrote the newest snapshot row.
         resumed_from: The newest snapshot seq written by any execution other than
@@ -156,7 +156,7 @@ def _workflow_document(
     resumed = not pending and resumed_from is not None
     return {
         "status": "observed",
-        "source": _channel_source(checkpoint, "workflow"),
+        "source": _channel_source(section, "workflow"),
         "conversation_id": folded.get("conversation_id"),
         "query": folded.get("query", ""),
         "message": (
@@ -170,7 +170,7 @@ def _workflow_document(
             folded.get("travelers_count") or (folded.get("hold_intent") or {}).get("quantity", 1)
         ),
         "execution_id": latest_execution,
-        "resumed_from_checkpoint": resumed_from if resumed else None,
+        "resumed_from_snapshot": resumed_from if resumed else None,
         "resumed_after_restart": resumed and restarted(resumed_from_writer, latest_worker),
     }
 
@@ -219,26 +219,26 @@ async def assemble_journey_document(
             "journey_id": journey["journey_id"],
             "traveler_id": journey["traveler_id"],
             "status": journey["status"],
-            "checkpoint_backend": {
-                "kind": journey["checkpoint_backend"],
-                "durable": checkpoint_backend_is_durable(journey["checkpoint_backend"]),
+            "snapshot_store": {
+                "kind": journey["snapshot_store"],
+                "durable": snapshot_store_is_durable(journey["snapshot_store"]),
             },
             "active_thread_id": thread_id,
         }
 
         document["executions"] = await _executions(q, journey_id)
-        checkpoint, snapshot, latest_execution, resumed_from, writer = await _snapshot(q, thread_id)
+        section, snapshot, latest_execution, resumed_from, writer = await _snapshot(q, thread_id)
         inline = fold_snapshot(snapshot) if snapshot else {}
         document["workflow"] = _workflow_document(
-            snapshot, checkpoint, document["executions"],
+            snapshot, section, document["executions"],
             latest_execution=latest_execution, resumed_from=resumed_from,
             resumed_from_writer=writer,
         )
-        document["checkpoint"] = checkpoint
-        document["selected_plan"] = _selected_plan(checkpoint, inline)
-        document["recommendations"] = _recommendations(checkpoint, inline)
+        document["snapshot"] = section
+        document["selected_plan"] = _selected_plan(section, inline)
+        document["recommendations"] = _recommendations(section, inline)
         document["pending_decision"] = _pending_decision(
-            checkpoint, inline, workflow_status=document["workflow"].get("workflow_status"),
+            section, inline, workflow_status=document["workflow"].get("workflow_status"),
         )
         document["conversation"] = await _conversation(q, thread_id)
         document["hold"] = await _hold(q, journey_id, inline)
@@ -298,7 +298,7 @@ async def _snapshot(q, thread_id: Optional[str]):
     """The newest snapshot on the thread, with its place in the run's history.
 
     Returns:
-        (checkpoint section, parsed snapshot or None, latest execution id, resumed-from seq,
+        (snapshot section, parsed snapshot or None, latest execution id, resumed-from seq,
         worker id that wrote the resumed-from snapshot)
     """
     if not thread_id:
@@ -312,31 +312,30 @@ async def _snapshot(q, thread_id: Optional[str]):
         )
     row = rows[0]
     history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id, key)))[0]
-    checkpoint = {
+    section = {
         "status": "committed",
         "source": "workflow_snapshots",
         "thread_id": thread_id,
-        "checkpoint_id": row["seq"],
-        "parent_checkpoint_id": history["previous_seq"],
-        "checkpoint_ns": "",
+        "snapshot_id": row["seq"],
+        "parent_snapshot_id": history["previous_seq"],
         "committed_at": _iso(row["saved_at"]),
         "snapshot_count": int(history["n"]),
     }
     resumed_from = history["resumed_from"]
     writer_rows = await q(SNAPSHOT_WRITER_SQL, (resumed_from,)) if resumed_from else []
     writer = writer_rows[0]["worker_id"] if writer_rows else None
-    return checkpoint, json.loads(row["snapshot"]), row["execution_id"], resumed_from, writer
+    return section, json.loads(row["snapshot"]), row["execution_id"], resumed_from, writer
 
 
-def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:
+def _channel_source(section: Dict[str, Any], channel: str) -> str:
     return (
-        f"snapshot:{checkpoint['thread_id']}/{checkpoint['checkpoint_id']}"
+        f"snapshot:{section['thread_id']}/{section['snapshot_id']}"
         f"#channel:{channel}"
     )
 
 
-def _selected_plan(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
-    if checkpoint.get("status") != "committed":
+def _selected_plan(section: Dict[str, Any], inline: Any) -> Dict[str, Any]:
+    if section.get("status") != "committed":
         return _unavailable("no committed snapshot to read a selection from")
     intent = _channel(inline, "hold_intent") or {}
     for channel, package_id in (
@@ -347,14 +346,14 @@ def _selected_plan(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
         if package_id:
             return {
                 "status": "observed",
-                "source": _channel_source(checkpoint, channel),
+                "source": _channel_source(section, channel),
                 "package_id": package_id,
             }
     return _unavailable("the snapshot carries no selected package or hold intent")
 
 
-def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
-    if checkpoint.get("status") != "committed":
+def _recommendations(section: Dict[str, Any], inline: Any) -> Dict[str, Any]:
+    if section.get("status") != "committed":
         return _unavailable("no committed snapshot to read recommendations from")
     channel = "packages" if _channel(inline, "packages") else "recommendations"
     items = _channel(inline, channel)
@@ -362,15 +361,15 @@ def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
         return _unavailable("the snapshot carries no recommendation channel")
     return {
         "status": "observed",
-        "source": _channel_source(checkpoint, channel),
+        "source": _channel_source(section, channel),
         "items": items,
     }
 
 
 def _pending_decision(
-    checkpoint: Dict[str, Any], inline: Any, workflow_status: Optional[str] = None
+    section: Dict[str, Any], inline: Any, workflow_status: Optional[str] = None
 ) -> Dict[str, Any]:
-    if checkpoint.get("status") != "committed":
+    if section.get("status") != "committed":
         return _unavailable("no committed snapshot to read a pending step from")
     # Retain hold_intent for idempotent replay, but never present a completed
     # operation as a new decision merely because its intent is still saved.
@@ -383,7 +382,7 @@ def _pending_decision(
         return _unavailable("the snapshot carries no pending hold intent")
     return {
         "status": "observed",
-        "source": _channel_source(checkpoint, "hold_intent"),
+        "source": _channel_source(section, "hold_intent"),
         "hold_request_id": intent.get("hold_request_id"),
         "package_id": intent.get("package_id"),
         "prompt": f"Confirm the hold on {intent.get('package_id')}",

@@ -19,14 +19,14 @@ from backend import http_auth
 from backend.agentcore.errors import CallerTokenExpired
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter, RuntimeTurnError
 from backend.agents.phase_04_production import audit_outcome
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.agents.phase_04_production.audit_outcome import (
     TurnAudit,
     audit_from_decision,
     read_turn,
     turn_error_of,
 )
-from backend.agents.phase_04_production.concierge import BookingTarget, HoldTarget
+from backend.agents.phase_04_production.production_agent import BookingTarget, HoldTarget
 from backend.agents.phase_04_production.write_outcome import (
     PlacedWriteUnfinished,
     WriteOutcomeUnknown,
@@ -395,7 +395,7 @@ def test_the_row_and_the_trace_come_from_one_reading_of_the_spans(monkeypatch):
 
 @pytest.fixture
 def recorded(monkeypatch):
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     rows: list[dict] = []
     checks = MemoryStore.__new__(MemoryStore)
     checks.db = SimpleNamespace(execute=AsyncMock())
@@ -565,7 +565,7 @@ def test_interleaved_turns_on_one_agent_keep_their_own_subjects(recorded):
 
 
 def test_the_agent_keeps_no_subject_of_its_own():
-    assert not hasattr(concierge_mod.ProductionAgent, "verified_subject")
+    assert not hasattr(production_agent_mod.ProductionAgent, "verified_subject")
 
 
 def test_the_audit_unit_refuses_to_run_without_audit_facts(recorded):
@@ -912,12 +912,12 @@ def answer_each_turn(agent, *decisions):
 
 def errors_logged(caplog):
     return [record for record in caplog.records
-            if record.name == concierge_mod.__name__ and record.levelno >= logging.ERROR]
+            if record.name == production_agent_mod.__name__ and record.levelno >= logging.ERROR]
 
 
 def warnings_logged(caplog):
     return [record for record in caplog.records
-            if record.name == concierge_mod.__name__ and record.levelno == logging.WARNING]
+            if record.name == production_agent_mod.__name__ and record.levelno == logging.WARNING]
 
 
 @pytest.mark.parametrize("operation", RUNTIME_PATHS)
@@ -1671,7 +1671,7 @@ def serve(monkeypatch, recorded, decision):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setattr(http_auth, "get_cognito_verifier", lambda: None)
-    monkeypatch.setattr(concierge_mod, "create_production_agent", lambda: recorded(decision))
+    monkeypatch.setattr(production_agent_mod, "create_production_agent", lambda: recorded(decision))
     return TestClient(app)
 
 

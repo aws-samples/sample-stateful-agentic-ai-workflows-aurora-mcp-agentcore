@@ -36,11 +36,11 @@ beforeEach(() => {
 const savedJourney = (travelerId: string) => ({
   traveler_id: travelerId, active_thread_id: 'saved-thread',
   workflow: {
-    status: 'observed', source: 'checkpoint', conversation_id: 'saved-thread',
+    status: 'observed', source: 'snapshot', conversation_id: 'saved-thread',
     query: 'Rework the trip.', message: 'Shortlist saved.', workflow_status: 'paused',
     next_nodes: ['availability'], activities: [], travelers_count: 2,
   },
-  recommendations: { status: 'observed', source: 'checkpoint', items: [] },
+  recommendations: { status: 'observed', source: 'snapshot', items: [] },
 }) as unknown as JourneyDocument;
 
 describe('a signed-in traveler', () => {

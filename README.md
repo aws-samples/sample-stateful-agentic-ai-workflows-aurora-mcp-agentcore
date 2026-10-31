@@ -159,8 +159,8 @@ uvicorn backend.main:app --host 127.0.0.1 --port 8013
 curl http://127.0.0.1:8013/api/health
 ```
 
-The response has `"status": "healthy"` and `"aurora_reachable": true`. The snapshot store keeps
-its original key names: `"checkpoint_backend": "Aurora workflow_snapshots"`.
+The response has `"status": "healthy"` and `"aurora_reachable": true`. The snapshot store appears as
+`"snapshot_store": "Aurora workflow_snapshots"`.
 `"workflow_runtime_configured"` is `false` until you deploy the AgentCore resources and run
 `sync_agentcore_env.py --write`. Local requests need no API token; read the
 [governance boundary](meridian/README.md#governance-boundary) before you expose the API.

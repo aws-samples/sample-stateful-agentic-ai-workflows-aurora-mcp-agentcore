@@ -13,7 +13,7 @@ const execution = (status: string, lease: string) => ({
 function journey(status: string, lease: string) {
   return {
     journey_id: 'jrn_1', traveler_id: 'trv_meridian_demo', status, active_thread_id: THREAD,
-    checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
+    snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
     observed_at: '2026-10-28T12:00:00Z',
     executions: { status: 'observed', source: 'journey_executions', items: [execution(status, lease)] },
   };

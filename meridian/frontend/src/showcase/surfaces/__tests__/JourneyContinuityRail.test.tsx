@@ -18,10 +18,10 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
     journey_id: 'jrn_test',
     traveler_id: 'trv_meridian_demo',
     status: 'active',
-    checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
+    snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
     active_thread_id: 'thread_test',
     executions: { status: 'observed', source: 'journey_executions', items: [execution({})] },
-    checkpoint: unavailable('none'),
+    snapshot: unavailable('none'),
     selected_plan: unavailable('none'),
     recommendations: unavailable('none'),
     pending_decision: unavailable('none'),
@@ -39,11 +39,11 @@ const authorized = {
   observed_at: '2026-09-28T18:00:00Z',
 };
 const recommendations = {
-  status: 'observed', source: 'checkpoint', items: [{ package_id: 'TKY-003' }],
+  status: 'observed', source: 'snapshot', items: [{ package_id: 'TKY-003' }],
 };
-const checkpoint = {
-  status: 'committed', source: 'checkpoints', thread_id: 'thread_test', checkpoint_id: 'cp_01',
-  parent_checkpoint_id: null, checkpoint_ns: '', committed_at: '2026-09-28T18:00:00Z',
+const snapshot = {
+  status: 'committed', source: 'snapshots', thread_id: 'thread_test', snapshot_id: 'cp_01',
+  parent_snapshot_id: null, snapshot_ns: '', committed_at: '2026-09-28T18:00:00Z',
 };
 
 const pausedDocument = () => makeDocument({ executions: {
@@ -72,17 +72,17 @@ describe('JourneyContinuityRail', () => {
 
   it('reveals only the steps Aurora has recorded', () => {
     render(<JourneyContinuityRail error={null} document={makeDocument({
-      authorization: authorized, recommendations, checkpoint,
+      authorization: authorized, recommendations, snapshot,
     } as Partial<JourneyDocument>)} />);
     expect(rows())
       .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Saved step']);
     const list = screen.getByRole('list');
-    expect(within(list).queryByText(/No journey yet|Nothing checkpointed|Awaiting/)).toBeNull();
+    expect(within(list).queryByText(/No journey yet|Nothing saved|Awaiting/)).toBeNull();
   });
 
   it('adds the interruption and the verified resume when they are recorded', () => {
     render(<JourneyContinuityRail error={null} document={makeDocument({
-      authorization: authorized, recommendations, checkpoint,
+      authorization: authorized, recommendations, snapshot,
       executions: {
         status: 'observed', source: 'journey_executions',
         items: [
@@ -91,9 +91,9 @@ describe('JourneyContinuityRail', () => {
         ],
       },
       workflow: {
-        status: 'observed', source: 'checkpoint', conversation_id: 'thread_test', query: 'q',
+        status: 'observed', source: 'snapshot', conversation_id: 'thread_test', query: 'q',
         message: 'm', workflow_status: 'resumed', next_nodes: [], activities: [],
-        travelers_count: 1, execution_id: 'exe_02', resumed_from_checkpoint: 'cp_01',
+        travelers_count: 1, execution_id: 'exe_02', resumed_from_snapshot: 'cp_01',
         resumed_after_restart: true,
       },
     } as Partial<JourneyDocument>)} />);
@@ -106,7 +106,7 @@ describe('JourneyContinuityRail', () => {
   it('says a worker was interrupted only when one was abandoned', () => {
     const leaseEnds = new Date(Date.now() + 60_000).toISOString();
     render(<JourneyContinuityRail error={null} document={makeDocument({
-      authorization: authorized, recommendations, checkpoint,
+      authorization: authorized, recommendations, snapshot,
       executions: {
         status: 'observed', source: 'journey_executions',
         items: [execution({ status: 'running', lease_expires_at: leaseEnds })],
@@ -119,7 +119,7 @@ describe('JourneyContinuityRail', () => {
 
   it('paints recorded rows still when it opens onto a saved journey', () => {
     render(<JourneyContinuityRail error={null} document={makeDocument({
-      authorization: authorized, recommendations, checkpoint,
+      authorization: authorized, recommendations, snapshot,
     } as Partial<JourneyDocument>)} />);
     for (const row of screen.getAllByRole('listitem')) expect(row.style.opacity).not.toBe('0');
   });

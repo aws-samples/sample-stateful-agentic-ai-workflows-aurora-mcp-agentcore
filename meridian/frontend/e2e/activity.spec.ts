@@ -28,7 +28,7 @@ for (const theme of ['light', 'dark']) {
             conversation_id: 'activity-test' });
         }
         return route.fulfill({ json: path.endsWith('/health')
-          ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture', checkpoint_backend: 'fixture' }
+          ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture', snapshot_store: 'fixture' }
           : path.includes('/memory/') ? { traveler_id: 'trv_meridian_demo', facts: [] } : { products: [] } });
       });
       await page.setViewportSize({ width, height: 1000 });

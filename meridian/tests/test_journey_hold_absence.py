@@ -1,4 +1,4 @@
-"""An absent hold row must not contradict a checkpoint that recorded a hold."""
+"""An absent hold row must not contradict a snapshot that recorded a hold."""
 
 from backend.db.journey_document import _hold_absent
 
@@ -10,7 +10,7 @@ def test_a_journey_without_a_hold_says_none_was_placed() -> None:
     }
 
 
-def test_a_checkpointed_hold_missing_from_aurora_is_named() -> None:
+def test_a_saved_hold_missing_from_aurora_is_named() -> None:
     absent = _hold_absent({"hold_id": "HLD-0125BCDA"})
     assert absent["status"] == "unavailable"
     assert absent["snapshot_hold_id"] == "HLD-0125BCDA"

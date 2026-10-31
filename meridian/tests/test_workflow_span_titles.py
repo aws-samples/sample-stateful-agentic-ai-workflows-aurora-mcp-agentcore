@@ -70,6 +70,8 @@ async def test_status_spans_carry_the_snapshot_durable_field():
         "Resume workflow from checkpoint",
         "continue from checkpoint",
         "continue from the saved step",
+        "resume workflow from snapshot",
+        "Continue from snapshot",
     ],
 )
 def test_the_resume_query_accepts_the_new_and_the_old_prompt(prompt):

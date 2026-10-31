@@ -461,7 +461,7 @@ class ProductionAgent:
     tool loop), then persists the returned decision under RLS.
     """
 
-    AGENT_FILE = "agents/phase_04_production/concierge.py"
+    AGENT_FILE = "agents/phase_04_production/production_agent.py"
     RUNTIME_FILE = "meridian_agentcore/app/MeridianConcierge/main.py"
 
     def __init__(self, activity_callback: Optional[Callable[[MemoryActivity], Any]] = None):
@@ -1223,7 +1223,3 @@ class ProductionAgent:
 def create_production_agent(activity_callback=None) -> ProductionAgent:
     return ProductionAgent(activity_callback=activity_callback)
 
-
-# Back-compat aliases for older imports and docs.
-create_concierge_agent = create_production_agent
-ConciergeAgent = ProductionAgent

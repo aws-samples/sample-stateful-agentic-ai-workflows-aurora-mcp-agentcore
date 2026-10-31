@@ -171,7 +171,7 @@ def execute(sql: str, params: tuple = ()) -> list[dict]:
     return rows
 
 
-def results_to_packages(rows: list[dict]) -> list[dict]:
+def rows_to_packages(rows: list[dict]) -> list[dict]:
     """Catalog rows as search_trips returns them (port of backend.search_utils).
 
     The Data API's JSON format returns DECIMAL as a string and NULL as null: the price becomes
@@ -203,7 +203,7 @@ def _number(value: Any, name: str) -> float:
         raise ToolInputError(f"{name} must be a number") from error
 
 
-def _bounded(value: Any) -> int:
+def _clamp_limit(value: Any) -> int:
     try:
         return max(1, min(int(value), MAX_LIMIT))
     except (TypeError, ValueError) as error:
@@ -269,7 +269,7 @@ def merge_by_package(semantic_rows: list[dict], lexical_rows: list[dict]) -> lis
     return list(merged.values())
 
 
-def apply_gate(rows: list[dict], price_ceiling: float | None, places_left: dict) -> list[dict]:
+def keep_eligible(rows: list[dict], price_ceiling: float | None, places_left: dict) -> list[dict]:
     """Drop rows over the ceiling and rows whose package has no places left, keeping order.
 
     A package missing from ``places_left`` counts as having none: unknown stock is not stock.
@@ -448,14 +448,14 @@ def _query_argument(args: dict) -> str:
 def hybrid_trip_search(args: dict) -> dict:
     """The port of hybrid.retrieval_rows: both arms, the catalog join, the gate, the rerank."""
     query = _query_argument(args)
-    limit = _bounded(args.get("limit", 5))
+    limit = _clamp_limit(args.get("limit", 5))
     pool = candidate_limit(limit)
     vector = _embed(query)
     semantic = execute(SEMANTIC_SQL, (vector, pool)) if vector is not None else []
     lexical = execute(LEXICAL_SQL, (query, pool))
     merged = merge_by_package(semantic, lexical)
     hydrated = _hydrate(merged)
-    eligible = apply_gate(hydrated, parse_price_ceiling(query), places_by_package(hydrated))
+    eligible = keep_eligible(hydrated, parse_price_ceiling(query), places_by_package(hydrated))
     for position, found in enumerate(eligible):
         found["pre_rerank_position"] = position
         found["pre_rerank_similarity"] = float(found.get("similarity", 0.0))
@@ -501,11 +501,11 @@ def _numbered(sql: str) -> str:
 
 def search_trips(args: dict) -> dict:
     where, values = _search_where(args)
-    values.append(_bounded(args.get("limit", 5)))
+    values.append(_clamp_limit(args.get("limit", 5)))
     sql = (f"SELECT {SEARCH_COLUMNS} FROM trip_packages{where} "
            "ORDER BY price_per_person ASC, package_id ASC LIMIT %s")
     found = execute(sql, tuple(values))
-    return {"packages": results_to_packages(found), "sql": _numbered(sql), "parameters": values}
+    return {"packages": rows_to_packages(found), "sql": _numbered(sql), "parameters": values}
 
 
 def compare_packages(args: dict) -> list[dict]:
@@ -591,8 +591,10 @@ def currency_convert(args: dict) -> dict:
         amount = float(args["amount"])
     except (KeyError, TypeError, ValueError) as error:
         raise ToolInputError("amount must be a number") from error
-    source = str(args.get("from_ccy", "")).upper()
-    target = str(args.get("to_ccy", "")).upper()
+    # from_ccy and to_ccy are the names before the rename; a Gateway whose schema predates it
+    # still sends them, and the Lambda and the schema deploy separately.
+    source = str(args.get("from_currency", args.get("from_ccy", ""))).upper()
+    target = str(args.get("to_currency", args.get("to_ccy", ""))).upper()
     if source not in FX_PER_USD or target not in FX_PER_USD:
         return {"error": UNSUPPORTED_CURRENCY, "supported": sorted(FX_PER_USD)}
     usd = amount / FX_PER_USD[source]

@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from backend.agents.phase_04_production import concierge as concierge_mod
-from backend.agents.phase_04_production.concierge import BookingOutcome, BookingTarget
+from backend.agents.phase_04_production import production_agent as production_agent_mod
+from backend.agents.phase_04_production.production_agent import BookingOutcome, BookingTarget
 from backend.routers import chat as chat_mod
 from backend.routers.chat import BookingRequest, production_booking
 
@@ -55,7 +55,7 @@ def wired(monkeypatch):
     monkeypatch.setattr(chat_mod, "_traveler_booking", traveler_booking)
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
     seen["use"] = lambda outcome: monkeypatch.setattr(
-        concierge_mod, "create_production_agent", agent_factory(outcome)
+        production_agent_mod, "create_production_agent", agent_factory(outcome)
     )
     return seen
 
@@ -108,7 +108,7 @@ def test_a_platform_failure_is_a_503(wired, monkeypatch):
         raise RuntimeError("runtime unreachable")
 
     monkeypatch.setattr(
-        concierge_mod, "create_production_agent",
+        production_agent_mod, "create_production_agent",
         lambda: SimpleNamespace(process_booking=broken),
     )
     with pytest.raises(HTTPException) as failure:

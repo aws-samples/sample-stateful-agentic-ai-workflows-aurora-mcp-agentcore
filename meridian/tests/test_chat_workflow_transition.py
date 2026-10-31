@@ -8,7 +8,7 @@ from backend.http_auth import HttpPrincipal
 from backend.routers.chat import (
     ChatRequest,
     Product,
-    _needs_checkpointed_workflow,
+    _needs_saved_step_workflow,
     _workflow_handoff_message,
     chat,
 )
@@ -28,7 +28,7 @@ def test_concierge_offers_recovery_without_teaching_instructions_or_starting_wor
     production = AsyncMock(side_effect=AssertionError("No unrelated production search"))
     workflow = AsyncMock(side_effect=AssertionError("Opening chat does not authorize recovery"))
     monkeypatch.setattr("backend.routers.chat.production_search", production)
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
     prompt = "My flight was canceled. Rework my Tokyo trip, then check availability."
     response = asyncio.run(chat(ChatRequest(
         message=prompt, phase=4, experience="concierge", conversation_id="current-chat",
@@ -45,7 +45,7 @@ def test_concierge_review_request_reaches_the_workflow_without_resuming(monkeypa
     from unittest.mock import AsyncMock
     workflow = AsyncMock(return_value=(
         [], [], "Shortlist ready for review.", "recovery-thread", "paused", False, None))
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
     response = asyncio.run(chat(ChatRequest(
         message="Rework my trip and check availability", phase=5, review_only=True,
         conversation_id="recovery-thread", travelers_count=2,
@@ -60,7 +60,7 @@ def test_review_only_cannot_resume_into_an_inventory_action(monkeypatch):
     from fastapi import HTTPException
     from unittest.mock import AsyncMock
     workflow = AsyncMock()
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
     with pytest.raises(HTTPException) as error:
         asyncio.run(chat(ChatRequest(
             message="Resume workflow from checkpoint", phase=5, review_only=True,
@@ -74,7 +74,7 @@ def test_a_resume_passes_the_chosen_package_to_the_workflow(monkeypatch):
     from unittest.mock import AsyncMock
     workflow = AsyncMock(return_value=(
         [], [], "Held.", "recovery-thread", "resumed", False, "pkg_kyoto"))
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
     monkeypatch.setattr(
         "backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[])
     )
@@ -91,7 +91,7 @@ def test_a_package_choice_on_a_fresh_request_is_refused(monkeypatch):
     from fastapi import HTTPException
     from unittest.mock import AsyncMock
     workflow = AsyncMock()
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
     with pytest.raises(HTTPException) as error:
         asyncio.run(chat(ChatRequest(
             message="Rework my trip and check availability", phase=5,
@@ -107,7 +107,7 @@ def test_disruption_replan_bridges_to_workflow() -> None:
         "duration availability for the best three options."
     )
 
-    assert _needs_checkpointed_workflow(query)
+    assert _needs_saved_step_workflow(query)
     assert _workflow_handoff_message("Tokyo") == (
         "I can plan this for Tokyo, but it needs two dependent steps: rework the "
         "itinerary, then check duration availability for the best three options. "
@@ -122,11 +122,11 @@ def test_kyoto_extension_still_bridges_to_workflow() -> None:
         "available duration options."
     )
 
-    assert _needs_checkpointed_workflow(query)
+    assert _needs_saved_step_workflow(query)
 
 
 def test_simple_availability_query_does_not_bridge_to_the_workflow() -> None:
-    assert not _needs_checkpointed_workflow("What dates are available for Tokyo?")
+    assert not _needs_saved_step_workflow("What dates are available for Tokyo?")
 
 
 @pytest.mark.parametrize("message", [
@@ -221,7 +221,7 @@ def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
 def test_workflow_receipt_is_not_rewritten_by_a_prose_model(monkeypatch):
     from unittest.mock import AsyncMock
     saved = "Aurora recorded courtesy hold hold-one. Flight seats have not been reserved."
-    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", AsyncMock(
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", AsyncMock(
         return_value=([], [], saved, "saved-thread", "resumed", True, None)))
     monkeypatch.setattr(
         "backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[])

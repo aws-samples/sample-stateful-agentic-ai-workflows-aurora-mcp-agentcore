@@ -23,8 +23,8 @@ from concierge_definition import (
     DETAIL_TOOLS,
     PACKAGE_SEARCH_TOOLS,
     TRAVELER_TOOLS,
+    bare_tool_name,
     pin_traveler_argument,
-    short_name,
 )
 from tool_errors import mask_account_ids
 
@@ -148,9 +148,6 @@ class TurnContext:
     def confirmed(self, kind: str) -> bool:
         """Whether the traveler confirmed this kind of governed write on this turn."""
         return self.booking_confirmed if kind == "booking" else self.hold_confirmed
-
-
-short = short_name
 
 
 def now() -> str:
@@ -285,7 +282,7 @@ class TraceHooks(HookProvider):
         setattr(self, f"{kind}_settled", True)
 
     def before(self, event) -> None:
-        name = short(event.tool_use["name"])
+        name = bare_tool_name(event.tool_use["name"])
         if name not in SPANS:
             return
         args = event.tool_use.setdefault("input", {})
@@ -305,7 +302,7 @@ class TraceHooks(HookProvider):
                 )
                 self._guarded(kind, event.tool_use)
                 return
-            self._pin_arguments(kind, args)
+            self._pin_write_arguments(kind, args)
         span_kind, title, summary = SPANS[name]
         self.emit("activity", activity(span_kind, title, summary, {
             "category": "gateway",
@@ -324,7 +321,7 @@ class TraceHooks(HookProvider):
         }))
         self.started[event.tool_use["toolUseId"]] = time.monotonic()
 
-    def _pin_arguments(self, kind: str, args: dict) -> None:
+    def _pin_write_arguments(self, kind: str, args: dict) -> None:
         pin_traveler_argument(args, self.turn.traveler_id)
         args["travelerConfirmed"] = self.turn.confirmed(kind)
         args["budgetCeilingCents"] = self.turn.budget_ceiling_cents
@@ -356,7 +353,7 @@ class TraceHooks(HookProvider):
         ))
 
     def after(self, event) -> None:
-        name = short(event.tool_use["name"])
+        name = bare_tool_name(event.tool_use["name"])
         if name not in SPANS:
             return
         tool_id = event.tool_use["toolUseId"]

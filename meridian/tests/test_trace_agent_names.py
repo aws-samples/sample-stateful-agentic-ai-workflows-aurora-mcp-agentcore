@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import backend.routers.chat as chat_router
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.agents.phase_05_workflow import memory_recall
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.retrieval import availability
@@ -108,7 +108,7 @@ async def test_the_workflow_memory_branch_is_labelled_as_code(monkeypatch):
 
 def test_the_phase_4_orchestrator_is_labelled_as_code(monkeypatch):
     agent = build_agent([], runtime_decision(), [])
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     _packages, activities, *_ = asyncio.run(
         agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))
     grant = next(a for a in activities if a.title == "Workload traveler grant allowed")

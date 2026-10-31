@@ -13,7 +13,7 @@ const durable = [{ label: 'snapshot_durable', value: 'true' }];
 // Values and units are joined by a no-break space so they never wrap apart.
 const nb = (text: string) => text.replace(/(\d) (ms|s)\b/g, '$1\u00a0$2');
 const SNAPSHOT_TABLE = 'Aurora workflow_snapshots';
-const checkpointed = { resumeMode: false, failed: false };
+const saved = { resumeMode: false, failed: false };
 
 // The spans a paused recovery returns, in order, as the live backend records them.
 const paused: ShowcaseTraceSpan[] = [
@@ -60,12 +60,12 @@ const pausedViaGateway: ShowcaseTraceSpan[] = [
 
 describe('deriveRecoverySteps', () => {
   it('credits the search step to the Gateway when the search ran as a Gateway tool', () => {
-    const steps = deriveRecoverySteps(pausedViaGateway, 'checkpointed', checkpointed);
+    const steps = deriveRecoverySteps(pausedViaGateway, 'saved', saved);
     expect(steps[1].source).toBe(nb('AgentCore Gateway, 956 ms'));
   });
 
   it('names each step\'s service and measured time once the backend confirms it', () => {
-    const steps = deriveRecoverySteps(paused, 'checkpointed', checkpointed);
+    const steps = deriveRecoverySteps(paused, 'saved', saved);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
     expect(steps.map(step => step.source)).toEqual([
@@ -75,25 +75,25 @@ describe('deriveRecoverySteps', () => {
   });
 
   it('completes verification only when the resumed run reports it', () => {
-    const steps = deriveRecoverySteps(resumed, 'ready', checkpointed);
+    const steps = deriveRecoverySteps(resumed, 'ready', saved);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-visited']);
     expect(steps[3].source).toBe(nb('Aurora, 54 ms'));
   });
 
-  it('does not claim an Aurora checkpoint for an in-process one', () => {
+  it('does not claim an Aurora snapshot for an in-process one', () => {
     const inProcess = paused.map(item => (item.name.startsWith('Snapshot saved')
       ? {
         ...item, component: 'LangGraph MemorySaver (in-process)',
         fields: [{ label: 'snapshot_durable', value: 'false' }],
       }
       : item));
-    const steps = deriveRecoverySteps(inProcess, 'checkpointed', checkpointed);
-    expect(steps[2]).toEqual({ id: 'checkpoint', state: 'is-pending', source: null });
+    const steps = deriveRecoverySteps(inProcess, 'saved', saved);
+    expect(steps[2]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
   });
 
   it('claims no progress while a fresh run is in flight', () => {
-    const steps = deriveRecoverySteps([], 'running', checkpointed);
+    const steps = deriveRecoverySteps([], 'running', saved);
     expect(steps.every(step => step.state === 'is-pending' && step.source === null)).toBe(true);
   });
 
@@ -113,24 +113,24 @@ describe('deriveRecoverySteps', () => {
   });
 
   it('changes no confirmed step when Resume is clicked, only when a response arrives', () => {
-    const before = deriveRecoverySteps([], 'checkpointed', checkpointed);
+    const before = deriveRecoverySteps([], 'saved', saved);
     const resuming = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
     expect(resuming.slice(0, 3)).toEqual(before.slice(0, 3));
   });
 
-  it('does not claim an Aurora checkpoint for an in-process one while resuming', () => {
+  it('does not claim an Aurora snapshot for an in-process one while resuming', () => {
     const inProcess = paused.map(item => (item.name.startsWith('Snapshot saved')
       ? { ...item, fields: [{ label: 'snapshot_durable', value: 'false' }] }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
-    expect(steps[2]).toEqual({ id: 'checkpoint', state: 'is-pending', source: null });
+    expect(steps[2]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
     expect(steps[1].source).toBe(nb('Bedrock + Aurora, 956 ms'));
   });
 
   it('marks nothing complete after a failure or before the traveler starts', () => {
     expect(deriveRecoverySteps(paused, 'action', { resumeMode: false, failed: true })
       .every(step => step.state === 'is-pending')).toBe(true);
-    expect(deriveRecoverySteps([], 'action', checkpointed).map(step => step.state))
+    expect(deriveRecoverySteps([], 'action', saved).map(step => step.state))
       .toEqual(['is-ready', 'is-pending', 'is-pending', 'is-pending']);
   });
 });

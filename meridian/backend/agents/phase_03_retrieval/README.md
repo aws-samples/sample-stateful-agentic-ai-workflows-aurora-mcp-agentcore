@@ -9,7 +9,7 @@ Find candidates by meaning and keywords.
 | Source | Role |
 | --- | --- |
 | [`agent.py`](agent.py): `run_retrieval_turn` | One Strands agent loop over the cumulative tools. The agent's own reply is the visible reply. |
-| [`tools.py`](tools.py) | The two tools that run in process: `hybrid_trip_search`, which calls the one hybrid search in [`retrieval/hybrid.py`](../../retrieval/hybrid.py) (vector and full-text candidates, a price and places-left gate, and reranking), and `get_package_details`. |
+| [`tools.py`](tools.py) | The two tools that run in process, each a Strands `@tool` function whose docstring is the description the model reads: `hybrid_trip_search`, which calls the one hybrid search in [`retrieval/hybrid.py`](../../retrieval/hybrid.py) (vector and full-text candidates merged by `merge_by_package`, kept to what can be booked by `keep_eligible`, then reranked by `_rerank`), and `get_package_details`. |
 | [`mcp_session.py`](mcp_session.py) | The `meridian-concierge` stdio MCP client that serves the other Phase 2 tools. |
 | [`hooks.py`](hooks.py) | The trace spans and the packages a turn observed. |
 

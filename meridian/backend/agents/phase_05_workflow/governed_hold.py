@@ -4,7 +4,7 @@ Phase 5 asks AgentCore Gateway for the same hold the Phase 4 agent uses,
 so Cedar sees every hold the application places and there is one
 door for business effects. The worker keeps its own lease check; it also passes
 its execution id so the Lambda verifies the lease again inside the write
-transaction, and it passes the checkpointed request and booking ids so a
+transaction, and it passes the saved request and booking ids so a
 replacement worker replays the same booking with the original expiry.
 """
 
@@ -52,7 +52,7 @@ LEASE_LOST_ERRORS = frozenset({"execution_lease_lost", "journey_not_owned"})
 
 
 class HoldOutcomeUnknown(RuntimeError):
-    """A hold may have committed; preserve its checkpointed identity for retry."""
+    """A hold may have committed; preserve its saved identity for retry."""
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ def hold_arguments(
     budget_ceiling_cents: int, hold_minutes: int, execution_id: Optional[str],
     traveler_confirmed: bool,
 ) -> Dict[str, Any]:
-    """Tool arguments from the checkpointed hold intent.
+    """Tool arguments from the saved hold intent.
 
     ``traveler_confirmed`` must come from the traveler's own resume after
     reviewing the plan, never from a model and never from reaching this step.

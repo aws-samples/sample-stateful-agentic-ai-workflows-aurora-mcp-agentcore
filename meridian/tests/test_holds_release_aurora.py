@@ -87,7 +87,7 @@ async def test_release_hold_cannot_reach_another_travelers_hold(holds):
     denies_before = await _deny_rows(traveler=JORDAN)
     try:
         await master.execute(
-            "INSERT INTO journeys (journey_id, traveler_id, checkpoint_backend) "
+            "INSERT INTO journeys (journey_id, traveler_id, snapshot_store) "
             "VALUES (%s, %s, 'gateway')", (journey_id, DECOY))
         await master.execute(
             "INSERT INTO bookings (booking_id, traveler_id, status, total_amount, hold_expires_at) "

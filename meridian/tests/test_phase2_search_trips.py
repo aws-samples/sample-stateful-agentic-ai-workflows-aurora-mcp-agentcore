@@ -109,7 +109,7 @@ async def test_a_pure_domain_prompt_does_not_search(wired, monkeypatch):
 async def test_search_plus_a_domain_tool_is_one_server_with_one_discovery_span(wired, monkeypatch):
     async def domain(query, *, traveler_id):
         return {"tool": "currency_convert",
-                "args": {"amount": 2500, "from_ccy": "USD", "to_ccy": "EUR"},
+                "args": {"amount": 2500, "from_currency": "USD", "to_currency": "EUR"},
                 "result": {"amount": 2500.0, "from": "USD", "to": "EUR", "converted": 2300.0}}
 
     monkeypatch.setattr(chat_router, "_call_domain_tool", domain)
@@ -214,7 +214,7 @@ async def test_call_tool_returns_a_structured_result_for_each(monkeypatch):
     monkeypatch.setattr(catalog_tools, "get_rds_data_client", lambda: CatalogDb())
 
     converted = await concierge_server.mcp.call_tool(
-        "currency_convert", {"amount": 100, "from_ccy": "USD", "to_ccy": "EUR"})
+        "currency_convert", {"amount": 100, "from_currency": "USD", "to_currency": "EUR"})
     compared = await concierge_server.mcp.call_tool(
         "compare_packages", {"package_ids": ["CTY-002"]})
 

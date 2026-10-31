@@ -2,7 +2,7 @@
 
 The hold_requests row commits with the booking, so it cannot be the record of
 intent: if the transaction rolls back, or the worker dies first, it does not
-exist. The checkpointed intent is what survives.
+exist. The saved intent is what survives.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from backend.agents.phase_05_workflow.hold_intent import (
     build_hold_intent,
     fingerprint_terms,
     normalize_hold_terms,
-    prepare_hold_node,
+    prepare_hold_intent,
 )
 
 
@@ -143,7 +143,7 @@ def _state(**overrides) -> dict:
 
 
 def test_prepare_node_writes_the_intent_into_state() -> None:
-    result = prepare_hold_node(_state())
+    result = prepare_hold_intent(_state())
     assert result["hold_intent"]["hold_request_id"].startswith("hrq_")
     assert result["hold_intent"]["fingerprint"]
 
@@ -155,7 +155,7 @@ def test_prepare_node_describes_the_hold_that_will_actually_run() -> None:
     still has inventory. An intent derived from anything else would fingerprint
     a hold that never happens.
     """
-    result = prepare_hold_node(_state())
+    result = prepare_hold_intent(_state())
     intent = result["hold_intent"]
     assert intent["package_id"] == "TKY-003"
     assert intent["duration"] == "3 nights"
@@ -166,42 +166,42 @@ def test_prepare_node_describes_the_hold_that_will_actually_run() -> None:
 
 def test_prepare_node_is_idempotent_on_resume() -> None:
     state = _state()
-    first = prepare_hold_node(state)
+    first = prepare_hold_intent(state)
     resumed = dict(state, **first)
-    second = prepare_hold_node(resumed)
+    second = prepare_hold_intent(resumed)
     assert (
         second["hold_intent"]["hold_request_id"]
         == first["hold_intent"]["hold_request_id"]
-    ), "a resumed graph must reuse the checkpointed identity, not allocate a new one"
+    ), "a resumed graph must reuse the saved identity, not allocate a new one"
 
 
 def test_prepare_node_picks_a_duration_that_seats_the_whole_party() -> None:
     package = {"product_id": "TKY-003", "price": 1949.00,
                "availability": {"3 nights": 1, "7 nights": 4}}
-    intent = prepare_hold_node(_state(packages=[package]))["hold_intent"]
+    intent = prepare_hold_intent(_state(packages=[package]))["hold_intent"]
     assert (intent["duration"], intent["quantity"]) == ("7 nights", 2)
 
 
 def test_prepare_node_prepares_no_intent_when_no_duration_seats_the_party() -> None:
     package = {"product_id": "TKY-003", "price": 1949.00,
                "availability": {"3 nights": 1, "7 nights": 1}}
-    result = prepare_hold_node(_state(packages=[package]))
+    result = prepare_hold_intent(_state(packages=[package]))
     assert "hold_intent" not in result
     assert "2 travelers" in result["hold_unavailable"]
     assert "TKY-003" in result["hold_unavailable"]
 
 
 def test_a_saved_intent_stays_as_saved_after_availability_changes() -> None:
-    first = prepare_hold_node(_state())
+    first = prepare_hold_intent(_state())
     changed = _state(packages=[{"product_id": "TKY-003", "price": 1949.00,
                                 "availability": {"3 nights": 0, "7 nights": 9}}])
-    again = prepare_hold_node({**changed, **first})
+    again = prepare_hold_intent({**changed, **first})
     assert again["hold_intent"] == first["hold_intent"]
 
 
 def test_prepare_node_yields_nothing_when_there_is_nothing_to_hold() -> None:
     """The hold node already skips an empty ranking; preparing must not raise."""
-    assert prepare_hold_node(_state(packages=[])) == {}
+    assert prepare_hold_intent(_state(packages=[])) == {}
 
 
 RANKED = [
@@ -212,7 +212,7 @@ RANKED = [
 
 
 def test_the_package_the_traveler_chose_is_held_instead_of_the_top_ranked_one() -> None:
-    intent = prepare_hold_node(_state(packages=RANKED, selected_package="TKY-005"))["hold_intent"]
+    intent = prepare_hold_intent(_state(packages=RANKED, selected_package="TKY-005"))["hold_intent"]
     assert intent["package_id"] == "TKY-005"
     assert intent["duration"] == "5 nights"
     assert intent["unit_price"] == "2100.00"
@@ -220,6 +220,6 @@ def test_the_package_the_traveler_chose_is_held_instead_of_the_top_ranked_one() 
 
 
 def test_a_choice_that_names_no_ranked_package_prepares_no_hold_and_says_why() -> None:
-    result = prepare_hold_node(_state(packages=RANKED, selected_package="ZZZ-999"))
+    result = prepare_hold_intent(_state(packages=RANKED, selected_package="ZZZ-999"))
     assert "hold_intent" not in result
     assert "ZZZ-999" in result["hold_unavailable"]

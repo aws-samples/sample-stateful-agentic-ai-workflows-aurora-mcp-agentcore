@@ -43,7 +43,7 @@ function stepsFor(document: JourneyDocument | null): Step[] {
   const stops = isObserved(document.session_stops) ? document.session_stops.items : [];
   const stopped = stopStep(stops[0]);
   const auth = document.authorization;
-  const checkpoint = document.checkpoint;
+  const snapshot = document.snapshot;
   const recommendations = document.recommendations;
   const steps: (Step & { recorded: boolean })[] = [
     {
@@ -62,11 +62,11 @@ function stepsFor(document: JourneyDocument | null): Step[] {
       recorded: isObserved(recommendations),
     },
     {
-      id: 'checkpoint',
+      id: 'snapshot',
       label: 'Saved step',
-      detail: isObserved(checkpoint) ? checkpoint.checkpoint_id : '',
+      detail: isObserved(snapshot) ? snapshot.snapshot_id : '',
       done: true,
-      recorded: isObserved(checkpoint),
+      recorded: isObserved(snapshot),
     },
     {
       // Only an abandoned execution is an interruption. A worker that holds

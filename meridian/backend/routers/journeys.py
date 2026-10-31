@@ -19,6 +19,7 @@ from backend.agents.phase_05_workflow.graph import snapshot_key
 from backend.db.journey_document import assemble_journey_document
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal, authorize_traveler, require_http_principal
+from backend.legacy_field_names import with_legacy_names
 
 router = APIRouter(prefix="/api/journeys", tags=["journeys"])
 
@@ -59,7 +60,7 @@ RETURNING stopped_at::TEXT AS stopped_at
 STOPPABLE = frozenset({"running", "paused"})
 
 LATEST_JOURNEYS_SQL = """
-SELECT j.journey_id, j.status, j.checkpoint_backend, j.active_thread_id,
+SELECT j.journey_id, j.status, j.snapshot_store, j.active_thread_id,
        j.created_at, j.updated_at,
        (SELECT count(*) FROM journey_executions e WHERE e.journey_id = j.journey_id)
            AS execution_count
@@ -187,13 +188,13 @@ async def list_journeys(
             )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return {
+    return with_legacy_names({
         "traveler_id": owner,
         "journeys": [
             {
                 "journey_id": r["journey_id"],
                 "status": r["status"],
-                "checkpoint_backend": r["checkpoint_backend"],
+                "snapshot_store": r["snapshot_store"],
                 "active_thread_id": r["active_thread_id"],
                 "execution_count": int(r["execution_count"]),
                 "created_at": str(r["created_at"]),
@@ -201,7 +202,7 @@ async def list_journeys(
             }
             for r in rows
         ],
-    }
+    })
 
 
 @router.get("/{journey_id}")
@@ -218,9 +219,9 @@ async def read_journey(
     """
     owner = await authorize_traveler(principal, traveler_id)
     try:
-        return await assemble_journey_document(
+        return with_legacy_names(await assemble_journey_document(
             get_rds_data_client(), journey_id, owner
-        )
+        ))
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)

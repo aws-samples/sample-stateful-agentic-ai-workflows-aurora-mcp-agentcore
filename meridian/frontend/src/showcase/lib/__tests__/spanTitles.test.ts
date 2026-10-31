@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ShowcaseTraceSpan } from '../showcaseAdapters';
 import { deriveRecoverySteps } from '../recoveryState';
-import { deriveWorkflowState, hasDurableCheckpoint } from '../showcaseProof';
+import { deriveWorkflowState, hasDurableSnapshot } from '../showcaseProof';
 import { lastTitlePart, MCP_ARGS_DETAILS, RUNTIME_TURN_COMPLETE } from '../spanTitles';
 import { stepService, stepSourceLabel } from '../stepSource';
 
@@ -67,7 +67,7 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
   });
 
   it('confirms the understand, search and snapshot steps from the spans', () => {
-    const steps = deriveRecoverySteps(spans, 'checkpointed', flow);
+    const steps = deriveRecoverySteps(spans, 'saved', flow);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
     expect(steps[0].source).toBe(nb('Strands Graph, <1 ms'));
@@ -75,16 +75,16 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
   });
 
   it('reads a durable snapshot and counts the ok snapshot span', () => {
-    expect(hasDurableCheckpoint(spans)).toBe(true);
+    expect(hasDurableSnapshot(spans)).toBe(true);
     const state = deriveWorkflowState(spans);
-    expect(state.status).toBe('checkpointed');
-    expect(state.checkpointCount).toBe(1);
+    expect(state.status).toBe('saved');
+    expect(state.snapshotCount).toBe(1);
     expect(state.durable).toBe(true);
   });
 
   it('reads the store and the table under either label', () => {
     const workflow = deriveWorkflowState(spans);
-    expect(workflow.checkpoint).toBe('Aurora workflow_snapshots');
+    expect(workflow.snapshot).toBe('Aurora workflow_snapshots');
     expect(workflow.table).toBe('workflow_snapshots');
   });
 
@@ -94,7 +94,7 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
       fields: item.fields.map(field => (/_durable$/.test(field.label)
         ? { ...field, value: 'false' } : field)),
     }));
-    expect(hasDurableCheckpoint(notDurable)).toBe(false);
+    expect(hasDurableSnapshot(notDurable)).toBe(false);
   });
 });
 

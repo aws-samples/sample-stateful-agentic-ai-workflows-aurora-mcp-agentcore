@@ -3,7 +3,7 @@ import type { ShowcaseTraceSpan } from '../showcaseAdapters';
 import {
   deriveMcpContracts,
   deriveWorkflowState,
-  hasDurableCheckpoint,
+  hasDurableSnapshot,
 } from '../showcaseProof';
 
 function span(overrides: Partial<ShowcaseTraceSpan>): ShowcaseTraceSpan {
@@ -103,7 +103,7 @@ describe('showcase proof helpers', () => {
     expect(contracts[0].result).toBe('found 3 trips');
   });
 
-  it('derives workflow path, intent, and checkpoint state', () => {
+  it('derives workflow path, intent, and snapshot state', () => {
     const workflow = deriveWorkflowState([
       span({
         name: 'Workflow node: classify → plan',
@@ -117,12 +117,12 @@ describe('showcase proof helpers', () => {
       span({ name: 'Checkpoint · PostgresSaver.put', fields: [{ label: 'checkpointer', value: 'PostgresSaver' }] }),
     ]);
 
-    expect(workflow.status).toBe('checkpointed');
+    expect(workflow.status).toBe('saved');
     expect(workflow.intent).toBe('plan');
     expect(workflow.path).toEqual(['classify', 'search', 'availability', 'synthesize']);
     expect(workflow.visited).toEqual(['classify', 'search']);
     expect(workflow.nextNode).toBe('availability');
-    expect(workflow.checkpointCount).toBe(1);
+    expect(workflow.snapshotCount).toBe(1);
     expect(workflow.durable).toBe(true);
     expect(workflow.table).toBe('workflow_snapshots');
   });
@@ -158,8 +158,8 @@ it('recognizes old Aurora receipts but respects an explicit non-durable flag', (
 });
 
 
-it('does not treat a failed checkpoint operation as a durable save', () => {
-  expect(hasDurableCheckpoint([span({
+it('does not treat a failed snapshot operation as a durable save', () => {
+  expect(hasDurableSnapshot([span({
     name: 'Checkpoint · AuroraDataApiSaver.put',
     status: 'error',
     fields: [{ label: 'checkpoint_durable', value: 'true' }],
@@ -171,16 +171,16 @@ it('reads a new-title snapshot as a durable save and counts it', () => {
     name: 'Snapshot saved: AuroraSnapshotStorage.write',
     fields: [{ label: 'snapshot_store', value: 'Aurora workflow_snapshots' }, { label: 'snapshot_durable', value: 'true' }],
   })];
-  expect(hasDurableCheckpoint(trace)).toBe(true);
+  expect(hasDurableSnapshot(trace)).toBe(true);
   const workflow = deriveWorkflowState(trace);
-  expect(workflow.status).toBe('checkpointed');
-  expect(workflow.checkpointCount).toBe(1);
+  expect(workflow.status).toBe('saved');
+  expect(workflow.snapshotCount).toBe(1);
 });
 
 it('treats a new-title snapshot with no snapshot_durable field as non-durable, on purpose', () => {
-  // Deliberate: only an explicit snapshot_durable (or the old checkpoint_durable) of "true"
+  // Deliberate: only an explicit snapshot_durable (or the old snapshot_durable) of "true"
   // proves a save reached Aurora. The title and the store name alone prove nothing.
-  expect(hasDurableCheckpoint([span({
+  expect(hasDurableSnapshot([span({
     name: 'Snapshot saved: AuroraSnapshotStorage.write',
     fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }],
   })])).toBe(false);
@@ -191,5 +191,5 @@ it('does not count a read that only touches workflow_snapshots as a saved step',
     name: 'Aurora recall: workflow history', sql: 'SELECT snapshot FROM workflow_snapshots',
     component: 'Aurora workflow_snapshots',
   });
-  expect(deriveWorkflowState([read]).checkpointCount).toBe(0);
+  expect(deriveWorkflowState([read]).snapshotCount).toBe(0);
 });

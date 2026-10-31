@@ -19,12 +19,13 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from backend.agentcore.caller_credential import CallerCredentialMiddleware
 from backend.agentcore.errors import CallerCredentialError
 from backend.authorization import TravelerAuthorizationError
 from backend.http_auth import require_http_principal
+from backend.legacy_field_names import with_legacy_names
 from backend.token_expiry import credential_error, error_code
 
 # Load environment variables from .env file
@@ -51,16 +52,22 @@ from backend.routers import (
 
 
 class HealthResponse(BaseModel):
-    """Response model for health check endpoint."""
+    """Response model for health check endpoint.
+
+    For one release it also carries the fields' names from before the snapshot rename
+    (``backend.legacy_field_names``), so a site published before the backend still reads it.
+    """
+
+    model_config = ConfigDict(extra="allow")
     status: str
     version: str
     environment: str
     bedrock_model_id: str
     bedrock_model_label: str
     embedding_model_id: str
-    checkpoint_backend: str
-    checkpoint_durable: bool
-    checkpoint_required: bool
+    snapshot_store: str
+    snapshot_durable: bool
+    snapshot_required: bool
     aurora_reachable: bool
     workflow_runtime_configured: bool
     degraded_component: str | None = None
@@ -159,8 +166,8 @@ async def _health_payload() -> HealthResponse:
     `status` is `healthy` only when a live Aurora query just found the
     workflow snapshot and session stop tables (see `backend.health_probe`)
     and the workflow Runtime ARN resolves; otherwise it is `degraded` and
-    names the failing component and its error class. The checkpoint
-    fields remain the backend's configured checkpoint state, not a
+    names the failing component and its error class. The snapshot
+    fields remain the backend's configured snapshot state, not a
     second live probe.
     """
     from backend.agents.phase_05_workflow.service import workflow_store_status
@@ -168,7 +175,7 @@ async def _health_payload() -> HealthResponse:
     from backend.health_probe import probe_aurora
 
     model_id = config.bedrock.model_id
-    checkpoint = workflow_store_status()
+    snapshot = workflow_store_status()
     aurora = await probe_aurora()
     environment = os.getenv("ENVIRONMENT", "development").strip().lower()
     runtime_configured = bool(resolve_agentcore_config().workflow_runtime_arn)
@@ -176,22 +183,23 @@ async def _health_payload() -> HealthResponse:
     # broken deployment. Local development runs without a Runtime, so it stays healthy there.
     runtime_missing = not runtime_configured and environment != "development"
     degraded_component = aurora.component or ("workflow_runtime" if runtime_missing else None)
-    return HealthResponse(
+    payload = HealthResponse(
         status="degraded" if (not aurora.ok or runtime_missing) else "healthy",
         version="1.0.0",
         environment=environment,
         bedrock_model_id=model_id,
         bedrock_model_label=bedrock_model_label(model_id),
         embedding_model_id=EMBEDDING_MODEL_ID,
-        checkpoint_backend=checkpoint["kind"],
-        checkpoint_durable=checkpoint["durable"],
-        checkpoint_required=checkpoint["required"],
+        snapshot_store=snapshot["kind"],
+        snapshot_durable=snapshot["durable"],
+        snapshot_required=snapshot["required"],
         aurora_reachable=aurora.component != "aurora",
         workflow_runtime_configured=runtime_configured,
         degraded_component=degraded_component,
         degraded_error_class=aurora.error_class,
         database_user=aurora.db_user,
     )
+    return HealthResponse.model_validate(with_legacy_names(payload.model_dump()))
 
 
 @app.get("/", response_model=HealthResponse, dependencies=[Depends(require_http_principal)])

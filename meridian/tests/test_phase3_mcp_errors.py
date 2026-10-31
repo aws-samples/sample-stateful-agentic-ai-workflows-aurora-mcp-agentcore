@@ -60,7 +60,9 @@ def call(client, name, **arguments):
 def test_a_server_side_tool_failure_has_the_text_the_hook_calls_server_reported():
     with started_client() as client:
         raised = call(client, "price_range", destination="Kyoto")
-        invalid = call(client, "currency_convert", amount="abc", from_ccy="USD", to_ccy="EUR")
+        invalid = call(
+            client, "currency_convert", amount="abc", from_currency="USD", to_currency="EUR"
+        )
 
     for result in (raised, invalid):
         assert result["status"] == "error"
@@ -150,7 +152,7 @@ def test_a_client_built_error_reaches_the_model_as_the_stable_answer_and_resets(
 
 def test_a_validation_error_gets_the_same_answer_and_keeps_the_client():
     _, model, pool = run_on_real_server(
-        "currency_convert", {"amount": "abc", "from_ccy": "USD", "to_ccy": "EUR"})
+        "currency_convert", {"amount": "abc", "from_currency": "USD", "to_currency": "EUR"})
 
     [result] = tool_results(model.messages[1])
     assert json.loads(result["content"][0]["text"])["error"] == "catalog_tool_failed"
@@ -160,7 +162,7 @@ def test_a_validation_error_gets_the_same_answer_and_keeps_the_client():
 
 def test_an_unsupported_currency_is_an_answer_not_a_failure_over_real_mcp():
     turn, model, pool = run_on_real_server(
-        "currency_convert", {"amount": 1, "from_ccy": "USD", "to_ccy": "XXX"})
+        "currency_convert", {"amount": 1, "from_currency": "USD", "to_currency": "XXX"})
 
     [result] = tool_results(model.messages[1])
     assert json.loads(result["content"][0]["text"])["error"] == "unsupported_currency"

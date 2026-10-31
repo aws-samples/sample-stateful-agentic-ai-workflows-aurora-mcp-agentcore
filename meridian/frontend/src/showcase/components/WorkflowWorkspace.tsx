@@ -5,7 +5,7 @@ import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { AuroraIcon } from './ServiceMark';
 
-/** Teach the checkpoint here; carry the same thread to the traveler desk. */
+/** Teach the snapshot here; carry the same thread to the traveler desk. */
 export function WorkflowWorkspace({ state, onOpenRecovery }: {
   state: MeridianShowcaseState;
   onOpenRecovery: () => void;
@@ -17,7 +17,7 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
   const canContinue = !state.isLoading && (paused || finished);
   const steps = [
     { title: 'Find alternatives', detail: 'Classify the request and rank the trip options.', done: evidence.searchObserved },
-    { title: 'Save the next step', detail: 'Keep the shortlist and where to resume in a saved step.', done: evidence.checkpointObserved },
+    { title: 'Save the next step', detail: 'Keep the shortlist and where to resume in a saved step.', done: evidence.snapshotObserved },
     { title: 'Continue at the desk', detail: 'Check availability and request a timed package hold.', done: finished && evidence.availabilityObserved },
   ];
 
@@ -41,9 +41,9 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
         {state.isLoading ? 'Running to saved step…' : 'Run to saved step'}
       </button>}
     </div>
-    {(state.conversationId || evidence.checkpointObserved) && <dl className="mc-workflow-receipt">
+    {(state.conversationId || evidence.snapshotObserved) && <dl className="mc-workflow-receipt">
       <div><dt>Same conversation</dt><dd><code>{state.conversationId ?? 'Not recorded'}</code></dd></div>
-      <div><dt><AuroraIcon size={18} aria-hidden="true" /> Snapshot store</dt><dd>{workflow.checkpoint}{evidence.checkpointObserved && <small>{evidence.durableCheckpoint ? 'Saved outside the worker' : 'In-process only; restart recovery is not proven'}</small>}</dd></div>
+      <div><dt><AuroraIcon size={18} aria-hidden="true" /> Snapshot store</dt><dd>{workflow.snapshot}{evidence.snapshotObserved && <small>{evidence.durableSnapshot ? 'Saved outside the worker' : 'In-process only; restart recovery is not proven'}</small>}</dd></div>
     </dl>}
   </section>;
 }

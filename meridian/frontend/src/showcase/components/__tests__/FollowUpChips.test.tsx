@@ -36,8 +36,8 @@ const PAUSED_TURN: Message[] = [
   },
   {
     role: 'bot',
-    text: 'Recovery paused at the checkpoint.',
-    follow_ups: ['Resume workflow from checkpoint'],
+    text: 'Recovery paused at the snapshot.',
+    follow_ups: ['Resume workflow from snapshot'],
   },
 ];
 
@@ -47,7 +47,7 @@ describe('follow-up chips', () => {
     render(<ChatTranscript state={state} />);
 
     expect(
-      screen.getByRole('button', { name: /Resume workflow from checkpoint/i }),
+      screen.getByRole('button', { name: /Resume workflow from snapshot/i }),
     ).toBeInTheDocument();
   });
 
@@ -57,10 +57,10 @@ describe('follow-up chips', () => {
     render(<ChatTranscript state={state} />);
 
     fireEvent.click(
-      screen.getByRole('button', { name: /Resume workflow from checkpoint/i }),
+      screen.getByRole('button', { name: /Resume workflow from snapshot/i }),
     );
 
-    expect(submitPrompt).toHaveBeenCalledWith('Resume workflow from checkpoint');
+    expect(submitPrompt).toHaveBeenCalledWith('Resume workflow from snapshot');
   });
 
   it('hides follow-ups while a turn is in flight', () => {
@@ -73,7 +73,7 @@ describe('follow-up chips', () => {
     // While loading, the prior bot turn is no longer the "latest" turn, so
     // its follow-ups drop away and the thinking bubble takes over.
     expect(
-      screen.queryByRole('button', { name: /Resume workflow from checkpoint/i }),
+      screen.queryByRole('button', { name: /Resume workflow from snapshot/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -81,8 +81,8 @@ describe('follow-up chips', () => {
     const state = makeState({
       messages: [
         ...PAUSED_TURN,
-        { role: 'user', text: 'Resume workflow from checkpoint' },
-        { role: 'bot', text: 'Resumed from the checkpoint.' },
+        { role: 'user', text: 'Resume workflow from snapshot' },
+        { role: 'bot', text: 'Resumed from the snapshot.' },
       ],
     });
     render(<ChatTranscript state={state} />);
@@ -90,7 +90,7 @@ describe('follow-up chips', () => {
     // The paused turn is no longer the latest bot turn, so its follow-up
     // chip must not linger and act on stale conversation state.
     expect(
-      screen.queryByRole('button', { name: /Resume workflow from checkpoint/i }),
+      screen.queryByRole('button', { name: /Resume workflow from snapshot/i }),
     ).not.toBeInTheDocument();
   });
 });

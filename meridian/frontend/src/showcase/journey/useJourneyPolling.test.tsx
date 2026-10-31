@@ -29,12 +29,12 @@ const recorded: Partial<JourneyDocument>[] = [
     },
   },
   {
-    checkpoint: {
-      status: 'committed', source: 'checkpoints', thread_id: THREAD, checkpoint_id: 'cp_1',
-      parent_checkpoint_id: null, checkpoint_ns: '', committed_at: '2026-09-29T07:00:01Z',
+    snapshot: {
+      status: 'committed', source: 'snapshots', thread_id: THREAD, snapshot_id: 'cp_1',
+      parent_snapshot_id: null, snapshot_ns: '', committed_at: '2026-09-29T07:00:01Z',
     },
   },
-  { recommendations: { status: 'observed', source: 'checkpoint', items: [{}, {}, {}] } },
+  { recommendations: { status: 'observed', source: 'snapshot', items: [{}, {}, {}] } },
 ] as Partial<JourneyDocument>[];
 
 let commits = 0;
@@ -42,8 +42,8 @@ let commits = 0;
 function documentAfter(count: number): JourneyDocument {
   return Object.assign({
     journey_id: 'jrn_live', traveler_id: 'trv_meridian_demo', status: 'running',
-    active_thread_id: THREAD, checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
-    executions: unavailable, checkpoint: unavailable, recommendations: unavailable,
+    active_thread_id: THREAD, snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
+    executions: unavailable, snapshot: unavailable, recommendations: unavailable,
     authorization: unavailable, hold: unavailable,
   }, ...recorded.slice(0, count)) as JourneyDocument;
 }

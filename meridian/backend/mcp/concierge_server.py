@@ -11,7 +11,7 @@ Tools exposed:
     - compare_packages(package_ids[])                       side-by-side comparison block
     - price_range(destination)                              low/avg/high price for a destination
     - region_inventory(region, trip_type)                   availability roll-up
-    - currency_convert(amount, from_ccy, to_ccy)            indicative FX (deterministic table)
+    - currency_convert(amount, from_currency, to_currency)   indicative FX (deterministic table)
     - loyalty_balance(travelerId, program)                  points + tier readout
 
 The catalog tools live in `backend/tools/catalog_tools.py`; the same functions are
@@ -116,9 +116,8 @@ async def loyalty_balance(travelerId: str, program: str) -> Dict[str, Any]:
         travelerId: the traveler id. The platform sets it; do not ask the traveler for it.
         program: e.g. 'Marriott Bonvoy', 'United MileagePlus'.
 
-    The profile is read inside ``scoped_session`` so the workload must hold an
-    active grant for the traveler before any row is touched; a traveler the
-    workload is not bound to is refused with a structured error rather than a balance.
+    A traveler this assistant is not allowed to act for gets a structured error instead of
+    a balance.
     """
     db = _db()
     try:

@@ -23,7 +23,16 @@ DETAIL_CHARS = 300
 def local_tools(spans: List[ActivityEntry]) -> list:
     """Strands tools for ``LOCAL_TOOLS``. The hybrid search appends its own spans to ``spans``."""
 
+    @tool
     async def hybrid_trip_search(query: str, limit: int = 5) -> Dict[str, Any]:
+        """Search trip packages by meaning and by words, then rerank them.
+
+        Args:
+            query: natural-language trip request. Name the destination and the qualities
+                wanted. A price ceiling in the query ("under $2,500") is applied, and
+                sold-out packages are left out. At most 500 characters.
+            limit: maximum packages to return, 1 to 20.
+        """
         try:
             result, activities = await catalog_tools.hybrid_trip_search_with_spans(query, limit)
         except Exception as error:
@@ -31,17 +40,19 @@ def local_tools(spans: List[ActivityEntry]) -> list:
         spans.extend(activities)
         return result
 
-    hybrid_trip_search.__doc__ = catalog_tools.hybrid_trip_search.__doc__
-
+    @tool
     async def get_package_details(packageId: str) -> Dict[str, Any]:
+        """Read one Meridian trip package with its live durations, places left and highlights.
+
+        Args:
+            packageId: Catalog package id, for example CTY-002.
+        """
         try:
             return await package_tools.get_package_details(packageId)
         except Exception as error:
             return failure_answer("get_package_details", error)
 
-    get_package_details.__doc__ = package_tools.get_package_details.__doc__
-
-    return [tool(hybrid_trip_search), tool(get_package_details)]
+    return [hybrid_trip_search, get_package_details]
 
 
 def failure_answer(name: str, error: Exception) -> Dict[str, Any]:

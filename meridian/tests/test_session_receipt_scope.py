@@ -1,6 +1,6 @@
 """The closing receipt must count only what this session wrote.
 
-The checkpoint line used to run `SELECT COUNT(*) FROM checkpoints` with no
+The snapshot line used to run `SELECT COUNT(*) FROM checkpoints` with no
 predicate at all, while every other line on the receipt filtered on a time
 window. So the one number backing the durability claim counted every thread,
 every traveler, and all of history - a rehearsal from an hour earlier satisfied
@@ -38,15 +38,15 @@ class RecordingDb:
         raise AssertionError("not needed for these tests")
 
 
-def checkpoint_queries(db: RecordingDb) -> list[tuple[str, tuple]]:
+def snapshot_queries(db: RecordingDb) -> list[tuple[str, tuple]]:
     return [(sql, params) for sql, params in db.queries if re.search(r"\bFROM workflow_snapshots", sql)]
 
 
-def test_checkpoint_count_is_scoped_to_the_thread():
+def test_snapshot_count_is_scoped_to_the_thread():
     db = RecordingDb()
     request = diagnostics.SessionReceiptRequest(conversation_id="thread-under-test")
 
-    for table in diagnostics.CHECKPOINT_TABLES:
+    for table in diagnostics.SNAPSHOT_TABLES:
         asyncio.run(
             diagnostics._count_since(
                 db,
@@ -55,10 +55,10 @@ def test_checkpoint_count_is_scoped_to_the_thread():
             )
         )
 
-    counted = checkpoint_queries(db)
-    assert counted, "the receipt must count checkpoint tables"
+    counted = snapshot_queries(db)
+    assert counted, "the receipt must count snapshot tables"
     for sql, params in counted:
-        assert "WHERE session_id = %s" in sql, f"unscoped checkpoint count: {sql}"
+        assert "WHERE session_id = %s" in sql, f"unscoped snapshot count: {sql}"
         assert params == ("thread-under-test",)
 
 
@@ -72,7 +72,7 @@ def test_a_foreign_thread_does_not_count_toward_this_session():
     )
     assert mine.value == 0
 
-    sql, params = checkpoint_queries(db)[0]
+    sql, params = snapshot_queries(db)[0]
     assert params == ("mine",), "the thread id has to reach the query as a parameter"
     assert "session_id" in sql
 
@@ -87,12 +87,12 @@ def test_conversation_id_is_optional_and_defaults_to_none():
     assert diagnostics.SessionReceiptRequest().conversation_id is None
 
 
-def test_no_unpredicated_checkpoint_count_remains_in_source():
-    """Guard the specific regression: a bare COUNT over a checkpoint table."""
+def test_no_unpredicated_snapshot_count_remains_in_source():
+    """Guard the specific regression: a bare COUNT over a snapshot table."""
     source = diagnostics.__file__
     with open(source, encoding="utf-8") as handle:
         text = " ".join(handle.read().split())
-    for table in diagnostics.CHECKPOINT_TABLES:
+    for table in diagnostics.SNAPSHOT_TABLES:
         assert f'SELECT COUNT(*) AS n FROM {table}"' not in text, (
             f"unpredicated count over {table} reintroduced"
         )

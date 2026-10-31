@@ -22,7 +22,7 @@ from backend.agents.phase_05_workflow.runner import (
 )
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
-from backend.demo_prompts import PROMPT_LADDER
+from backend.prompt_ladder import PROMPT_LADDER
 from tests.phase5_support import GatewayFake, InMemoryLease, fake_availability, fake_search
 
 CANONICAL = PROMPT_LADDER[5].works[0]
@@ -135,7 +135,7 @@ async def test_resume_on_another_worker_holds_once_and_reports_the_restart():
     result = await world.runner("worker-b").run(command("Resume workflow", resume=True))
     assert result["workflow_status"] == "resumed"
     assert result["resumed_after_restart"] is True
-    assert result["resumed_from_checkpoint"]
+    assert result["resumed_from_snapshot"]
     assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
     assert result["response"].startswith("Continued from the saved availability step.")
     assert "checkpoint" not in result["response"].lower()
@@ -318,8 +318,8 @@ async def test_snapshot_spans_carry_the_measured_write_time():
     runner = world.runner()
     runner._storage_for = storage_for
     result = await runner.run(command())
-    checkpoint_spans = [a for a in result["activities"] if a["title"].startswith("Snapshot saved: ")]
-    assert [span["execution_time_ms"] for span in checkpoint_spans] == [111, 222]
+    snapshot_spans = [a for a in result["activities"] if a["title"].startswith("Snapshot saved: ")]
+    assert [span["execution_time_ms"] for span in snapshot_spans] == [111, 222]
 
 
 @pytest.mark.parametrize("count", [0, 21, True, 1.5])

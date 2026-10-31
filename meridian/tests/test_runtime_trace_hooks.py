@@ -20,8 +20,8 @@ from turn_trace import (  # noqa: E402
     WRITE_ALREADY_ATTEMPTED,
     TraceHooks,
     TurnContext,
+    bare_tool_name,
     friendly_denial,
-    short,
 )
 
 from backend import audit_vocabulary  # noqa: E402
@@ -83,8 +83,8 @@ def _drain(queue):
 
 
 def test_short_strips_the_target_prefix():
-    assert short("MeridianHolds___create_courtesy_hold") == "create_courtesy_hold"
-    assert short("hybrid_trip_search") == "hybrid_trip_search"
+    assert bare_tool_name("MeridianHolds___create_courtesy_hold") == "create_courtesy_hold"
+    assert bare_tool_name("hybrid_trip_search") == "hybrid_trip_search"
 
 
 def test_search_call_emits_a_tool_span_with_arguments():

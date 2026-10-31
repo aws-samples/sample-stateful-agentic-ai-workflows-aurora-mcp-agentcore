@@ -1,7 +1,7 @@
 """Open the service port before the application loads, then hand it to uvicorn.
 
 On App Runner the backend needs close to thirty seconds on one vCPU to import
-its dependencies and initialise the Aurora checkpoint backend, and a service
+its dependencies and initialise the Aurora snapshot store, and a service
 whose port stayed closed that long failed to deploy every time. This launcher
 binds the port in milliseconds and passes the listening socket to uvicorn with
 ``--fd``; connections that arrive before the application is ready wait in the

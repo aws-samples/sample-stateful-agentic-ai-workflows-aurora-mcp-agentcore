@@ -37,7 +37,7 @@ from backend.agents.phase_05_workflow.governed_tools import (
     invoke_gateway_tool,
     recording,
 )
-from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
+from backend.agents.phase_05_workflow.hold_intent import prepare_hold_intent
 from backend.agents.phase_05_workflow.packages import package_to_dict
 from backend.agents.phase_05_workflow.routing import classify_intent, is_recovery_request
 from backend.agents.phase_05_workflow.state import (
@@ -200,7 +200,7 @@ class WorkflowNodes:
     ) -> Dict[str, Any]:
         """Worker node: run trip discovery through the Gateway's ``hybrid_trip_search``.
 
-        Checkpoints state to Aurora after returning. On the 'plan' path this is
+        Saves a snapshot to Aurora after returning. On the 'plan' path this is
         step 1 of 2 — the conditional edge then routes to the availability node.
         """
         start = utc_now()
@@ -240,7 +240,7 @@ class WorkflowNodes:
 
         On the 'plan' path this runs AFTER search (step 2 of 2) and layers
         availability onto the prior trip results; for a standalone 'availability'
-        intent it surfaces the availability rows directly. Checkpoints after return.
+        intent it surfaces the availability rows directly. Saves a snapshot after return.
         """
         start = utc_now()
         is_plan = state.get("intent") == "plan"
@@ -405,7 +405,7 @@ class WorkflowNodes:
             The prepared ``hold_intent`` keys and the span list with this step's
             span appended.
         """
-        prepared = prepare_hold_node(state)
+        prepared = prepare_hold_intent(state)
         activities = list(state.get("activities", []))
         activities.append(activity(
             "reasoning", "Workflow node: prepare_hold",
@@ -438,7 +438,7 @@ class WorkflowNodes:
         """Worker node: place a courtesy hold on the top-ranked option through the gateway.
 
         This is what makes the durability claim concrete. The previous nodes
-        checkpoint *workflow position*; this one commits a row with real
+        save *workflow position*; this one commits a row with real
         consequences: inventory is decremented and the hold carries a TTL. A
         worker can die between here and ``synthesize`` and the hold is still
         there on resume, with time remaining, because it lives in Aurora rather
@@ -459,7 +459,7 @@ class WorkflowNodes:
 
         # Terms come from the saved intent, so the hold that runs is the hold that was
         # fingerprinted. Preparing one here keeps a direct call to this node working.
-        prepared = {} if state.get("hold_intent") else prepare_hold_node(state)
+        prepared = {} if state.get("hold_intent") else prepare_hold_intent(state)
         intent = state.get("hold_intent") or prepared.get("hold_intent")
         if not intent or not traveler_id:
             reason = state.get("hold_unavailable") or prepared.get("hold_unavailable")
@@ -738,7 +738,7 @@ class WorkflowNodes:
 
         if outcome.error in LEASE_LOST_ERRORS:
             # The Lambda proved this worker no longer owns the run. A
-            # replacement worker owns the hold; checkpointing past it here
+            # replacement worker owns the hold; saving a snapshot past it here
             # would make that worker skip the hold.
             raise ExecutionLeaseLostError(f"Hold refused: {outcome.error}")
         if not outcome.placed and outcome.refused_by is None and (
@@ -931,7 +931,7 @@ class WorkflowNodes:
     ) -> Dict[str, Any]:
         """Worker node: recall prior context (delegates to the Phase 4 memory fn).
 
-        Skips gracefully if no memory function is wired. Checkpoints after return,
+        Skips gracefully if no memory function is wired. Saves a snapshot after return,
         matching the search and availability nodes.
         """
         start = utc_now()
@@ -977,23 +977,23 @@ class WorkflowNodes:
         """Terminal node: compose the user-facing reply from accumulated state.
 
         All branches converge here before END. The response wording reflects the
-        intent — notably the 'plan' path narrates the two-step, checkpointed run.
+        intent — notably the 'plan' path narrates the two-step, saved run.
         """
         packages = state.get("packages", []) or []
         intent = state.get("intent", "search")
         availability_checks = state.get("availability_checks", 0)
         hold_status = await self._current_hold_status(state)
-        checkpoint_clause = "each step saved to Aurora so the plan can pause and resume"
+        saved_step_clause = "each step saved to Aurora so the plan can pause and resume"
         if intent == "plan":
             response = (
                 ("Recovery plan: searched the catalog, then checked "
                  if is_recovery_request(state.get("query", ""))
                  else "Planned the extension: searched the catalog, then checked ") +
                 f"live duration options for the top {availability_checks} "
-                f"choices — {checkpoint_clause}."
+                f"choices, {saved_step_clause}."
                 if packages
                 else "Ran the full plan graph (search → availability), but no "
-                "trips matched — try broadening the destination."
+                "trips matched. Try broadening the destination."
             )
         elif intent == "availability" and packages:
             response = (

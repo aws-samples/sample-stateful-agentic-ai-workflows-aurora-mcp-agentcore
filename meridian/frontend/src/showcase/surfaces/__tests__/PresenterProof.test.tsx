@@ -19,7 +19,7 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
     journey_id: 'jrn_test',
     traveler_id: 'trv_meridian_demo',
     status: 'active',
-    checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
+    snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
     active_thread_id: 'thread_test',
     executions: {
       status: 'observed',
@@ -45,18 +45,18 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
         },
       ],
     },
-    checkpoint: {
+    snapshot: {
       status: 'committed',
-      source: 'checkpoints',
+      source: 'snapshots',
       thread_id: 'thread_test',
-      checkpoint_id: 'cp_01',
-      parent_checkpoint_id: null,
-      checkpoint_ns: '',
+      snapshot_id: 'cp_01',
+      parent_snapshot_id: null,
+      snapshot_ns: '',
       committed_at: '2026-09-06T02:13:41+00:00',
     },
     selected_plan: {
       status: 'observed',
-      source: 'checkpoint:x#y',
+      source: 'snapshot:x#y',
       package_id: 'TKY-003',
     },
     recommendations: unavailable('none'),
@@ -243,7 +243,7 @@ describe('Presenter proof', () => {
   it('shows a dash where the database holds no evidence', () => {
     render(
       <PresenterProof
-        document={makeDocument({ checkpoint: unavailable('no checkpoint yet') })}
+        document={makeDocument({ snapshot: unavailable('no snapshot yet') })}
         loading={false}
         error={null}
         onRefresh={noop}
@@ -299,7 +299,7 @@ describe('Presenter proof', () => {
 
     it('shows the snapshot count, latest status and next node on the Aurora card', () => {
       const doc = makeDocument();
-      Object.assign(doc.checkpoint, { snapshot_count: 4, status: 'committed' });
+      Object.assign(doc.snapshot, { snapshot_count: 4, status: 'committed' });
       doc.workflow = {
         status: 'observed', source: 'workflow_snapshots', workflow_status: 'paused',
         next_nodes: ['availability'],
@@ -355,7 +355,7 @@ it('calls a paused recovery not resumed yet instead of unverified', () => {
   const doc = makeDocument({
     status: 'paused',
     workflow: {
-      status: 'observed', source: 'checkpoint:thread_test/cp_01', conversation_id: 'thread_test',
+      status: 'observed', source: 'snapshot:thread_test/cp_01', conversation_id: 'thread_test',
       query: 'Rework the trip', message: 'Paused.', workflow_status: 'paused',
       next_nodes: ['availability'], activities: [], travelers_count: 2,
       resumed_after_restart: false,
@@ -366,7 +366,7 @@ it('calls a paused recovery not resumed yet instead of unverified', () => {
   expect(screen.queryByText('Successful resume not verified')).not.toBeInTheDocument();
 });
 
-it('says a checkpointed hold is no longer in Aurora instead of claiming none was created', () => {
+it('says a saved hold is no longer in Aurora instead of claiming none was created', () => {
   const doc = makeDocument({
     hold: {
       status: 'unavailable',

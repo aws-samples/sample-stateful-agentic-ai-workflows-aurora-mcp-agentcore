@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter
-from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.http_auth import HttpPrincipal, require_http_principal
 from backend.main import http_exception_handler
 from backend.routers import chat as chat_mod
@@ -111,7 +111,9 @@ def test_a_hold_stopped_by_an_expired_token_is_a_retryable_401(monkeypatch):
 
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
     monkeypatch.setattr(chat_mod, "_requested_duration", lambda row, size: "7 nights")
-    monkeypatch.setattr(concierge_mod, "create_production_agent", agent_raising("process_hold"))
+    monkeypatch.setattr(
+        production_agent_mod, "create_production_agent", agent_raising("process_hold")
+    )
     request = OrderRequest(product_id="CTY-002", quantity=2, size="7 nights", phase=4)
     with pytest.raises(HTTPException) as caught:
         asyncio.run(chat_mod.production_hold(request))
@@ -131,7 +133,9 @@ def test_a_booking_stopped_by_an_expired_token_is_a_retryable_401(monkeypatch):
 
     monkeypatch.setattr(chat_mod, "_traveler_booking", traveler_booking)
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
-    monkeypatch.setattr(concierge_mod, "create_production_agent", agent_raising("process_booking"))
+    monkeypatch.setattr(
+        production_agent_mod, "create_production_agent", agent_raising("process_booking")
+    )
     with pytest.raises(HTTPException) as caught:
         asyncio.run(chat_mod.production_booking(BookingRequest(booking_id="HLD-1")))
     assert_retryable(caught.value)
@@ -208,7 +212,7 @@ def test_the_order_route_answers_the_sign_in_body(client, monkeypatch, error, co
 
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
     monkeypatch.setattr(chat_mod, "_requested_duration", lambda row, size: "7 nights")
-    monkeypatch.setattr(concierge_mod, "create_production_agent",
+    monkeypatch.setattr(production_agent_mod, "create_production_agent",
                         agent_failing("process_hold", error))
     response = client.post("/api/chat/order", json={
         "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4})
@@ -227,7 +231,7 @@ def test_the_book_route_answers_the_sign_in_body(client, monkeypatch, error, cod
 
     monkeypatch.setattr(chat_mod, "_traveler_booking", traveler_booking)
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
-    monkeypatch.setattr(concierge_mod, "create_production_agent",
+    monkeypatch.setattr(production_agent_mod, "create_production_agent",
                         agent_failing("process_booking", error))
     response = client.post("/api/chat/book", json={"booking_id": "HLD-1"})
     assert_sign_in_response(response, code, message, challenge)
@@ -273,7 +277,7 @@ def test_a_token_expired_event_from_the_runtime_reaches_the_order_route_as_the_e
 
     monkeypatch.setattr(chat_mod, "_package_for_hold", package)
     monkeypatch.setattr(chat_mod, "_requested_duration", lambda row, size: "7 nights")
-    monkeypatch.setattr(concierge_mod, "create_production_agent", lambda: Agent())
+    monkeypatch.setattr(production_agent_mod, "create_production_agent", lambda: Agent())
     response = client.post("/api/chat/order", json={
         "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4})
     assert_sign_in_response(response, "token_expired", MESSAGE, CHALLENGE)

@@ -42,7 +42,7 @@ def classify_intent(query: str) -> str:
     # open dates in one breath. It routes through TWO sequential worker
     # nodes (search → availability) before synthesis — the case where an
     # explicit graph genuinely beats a single tool call, because the graph
-    # composes steps and checkpoints between each.
+    # composes steps and saves a snapshot between each.
     plan_signals = (
         "plan ",
         "plan our",

@@ -638,7 +638,7 @@
 .mds-root .is-proof .mds-chat-starter-chip > small,
 .mds-root .is-proof .mds-chat-starter-chip > span { flex-shrink: 1; }
 
-/* The ladder teaches the checkpoint; the desk continues the same journey. */
+/* The ladder teaches the snapshot; the desk continues the same journey. */
 .mds-root .mc-workflow-lab { display: grid; gap: 30px; padding: 10px 0 30px; }
 .mds-root .mc-workflow-request { margin: 0; max-width: 65ch; color: var(--mds-label-2); font: var(--mds-type-title-2); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); }
 .mds-root .mc-workflow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; list-style: none; padding: 0; margin: 0; }

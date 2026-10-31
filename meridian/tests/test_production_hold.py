@@ -21,8 +21,8 @@ from backend.agents.phase_04_production.write_outcome import (
     PlacedWriteUnfinished,
     WriteOutcomeUnknown,
 )
-from backend.agents.phase_04_production import concierge as concierge_mod
-from backend.agents.phase_04_production.concierge import HoldTarget
+from backend.agents.phase_04_production import production_agent as production_agent_mod
+from backend.agents.phase_04_production.production_agent import HoldTarget
 from backend.catalog_compat import row_to_api_product
 from tests.test_production_transaction_boundaries import build_agent, remembered, runtime_decision
 
@@ -42,7 +42,7 @@ def test_confirmed_hold_is_sent_to_the_runtime_and_recorded(monkeypatch):
                      "title": "AgentCore Gateway: tools/call → create_courtesy_hold"}],
     )
     agent = build_agent(events, decision, calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     outcome = asyncio.run(agent.process_hold("trv_meridian_demo", "conv-9", TARGET))
 
@@ -75,7 +75,7 @@ def test_denied_hold_returns_the_refusal_without_a_hold(monkeypatch):
         policy_decision="deny",
     )
     agent = build_agent(events, decision, calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     outcome = asyncio.run(agent.process_hold("trv_meridian_demo", None, TARGET))
 
@@ -88,7 +88,7 @@ def test_denied_hold_returns_the_refusal_without_a_hold(monkeypatch):
 
 
 def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
-    from backend.agents.phase_04_production.concierge import BookingTarget
+    from backend.agents.phase_04_production.production_agent import BookingTarget
 
     events, calls = [], []
     booked = {"bookingId": "HLD-1", "status": "confirmed", "confirmedAt": "2026-09-10 13:00:00+00",
@@ -102,7 +102,7 @@ def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
                      "title": "AgentCore Gateway: tools/call → confirm_booking"}],
     )
     agent = build_agent(events, decision, calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     target = BookingTarget(booking_id="HLD-1", total_cents=500000, package_id="CTY-002",
                            duration="7 nights", travelers=2)
 
@@ -128,7 +128,7 @@ def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
 
 
 def test_denied_booking_returns_the_refusal_without_a_booking(monkeypatch):
-    from backend.agents.phase_04_production.concierge import BookingTarget
+    from backend.agents.phase_04_production.production_agent import BookingTarget
 
     events, calls = [], []
     decision = runtime_decision(
@@ -139,7 +139,7 @@ def test_denied_booking_returns_the_refusal_without_a_booking(monkeypatch):
         policy_decision="deny",
     )
     agent = build_agent(events, decision, calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     target = BookingTarget(booking_id="HLD-1", total_cents=500000, package_id="CTY-002",
                            duration="7 nights", travelers=2)
 
@@ -345,8 +345,8 @@ def route_failing(monkeypatch, route, decision, fail):
     async def booking(_traveler_id, _booking_id):
         return dict(HELD_LINE)
 
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
-    monkeypatch.setattr(concierge_mod, "create_production_agent", lambda: agent)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "create_production_agent", lambda: agent)
     monkeypatch.setattr(chat_router, "_package_for_hold", package)
     monkeypatch.setattr(chat_router, "_traveler_booking", booking)
     return agent

@@ -13,7 +13,7 @@ loop.
 
 | State | Source | What to look for |
 | --- | --- | --- |
-| Traveler context | `backend/agents/phase_04_production/concierge.py`, `process_turn` | Authorized Aurora facts and the runtime's managed session inform a turn |
+| Traveler context | `backend/agents/phase_04_production/production_agent.py`, `process_turn` | Authorized Aurora facts and the runtime's managed session inform a turn |
 | Workflow progress | `backend/agents/phase_05_workflow/graph.py`, `snapshot_storage.py` | Saved snapshots restore execution after the Runtime session is replaced |
 | Business result | `scripts/migrations/008_hold_request_identity.sql` | A persisted intent and transaction constraints make a repeated write safe |
 
@@ -51,8 +51,9 @@ Open `retrieval_agent_search` in `backend/routers/chat.py`, then
 `run_retrieval_turn` in `backend/agents/phase_03_retrieval/agent.py`. The
 hybrid pipeline is `backend/retrieval/hybrid.py`: query embedding,
 semantic and lexical candidates (the vector arm is the SQL function
-`semantic_trip_search`), deduplication by package ID, a price and
-places-left gate, and `rerank_documents`. The agent's model is Claude
+`semantic_trip_search`), one entry per package (`merge_by_package`), a price
+and places-left filter (`keep_eligible`), and reranking (`_rerank`, which calls
+`rerank_documents`). The agent's model is Claude
 Sonnet 5.5, built by `bedrock_model()` in `backend/bedrock_model.py`. The Bedrock adapters are in
 `backend/db/embedding_service.py`. A relevant result does not establish
 facts the catalog does not record, such as private occupancy. The trace shows
@@ -72,9 +73,9 @@ With context off, the turn returns without calling the runtime; the guard is in
 | --- | --- |
 | `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. With `MERIDIAN_AGENTCORE_AUTH` unset the mode is `iam`; in `jwt` mode, which the hosted site uses, the signed-in person's Cognito token is verified at each hop. |
 | `backend/db/rds_data_client.py`, `scoped_session` | Checks the workload grant, sets a transaction-local scope and switches to the restricted RLS role |
-| `backend/agents/phase_04_production/concierge.py`, `process_turn` | Three short units around the external runtime call: authorization and read, audit, and memory. Every turn that reaches the Runtime has one `agent_audit_log` row written for it, failed turns included, unless that write itself fails |
+| `backend/agents/phase_04_production/production_agent.py`, `process_turn` | Three short units around the external runtime call: authorization and read, audit, and memory. Every turn that reaches the Runtime has one `agent_audit_log` row written for it, failed turns included, unless that write itself fails |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Strands loop on AgentCore Runtime: Gateway tools, the Memory session manager and the streamed events |
-| `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `TraceHooks._pin_arguments` | Overwrites the traveler, the confirmation flag, the budget ceiling and the journey reference with values from the authorized request before the Cedar policy evaluates a hold or confirmation. Party size is not pinned: it comes from the tool arguments, and the hold policy caps it at 6 travelers. |
+| `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `TraceHooks._pin_write_arguments` | Overwrites the traveler, the confirmation flag, the budget ceiling and the journey reference with values from the authorized request before the Cedar policy evaluates a hold or confirmation. Party size is not pinned: it comes from the tool arguments, and the hold policy caps it at 6 travelers. |
 | `meridian_agentcore/agentcore/agentcore.template.json`, `MeridianGovernance` | The Cedar read, hold and confirmation policies, in `ENFORCE` mode |
 | `backend/routers/diagnostics.py` | The live allow and deny checks, restricted-role row counts and RLS policy evidence |
 
@@ -101,7 +102,7 @@ visits every node.
 | `backend/agents/phase_05_workflow/runner.py`, `WorkflowRunner.run` | Duplicate-start guards, the execution claim, heartbeat and lease |
 | `backend/agents/phase_05_workflow/runtime_entry.py`, `workflow_turn` | The one event the `MeridianWorkflow` Runtime handles: runs the runner and streams heartbeats, then one result or error |
 | `backend/agentcore/workflow_runtime.py`, `WorkflowRuntimeClient` | How the backend invokes the Runtime and stops its session |
-| `backend/agents/phase_05_workflow/hold_intent.py`, `prepare_hold_node` | Normalizes the terms and saves stable request and booking IDs before the hold node |
+| `backend/agents/phase_05_workflow/hold_intent.py`, `prepare_hold_intent` | Normalizes the terms and saves stable request and booking IDs before the hold node |
 | `backend/agents/phase_05_workflow/nodes.py`, `hold`, and `governed_hold.py` | Calls the Gateway with the saved intent and the current execution lease |
 | `backend/agents/phase_05_workflow/governed_tools.py` and `nodes.py`, `release_hold` | Search and the compensating release call Gateway tools with the caller's token |
 | `backend/agents/phase_05_workflow/run_audit.py` | Writes one `workflow_run` audit row per run, naming the verified Cognito subject (in `jwt` mode) |

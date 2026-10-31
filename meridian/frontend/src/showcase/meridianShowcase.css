@@ -1401,7 +1401,7 @@
   flex: 0 0 auto;
 }
 
-.mds-trip-result-signals > span.is-checkpoint {
+.mds-trip-result-signals > span.is-snapshot {
   color: var(--mds-cyan);
   background: var(--mds-cyan-fill);
 }
@@ -3009,7 +3009,7 @@
   overflow-wrap: anywhere;
 }
 
-.mds-workflow-state.is-checkpointed {
+.mds-workflow-state.is-saved {
   background: var(--mds-cyan-fill);
 }
 
@@ -3047,7 +3047,7 @@
 }
 
 .mds-workflow-path,
-.mds-workflow-checkpoint {
+.mds-workflow-snapshot {
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
@@ -3076,7 +3076,7 @@
   background: var(--mds-green-fill);
 }
 
-.mds-workflow-checkpoint svg,
+.mds-workflow-snapshot svg,
 .mds-workflow-path svg {
   flex: 0 0 auto;
   color: var(--mds-label-2);

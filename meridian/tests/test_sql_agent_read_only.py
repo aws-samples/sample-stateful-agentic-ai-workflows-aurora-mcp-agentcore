@@ -5,10 +5,10 @@ from types import SimpleNamespace
 from backend.agents.phase_01_sql import agent as sql_agent
 
 READ_TOOLS = {
-    "_lookup_trip_package",
-    "_search_trip_packages",
-    "_check_departure_availability",
-    "_calculate_booking_total",
+    "get_package_details",
+    "search_trips",
+    "check_availability",
+    "estimate_trip_total",
 }
 
 

@@ -48,9 +48,9 @@ def test_health_includes_model_fields(monkeypatch):
     body = res.json()
     assert "bedrock_model_id" in body
     assert "bedrock_model_label" in body
-    assert body["checkpoint_backend"] == "Aurora workflow_snapshots"
-    assert body["checkpoint_durable"] is True
-    assert body["checkpoint_required"] is True
+    assert body["snapshot_store"] == "Aurora workflow_snapshots"
+    assert body["snapshot_durable"] is True
+    assert body["snapshot_required"] is True
     assert "embedding_model_id" in body
     assert body["bedrock_model_label"]
 
@@ -88,9 +88,13 @@ def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_d
     assert body["degraded_component"] == "aurora"
     assert body["degraded_error_class"] == "ExpiredTokenException"
     # Existing fields callers already read must still be present.
-    assert body["checkpoint_backend"]
-    assert "checkpoint_durable" in body
-    assert "checkpoint_required" in body
+    assert body["snapshot_store"]
+    assert "snapshot_durable" in body
+    assert "snapshot_required" in body
+    # For one release a site published before the backend still reads the old names.
+    assert body["checkpoint_backend"] == body["snapshot_store"]
+    assert body["checkpoint_durable"] == body["snapshot_durable"]
+    assert body["checkpoint_required"] == body["snapshot_required"]
 
 
 def _healthy_probe(monkeypatch):

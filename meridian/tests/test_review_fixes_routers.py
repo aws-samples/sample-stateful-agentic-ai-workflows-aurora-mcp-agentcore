@@ -56,7 +56,7 @@ class _Currency:
         self.targets = []
 
     async def call(self, tool, args):
-        self.targets.append(args["to_ccy"])
+        self.targets.append(args["to_currency"])
         return {"converted": 1.0}
 
 
@@ -161,7 +161,7 @@ def test_a_thread_the_caller_does_not_own_is_not_counted(monkeypatch):
     assert line.count is None
     assert "not one of this traveler's journeys" in line.detail
     assert db.admin_keys == []
-    assert receipt.durable_checkpoints is False
+    assert receipt.durable_snapshots is False
 
 
 def test_the_callers_own_thread_is_counted(monkeypatch):
@@ -171,7 +171,7 @@ def test_the_callers_own_thread_is_counted(monkeypatch):
 
     assert _snapshot_line(receipt).count == 7
     assert db.admin_keys == ["thread-mine"]
-    assert receipt.durable_checkpoints is True
+    assert receipt.durable_snapshots is True
 
 
 def test_the_ownership_lookup_opens_no_scoped_session_of_its_own(monkeypatch):

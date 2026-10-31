@@ -45,8 +45,8 @@ steps: list[dict] = []
 def reports_durable_snapshots(body: dict, status: int) -> bool:
     """Return True when /api/health reports the durable snapshot store."""
     return (
-        body.get("checkpoint_backend") == SNAPSHOT_STORE
-        and body.get("checkpoint_durable") is True
+        body.get("snapshot_store") == SNAPSHOT_STORE
+        and body.get("snapshot_durable") is True
     )
 
 
@@ -276,16 +276,16 @@ def main() -> int:
     steps[-1]["checks"]["journey_resolved"] = bool(journey_id)
     if journey_id:
         record("journey_document", "GET", f"/api/journeys/{journey_id}", None, ok=ok,
-               checkpoint=lambda b, s: b["checkpoint"]["status"] != "unavailable",
+               snapshot=lambda b, s: b["snapshot"]["status"] != "unavailable",
                hold=lambda b, s: b["hold"]["status"] != "unavailable",
                executions=lambda b, s: len(b["executions"].get("items") or []) >= 2,
                authorization=lambda b, s: b["authorization"]["status"] != "unavailable",
-               durable=lambda b, s: b["checkpoint_backend"]["durable"] is True,
+               durable=lambda b, s: b["snapshot_store"]["durable"] is True,
                workflow_resumed=lambda b, s: b.get("workflow", {}).get("workflow_status") == "resumed")
     record("session_receipt", "POST", "/api/diagnostics/session-receipt",
            {"conversation_id": conv5, "window_minutes": 90}, ok=ok,
            rows=receipt_rows_counted,
-           durable=lambda b, s: b.get("checkpoint_backend_durable") is True)
+           durable=lambda b, s: b.get("snapshot_store_durable") is True)
     record("p5_amalfi_lengths", "POST", "/api/chat",
            {"message": "Which trip lengths are still available for Amalfi Coast Villa Week?", "phase": 5, "customer_id": TRAVELER, "travelers_count": 2},
            ok=ok, complete=lambda b, s: b.get("workflow_status") == "complete", products=has_products)

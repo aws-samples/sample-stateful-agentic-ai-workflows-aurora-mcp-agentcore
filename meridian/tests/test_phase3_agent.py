@@ -97,13 +97,13 @@ def fake_mcp_tools(seen):
         return {"region": region}
 
     @tool
-    def currency_convert(amount: float, from_ccy: str, to_ccy: str) -> dict:
+    def currency_convert(amount: float, from_currency: str, to_currency: str) -> dict:
         """Convert.
 
         Args:
             amount: amount.
-            from_ccy: from.
-            to_ccy: to.
+            from_currency: from.
+            to_currency: to.
         """
         return {"converted": amount}
 
@@ -756,22 +756,22 @@ def test_the_local_tools_are_the_ones_the_pool_does_not_serve():
 
 
 @tool(name="currency_convert")
-def unsupported_currency_convert(amount: float, from_ccy: str, to_ccy: str) -> dict:
+def unsupported_currency_convert(amount: float, from_currency: str, to_currency: str) -> dict:
     """Convert.
 
     Args:
         amount: amount.
-        from_ccy: from.
-        to_ccy: to.
+        from_currency: from.
+        to_currency: to.
     """
-    return {"error": "unsupported_currency", "currency": to_ccy}
+    return {"error": "unsupported_currency", "currency": to_currency}
 
 
 def test_an_unsupported_currency_is_an_answer_that_keeps_the_client(world):
     _, seen = world
     pool = FakePool(replacing(fake_mcp_tools(seen), unsupported_currency_convert))
     model = RecordingModel([
-        tool_turn("currency_convert", {"amount": 5, "from_ccy": "USD", "to_ccy": "XXX"}),
+        tool_turn("currency_convert", {"amount": 5, "from_currency": "USD", "to_currency": "XXX"}),
         {"kind": "text", "text": "I cannot convert to XXX."}])
 
     turn = run(model, pool)

@@ -115,7 +115,7 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
 describe('healthResponseToStatus', () => {
   it.each(['unhealthy', 'not ok', 'broken', undefined])('rejects an unready status: %s', (status) => {
     expect(healthResponseToStatus({
-      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', checkpoint_backend: 'AuroraDataApiSaver',
+      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', snapshot_store: 'AuroraDataApiSaver',
     })).toBe('offline');
   });
   it('only accepts the Meridian backend health contract', () => {
@@ -124,7 +124,7 @@ describe('healthResponseToStatus', () => {
         status: 'healthy',
         bedrock_model_id: 'global.anthropic.claude-sonnet-5',
         embedding_model_id: 'cohere.embed-v4:0',
-        checkpoint_backend: 'postgres',
+        snapshot_store: 'postgres',
       }),
     ).toBe('online');
 

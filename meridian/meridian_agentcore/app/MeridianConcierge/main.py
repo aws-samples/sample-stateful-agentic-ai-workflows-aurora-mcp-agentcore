@@ -38,14 +38,19 @@ from opentelemetry import trace
 from strands.tools.mcp import MCPClient
 
 from caller_identity import CallerRefused, auth_mode, caller_from_request
-from concierge_definition import WORKFLOW_ONLY_TOOLS, TravelerPinHook, build_agent
+from concierge_definition import (
+    WORKFLOW_ONLY_TOOLS,
+    TravelerPinHook,
+    bare_tool_name,
+    build_agent,
+)
 from gateway_auth import gateway_client_arguments, gateway_url, recording_arguments
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, turn_instructions, turn_prompt
 from turn_watchdog import KEEPALIVE_EVENT, TurnTimedOut, TurnWatchdog, settle_history
 from turn_work import HistoryRepairs, OffLoopExecutor, wait_for_job
-from turn_trace import SPANS, TraceHooks, TurnContext, activity, short
+from turn_trace import SPANS, TraceHooks, TurnContext, activity
 
 app = BedrockAgentCoreApp()
 REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -184,7 +189,7 @@ def watch_restore(manager: AgentCoreMemorySessionManager) -> None:
 
     The SDK's ``list_messages`` logs the error and returns an empty history, and offers no other
     signal, so the one reliable place to see a failed restore is the client call underneath.
-    The error still reaches the SDK, which behaves as before. ``make_agent`` reads the flag
+    The error still reaches the SDK, which behaves as before. ``build_turn_agent`` reads the flag
     right after the restore, so only the restore's own calls count.
     """
     manager.restore_failed = False
@@ -307,7 +312,7 @@ def governed_tools(tools: list) -> tuple[list, list[str]]:
     """
 
     def offered(tool) -> bool:
-        name = short(tool.tool_name)
+        name = bare_tool_name(tool.tool_name)
         return name in SPANS and name not in WORKFLOW_ONLY_TOOLS
 
     callable_tools = [tool for tool in tools if offered(tool)]
@@ -510,7 +515,7 @@ async def settle(turn: RunningTurn, agent, session, task):
     await close_history(turn, agent, session, task)
 
 
-def make_agent(turn: RunningTurn, tools: list) -> tuple:
+def build_turn_agent(turn: RunningTurn, tools: list) -> tuple:
     """Build the session manager and the agent; the restore from AgentCore Memory is blocking.
 
     Returns:
@@ -600,7 +605,7 @@ async def converse(turn: RunningTurn):
     outcome, action, target = turn.placed
     await REPAIRS.finish(context.conversation_id, SETTLE_SECONDS)
     session, agent = await watchdog.within(
-        OFFLOOP.run(make_agent, turn, [] if outcome is not None else callable_tools))
+        OFFLOOP.run(build_turn_agent, turn, [] if outcome is not None else callable_tools))
     yield {"type": "activity", **restored_span(restore_span, session, context.conversation_id)}
     if outcome is not None:
         prompt = narration_prompt(outcome, target, context.budget_ceiling_cents, action)

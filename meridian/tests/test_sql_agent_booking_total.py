@@ -23,7 +23,7 @@ def make_agent(monkeypatch, price):
 async def test_a_string_price_for_two_travelers_totals_forty_eight_hundred(monkeypatch):
     agent = make_agent(monkeypatch, "2400.00")
 
-    result = await agent._calculate_booking_total(
+    result = await agent.estimate_trip_total(
         [{"package_id": "CTY-002", "travelers_count": 2}]
     )
 
@@ -35,7 +35,7 @@ async def test_a_string_price_for_two_travelers_totals_forty_eight_hundred(monke
 async def test_a_traveler_count_sent_as_text_is_read_as_a_number(monkeypatch):
     agent = make_agent(monkeypatch, "100.50")
 
-    result = await agent._calculate_booking_total(
+    result = await agent.estimate_trip_total(
         [{"package_id": "CTY-002", "travelers_count": "3"}]
     )
 

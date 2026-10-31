@@ -112,11 +112,11 @@ async def session() -> AsyncIterator[_Session]:
 async def test_a_journey_records_its_owner_and_backend(session: _Session) -> None:
     journey_id = await session.journey()
     rows = await session.execute(
-        "SELECT traveler_id, checkpoint_backend, status FROM journeys WHERE journey_id = %s",
+        "SELECT traveler_id, snapshot_store, status FROM journeys WHERE journey_id = %s",
         (journey_id,),
     )
     assert rows[0]["traveler_id"] == TRAVELER
-    assert rows[0]["checkpoint_backend"] == "AuroraDataApiSaver"
+    assert rows[0]["snapshot_store"] == "AuroraDataApiSaver"
     assert rows[0]["status"] == "active"
 
 

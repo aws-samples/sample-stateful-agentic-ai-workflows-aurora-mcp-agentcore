@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.agentcore.runtime import RuntimeDecision
-from backend.agents.phase_04_production import concierge as concierge_mod
-from backend.agents.phase_04_production.concierge import ProductionAgent
+from backend.agents.phase_04_production import production_agent as production_agent_mod
+from backend.agents.phase_04_production.production_agent import ProductionAgent
 from backend.agents.phase_04_production.memory_agent import ActivityEntry as MemoryActivity
 from backend.trace_names import MEMORY_CODE
 
@@ -191,7 +191,7 @@ def runtime_decision(**overrides):
 def test_production_turn_releases_transactions_before_the_runtime_call(monkeypatch):
     events, calls = [], []
     agent = build_agent(events, runtime_decision(), calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     result = asyncio.run(
         agent.process_turn("Rework my Tokyo trip", "trv_meridian_demo", None, 5, travelers_count=2)
@@ -238,7 +238,7 @@ def test_trip_cards_and_persisted_context_follow_the_reply_not_search_order(monk
         recommended_package_ids=["CTY-002", "TKY-005", "TKY-001"],
     )
     agent = build_agent(events, decision, calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
 
     packages, *_ = asyncio.run(agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))
 
@@ -257,7 +257,7 @@ def test_response_cards_use_only_observed_packages(message, ids, expected):
         {"package_id": "CTY-002", "name": "Tokyo Cuisine"},
         {"package_id": "TKY-005", "name": "Tokyo Autumn"},
     ])
-    assert [p["package_id"] for p in concierge_mod.response_packages(decision)] == expected
+    assert [p["package_id"] for p in production_agent_mod.response_packages(decision)] == expected
 
 
 def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeypatch):
@@ -266,7 +266,7 @@ def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeyp
         message="Tokyo Indie Walk fits your saved boutique preference.",
         packages=[], recommended_package_ids=[], activities=[],
     ), calls)
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    monkeypatch.setattr(production_agent_mod, "require_agentcore_platform", lambda **_kw: None)
     packages, *_ = asyncio.run(agent.process_turn("Which of those fits?", "trv_meridian_demo", "conv-test", 5))
     assert [p.package_id for p in packages] == ["TKY-001"]
     (saved,) = remembered(agent)
@@ -281,7 +281,8 @@ def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeyp
 ])
 def test_recalled_cards_do_not_fill_an_empty_search_or_unrelated_reply(message, activities):
     decision = runtime_decision(message=message, packages=[], recommended_package_ids=[], activities=activities)
-    assert concierge_mod.response_packages(decision, [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]) == []
+    packages = [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]
+    assert production_agent_mod.response_packages(decision, packages) == []
 
 
 def test_removed_catalog_trip_is_not_recreated_from_memory():
@@ -307,7 +308,7 @@ def test_runtime_budget_narration_matches_enforced_ceiling(
     monkeypatch.delenv("MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS", raising=False)
     calls = []
     agent = build_agent([], runtime_decision(), calls)
-    read = concierge_mod.AuthorizedRead(
+    read = production_agent_mod.AuthorizedRead(
         scope=None,
         conv_id="conv-test",
         memory_context="Earlier trip context. " * 400,
@@ -333,6 +334,6 @@ def test_a_parameterized_catalog_filter_counts_as_a_search_for_the_cards():
     decision = runtime_decision(
         message="Two options.", packages=[{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}],
         activities=[{"title": "AgentCore Gateway: tools/call → search_trips"}])
-    shown = concierge_mod.response_packages(
+    shown = production_agent_mod.response_packages(
         decision, [{"package_id": "TKY-009", "name": "Other"}])
     assert [p["package_id"] for p in shown] == ["TKY-001"]

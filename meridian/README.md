@@ -72,7 +72,7 @@ Each phase has two example prompts that work there and a hand-off prompt
 that needs the next phase. **Continue in** carries the question forward.
 Phase 5 is the last phase, so its hand-off is
 `Resume workflow from the saved step`. The prompts are defined once in
-`backend/demo_prompts.py`.
+`backend/prompt_ladder.py`.
 
 | Phase | Works here | Needs the next phase |
 | --- | --- | --- |

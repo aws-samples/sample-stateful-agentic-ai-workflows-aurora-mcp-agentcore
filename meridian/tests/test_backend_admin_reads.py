@@ -133,7 +133,7 @@ async def test_the_session_receipt_counts_governance_through_the_function(db):
     lines = {line.table: line for line in response.lines}
     assert lines["traveler_access_audit"].count == 44
     assert lines["workflow_snapshots"].count == 22
-    assert response.durable_checkpoints is True
+    assert response.durable_snapshots is True
 
 
 async def test_a_receipt_without_a_thread_counts_no_snapshots(db):
@@ -141,7 +141,7 @@ async def test_a_receipt_without_a_thread_counts_no_snapshots(db):
     assert not [s for s in db.statements if s[1] and s[1][0] == "workflow_snapshots"]
     line = next(line for line in response.lines if line.table == "workflow_snapshots")
     assert line.count == 0 and "no workflow thread" in line.detail
-    assert response.durable_checkpoints is False
+    assert response.durable_snapshots is False
 
 
 async def test_a_missing_snapshot_table_is_reported_not_counted(monkeypatch):
@@ -180,7 +180,7 @@ async def test_a_failing_snapshot_count_degrades_its_line_and_not_the_receipt(mo
     assert line.count is None
     assert re.search(r"could not be counted \(ref \S+\)", line.detail)
     assert "does not exist" not in line.detail
-    assert response.durable_checkpoints is False
+    assert response.durable_snapshots is False
 
 
 async def test_a_failing_table_probe_degrades_the_receipt_and_not_the_endpoint(monkeypatch):
@@ -193,7 +193,7 @@ async def test_a_failing_table_probe_degrades_the_receipt_and_not_the_endpoint(m
     assert re.search(r"could not be checked \(ref \S+\)", line.detail)
     assert "no workflow snapshot table" not in line.detail
     assert "Data API unavailable" not in line.detail
-    assert response.durable_checkpoints is False
+    assert response.durable_snapshots is False
 
 
 async def test_an_unavailable_agent_audit_count_is_not_a_zero(monkeypatch):

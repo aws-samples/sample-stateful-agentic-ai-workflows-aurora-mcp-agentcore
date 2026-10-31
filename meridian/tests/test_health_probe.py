@@ -1,7 +1,7 @@
 """Live Aurora probe backing /api/health: a real query, cached briefly.
 
 The old `/api/health` hardcoded `status: "healthy"` and read only startup-time
-checkpoint state, so it kept reporting healthy while the live backend's AWS
+snapshot state, so it kept reporting healthy while the live backend's AWS
 credentials had actually expired and every real Aurora read was failing. This
 probe is what makes the reported status track reality instead.
 """

@@ -23,7 +23,7 @@ The Runtime streams one JSON object per event:
 
 - `{"type": "heartbeat", "worker_instance_id": ...}` every 10 seconds while the graph runs.
 - `{"type": "result", "state": {...}}` once, with `activities`, `packages`, `response`,
-  `conversation_id`, `workflow_status`, `resumed_after_restart`, `resumed_from_checkpoint`,
+  `conversation_id`, `workflow_status`, `resumed_after_restart`, `resumed_from_snapshot`,
   `execution_id` and `worker_instance_id`. A ping result carries only `workflow_status` and
   `worker_instance_id`.
 - `{"type": "error", "code": ..., "message": ...}` once, instead of a result. The code is one of

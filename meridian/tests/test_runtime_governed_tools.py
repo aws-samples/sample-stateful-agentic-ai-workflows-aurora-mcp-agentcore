@@ -21,7 +21,7 @@ from tests.test_runtime_span_timings import FakeClock, FakeSession
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
 
-from turn_trace import SPANS, short  # noqa: E402
+from turn_trace import SPANS, bare_tool_name  # noqa: E402
 
 GOVERNED = [
     "MeridianCatalog___search_trips",
@@ -89,7 +89,7 @@ def labels(span):
 
 
 def test_the_governed_names_cover_every_tool_with_a_span():
-    assert {short(name) for name in GOVERNED} == set(SPANS)
+    assert {bare_tool_name(name) for name in GOVERNED} == set(SPANS)
 
 
 def test_the_model_receives_every_tool_with_a_span_and_nothing_else(runtime):

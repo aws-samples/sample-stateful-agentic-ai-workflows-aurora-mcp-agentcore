@@ -161,7 +161,7 @@ def merge_by_package(
     return list(merged.values())
 
 
-def apply_gate(
+def keep_eligible(
     rows: List[Dict[str, Any]], price_ceiling: Optional[float], places_left: Dict[str, int]
 ) -> List[Dict[str, Any]]:
     """Keep the rows a traveler could actually take, in their order.
@@ -319,7 +319,7 @@ def _gate(
     rows: List[Dict[str, Any]], query: str
 ) -> Tuple[List[Dict[str, Any]], Optional[ActivityEntry]]:
     ceiling = parse_price_ceiling(query)
-    kept = apply_gate(rows, ceiling, places_by_package(rows))
+    kept = keep_eligible(rows, ceiling, places_by_package(rows))
     dropped = len(rows) - len(kept)
     if not dropped:
         return kept, None

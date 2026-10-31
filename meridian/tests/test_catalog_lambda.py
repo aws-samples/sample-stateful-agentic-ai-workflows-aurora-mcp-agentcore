@@ -291,10 +291,20 @@ def test_region_inventory_sums_places(world):
 
 def test_currency_convert_and_its_answer_for_an_unknown_currency(world):
     world()
-    assert call("currency_convert", {"amount": 100, "from_ccy": "eur", "to_ccy": "JPY"})[
+    assert call("currency_convert", {"amount": 100, "from_currency": "eur", "to_currency": "JPY"})[
         "converted"] == round(100 / 0.92 * 156.4, 2)
-    answer = call("currency_convert", {"amount": 1, "from_ccy": "XXX", "to_ccy": "USD"})
+    answer = call("currency_convert", {"amount": 1, "from_currency": "XXX", "to_currency": "USD"})
     assert answer["error"] == "unsupported_currency" and "USD" in answer["supported"]
+
+
+def test_currency_convert_still_accepts_the_old_argument_names_and_prefers_the_new(world):
+    world()
+    expected = round(100 / 0.92 * 156.4, 2)
+    assert call("currency_convert", {"amount": 100, "from_ccy": "eur", "to_ccy": "JPY"})[
+        "converted"] == expected
+    both = {"amount": 100, "from_currency": "EUR", "to_currency": "JPY",
+            "from_ccy": "XXX", "to_ccy": "XXX"}
+    assert call("currency_convert", both)["converted"] == expected
 
 
 def test_search_trips_binds_every_value_as_a_parameter(world):
@@ -447,8 +457,8 @@ def test_a_bad_availability_value_fails_the_tool_and_logs_the_package(world, cap
 def test_an_unsupported_currency_is_logged_as_an_answer_and_bad_input_as_a_failure(
         world, capsys):
     world()
-    call("currency_convert", {"amount": 1, "from_ccy": "XXX", "to_ccy": "USD"})
-    call("currency_convert", {"amount": "x", "from_ccy": "USD", "to_ccy": "EUR"})
+    call("currency_convert", {"amount": 1, "from_currency": "XXX", "to_currency": "USD"})
+    call("currency_convert", {"amount": "x", "from_currency": "USD", "to_currency": "EUR"})
     summaries = [json.loads(line) for line in capsys.readouterr().out.splitlines()
                  if '"gatewayRequestId"' in line]
     assert [line["ok"] for line in summaries] == [True, False]
@@ -460,7 +470,7 @@ EVERY_ARGUMENT = {
     "compare_packages": {"package_ids": ["A", "B"]},
     "price_range": {"destination": "Tokyo"},
     "region_inventory": {"region": "Asia", "trip_type": "City Breaks"},
-    "currency_convert": {"amount": 100, "from_ccy": "EUR", "to_ccy": "JPY"},
+    "currency_convert": {"amount": 100, "from_currency": "EUR", "to_currency": "JPY"},
     "hybrid_trip_search": {"query": "Tokyo", "limit": 10},
 }
 

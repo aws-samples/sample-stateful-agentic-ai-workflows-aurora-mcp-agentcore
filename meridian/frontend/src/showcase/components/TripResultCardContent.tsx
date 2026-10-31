@@ -23,7 +23,7 @@ function money(price: number): string {
   return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
-type SignalTone = 'checkpoint' | 'plain';
+type SignalTone = 'snapshot' | 'plain';
 
 interface TripSignal {
   label: string;
@@ -53,7 +53,7 @@ function tripSignals(
     state.selectedPhase >= 4 &&
     state.memoryEnabled &&
     (state.memoryFacts.length > 0 || Boolean(state.travelerProfile));
-  const checkpointObserved =
+  const snapshotObserved =
     state.selectedPhase === 5 &&
     (state.workflowStatus === 'paused' ||
       state.workflowStatus === 'resumed' ||
@@ -63,8 +63,8 @@ function tripSignals(
         ),
       ));
 
-  if (checkpointObserved) {
-    signals.push({ label: 'Saved step', tone: 'checkpoint', icon: AuroraIcon });
+  if (snapshotObserved) {
+    signals.push({ label: 'Saved step', tone: 'snapshot', icon: AuroraIcon });
   }
   if (travelerContextObserved) {
     signals.push({ label: 'Traveler context recalled', tone: 'plain', icon: Sparkles });
@@ -161,7 +161,7 @@ export function TripResultCardContent({
                 return (
                   <span
                     key={signal.label}
-                    className={signal.tone === 'checkpoint' ? 'is-checkpoint' : undefined}
+                    className={signal.tone === 'snapshot' ? 'is-snapshot' : undefined}
                   >
                     <Icon size={featured ? 13 : 12} aria-hidden="true" />
                     {signal.label}

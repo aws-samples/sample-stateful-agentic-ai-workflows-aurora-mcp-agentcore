@@ -75,7 +75,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
   const current = state.selectedPhase === 5;
   const document = current && state.conversationId && journeyDocument?.active_thread_id === state.conversationId
     ? journeyDocument : null;
-  const checkpoint = document && isObserved(document.checkpoint) ? document.checkpoint : null;
+  const snapshot = document && isObserved(document.snapshot) ? document.snapshot : null;
   const hold = document && isObserved(document.hold) ? document.hold : null;
   // Use the latest hold attempt, including a transport error with no decision.
   const policySpan = current ? [...state.traceSpans].reverse().find(span =>
@@ -96,15 +96,15 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
       facts: recommendations.length ? [['Leading option', recommendations[0].name], ['Source', 'Current recovery response']] : [],
     },
     {
-      id: 'checkpoint', title: 'Save progress',
-      status: checkpoint ? document?.checkpoint_backend.durable ? 'Saved outside the worker' : 'Worker memory only' : 'Not yet verified',
-      tone: checkpoint ? 'observed' : 'pending',
-      description: checkpoint
-        ? document?.checkpoint_backend.durable
+      id: 'snapshot', title: 'Save progress',
+      status: snapshot ? document?.snapshot_store.durable ? 'Saved outside the worker' : 'Worker memory only' : 'Not yet verified',
+      tone: snapshot ? 'observed' : 'pending',
+      description: snapshot
+        ? document?.snapshot_store.durable
           ? 'The journey record shows the step was saved outside the worker. A replacement worker can resume after the previous lease clears.'
           : 'The saved step lives in worker memory only; restart recovery is not established.'
         : 'A saved shortlist needs a saved step before it can resume. Open System evidence to inspect the active journey.',
-      facts: checkpoint ? [['Saved step', checkpoint.checkpoint_id], ['Thread', checkpoint.thread_id], ['Source', checkpoint.source]] : [],
+      facts: snapshot ? [['Saved step', snapshot.snapshot_id], ['Thread', snapshot.thread_id], ['Source', snapshot.source]] : [],
     },
     policyCheck(policySpan, paused),
     {
