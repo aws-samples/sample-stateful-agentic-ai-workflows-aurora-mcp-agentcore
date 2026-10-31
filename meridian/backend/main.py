@@ -19,13 +19,12 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from backend.agentcore.caller_credential import CallerCredentialMiddleware
 from backend.agentcore.errors import CallerCredentialError
 from backend.authorization import TravelerAuthorizationError
 from backend.http_auth import require_http_principal
-from backend.legacy_field_names import with_legacy_names
 from backend.token_expiry import credential_error, error_code
 
 # Load environment variables from .env file
@@ -52,13 +51,7 @@ from backend.routers import (
 
 
 class HealthResponse(BaseModel):
-    """Response model for health check endpoint.
-
-    For one release it also carries the fields' names from before the snapshot rename
-    (``backend.legacy_field_names``), so a site published before the backend still reads it.
-    """
-
-    model_config = ConfigDict(extra="allow")
+    """Response model for health check endpoint."""
     status: str
     version: str
     environment: str
@@ -183,7 +176,7 @@ async def _health_payload() -> HealthResponse:
     # broken deployment. Local development runs without a Runtime, so it stays healthy there.
     runtime_missing = not runtime_configured and environment != "development"
     degraded_component = aurora.component or ("workflow_runtime" if runtime_missing else None)
-    payload = HealthResponse(
+    return HealthResponse(
         status="degraded" if (not aurora.ok or runtime_missing) else "healthy",
         version="1.0.0",
         environment=environment,
@@ -199,7 +192,6 @@ async def _health_payload() -> HealthResponse:
         degraded_error_class=aurora.error_class,
         database_user=aurora.db_user,
     )
-    return HealthResponse.model_validate(with_legacy_names(payload.model_dump()))
 
 
 @app.get("/", response_model=HealthResponse, dependencies=[Depends(require_http_principal)])

@@ -32,7 +32,6 @@ import type {
   JourneySummary,
   SessionStop,
 } from '../showcase/journey/types';
-import { withSnapshotNames } from './legacyFieldNames';
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -230,7 +229,7 @@ export async function fetchSessionIdentity(signal?: AbortSignal): Promise<Sessio
  * Fetch authenticated backend status with the same deadline as other API calls.
  */
 export async function fetchHealth<THealth = unknown>(signal?: AbortSignal): Promise<THealth> {
-  return withSnapshotNames(await requestJson<THealth>(HEALTH_URL_CANDIDATES[0], { signal }));
+  return requestJson<THealth>(HEALTH_URL_CANDIDATES[0], { signal });
 }
 
 /**
@@ -358,7 +357,7 @@ export async function fetchSessionReceipt(
   windowMinutes = 90,
   conversationId: string | null = null,
 ): Promise<SessionReceiptResponse> {
-  return withSnapshotNames(await requestJson<SessionReceiptResponse>(`${API_BASE}/diagnostics/session-receipt`, {
+  return requestJson(`${API_BASE}/diagnostics/session-receipt`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({
@@ -367,7 +366,7 @@ export async function fetchSessionReceipt(
       // Scopes the snapshot count to this session's workflow thread.
       conversation_id: conversationId,
     }),
-  }));
+  });
 
 }
 
@@ -380,9 +379,7 @@ export async function fetchSessionReceipt(
 export async function fetchJourneys(limit = 10, signal?: AbortSignal, threadId?: string): Promise<JourneySummary[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (threadId) params.set("thread_id", threadId);
-  const data = withSnapshotNames(
-    await requestJson<{ journeys: JourneySummary[] }>(`${API_BASE}/journeys?${params}`, { signal }),
-  );
+  const data = await requestJson<{ journeys: JourneySummary[] }>(`${API_BASE}/journeys?${params}`, { signal });
   return data.journeys ?? [];
 }
 
@@ -391,9 +388,9 @@ export async function fetchJourneyDocument(
   journeyId: string,
   signal?: AbortSignal,
 ): Promise<JourneyDocument> {
-  const document = withSnapshotNames(await requestJson<JourneyDocument>(
+  const document = await requestJson<JourneyDocument>(
     `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`, { signal },
-  ));
+  );
   return { ...document, received_at: Date.now() };
 }
 

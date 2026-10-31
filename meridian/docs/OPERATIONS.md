@@ -78,27 +78,13 @@ run `python scripts/apply_migrations.py --dry-run`, which runs each pending migr
 a transaction and rolls it back. Apply it before deploying the backend that writes those
 columns.
 
-Migration `024_journeys_snapshot_store.sql` is the first half of a rename. It adds
-`journeys.snapshot_store` beside the older store column, backfills it and installs a trigger that
-keeps the two equal, so an insert or update that names either column fills the other. Code from
-before this commit and code from this commit both work against the same table. Order the release
-this way, and nothing breaks between the steps:
-
-1. Apply 024: `python scripts/apply_migrations.py --pending`, then `--dry-run`, then apply it only
-   when 024 is the one pending migration.
-2. Update the `meridian-catalog-tools` Lambda's code first. It accepts both the new and the old
-   `currency_convert` argument names; the Lambda before this commit reads only the old ones.
-3. Deploy the AgentCore stack (both Runtimes, the MeridianHolds Gateway target and the catalog
-   target's schema). The backend, the Holds Lambda and the Workflow Runtime from this commit read
-   and write only `snapshot_store`.
-4. Publish the web app. For one release the backend also sends each renamed response field under
-   its old name (`backend/legacy_field_names.py`) and the frontend reads either
-   (`frontend/src/api/legacyFieldNames.ts`), so the site and the backend can go out in either order.
-5. Verify with `curl http://127.0.0.1:8013/api/health` and a journey read.
-6. Apply migration 025 from the follow-up commit, which drops the old column and the trigger,
-   and ship the commit that removes the old argument names from the catalog Lambda.
-
-The same commit renames the `/api/health` fields to `snapshot_store`, `snapshot_durable` and
+Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
+steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025
+drops the old column and the trigger. A new database applies both in one run. An existing
+deployment from before commit `95eff0c5` applies 024, deploys `95eff0c5` (the catalog Lambda
+first, then the AgentCore stack, then the web app), verifies, and only then applies 025 and
+deploys this commit: 025 breaks any writer still running code from before `95eff0c5`. The same
+two commits rename the `/api/health` fields to `snapshot_store`, `snapshot_durable` and
 `snapshot_required`, and the `currency_convert` arguments to `from_currency` and `to_currency`
 (see the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md#what-gets-deployed)).
 
@@ -338,17 +324,17 @@ In a `jwt` release the hosted backend connects as `meridian_backend`, the
 `MeridianHolds` Lambda connects as `meridian_gateway`, the
 `meridian-catalog-tools` Lambda as `meridian_catalog`, the workflow Runtime
 connects as `meridian_workflow`, and the Amazon Cognito trigger connects as
-`meridian_identity`. Three removals are
+`meridian_identity`. The hosted `jwt` release is published with
+`scripts/publish.py --tighten`, which drops the master and shared-token secret
+grants from the App Runner instance role; a publish without it plans to add both
+grants back, so read the roles stack's diff before applying. Two removals are
 not done:
 
-- The shared API token secret and its grant on the App Runner instance role.
-  `scripts/publish.py` stops passing the token to a `jwt` service, but the
-  secret still exists.
+- The shared API token secret. `scripts/publish.py` stops passing the token to a
+  `jwt` service and `--tighten` removes its grant, but the secret still exists.
 - The Basic edge check. The `jwt` viewer function holds no credential and reads
   no KeyValueStore, but the `iam` viewer function and the stored credential are
   still in the repository and the store.
-- `scripts/publish.py --tighten`, which drops the master and shared-token secret
-  grants from the App Runner instance role.
 
 Rolling back from `jwt` to `iam` has not been tested.
 

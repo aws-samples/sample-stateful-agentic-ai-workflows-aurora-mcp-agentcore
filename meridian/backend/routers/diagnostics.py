@@ -31,7 +31,7 @@ AWS docs:
 from typing import Any, List, NamedTuple, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
@@ -42,7 +42,6 @@ from backend.http_auth import (
     authorize_traveler,
     require_http_principal,
 )
-from backend.legacy_field_names import with_legacy_names
 from backend.logging_config import log_exception
 from backend.security.redaction import mask_payload
 
@@ -265,10 +264,6 @@ class ReceiptLine(BaseModel):
 
 
 class SessionReceiptResponse(BaseModel):
-    # For one release the receipt also carries its fields' names from before the snapshot
-    # rename (backend.legacy_field_names), so a site published before the backend reads it.
-    model_config = ConfigDict(extra="allow")
-
     traveler_id: str
     since: str
     lines: List[ReceiptLine]
@@ -554,7 +549,7 @@ async def session_receipt(
     backend_kind = str(backend_status.get("kind") or "not initialized")
     backend_durable = bool(backend_status.get("durable"))
 
-    receipt = SessionReceiptResponse(
+    return SessionReceiptResponse(
         traveler_id=traveler_id,
         since=f"last {request.window_minutes} minutes",
         lines=lines,
@@ -563,4 +558,3 @@ async def session_receipt(
         snapshot_store=backend_kind,
         snapshot_store_durable=backend_durable,
     )
-    return SessionReceiptResponse.model_validate(with_legacy_names(receipt.model_dump()))

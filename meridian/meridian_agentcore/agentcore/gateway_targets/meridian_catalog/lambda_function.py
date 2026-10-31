@@ -591,10 +591,8 @@ def currency_convert(args: dict) -> dict:
         amount = float(args["amount"])
     except (KeyError, TypeError, ValueError) as error:
         raise ToolInputError("amount must be a number") from error
-    # from_ccy and to_ccy are the names before the rename; a Gateway whose schema predates it
-    # still sends them, and the Lambda and the schema deploy separately.
-    source = str(args.get("from_currency", args.get("from_ccy", ""))).upper()
-    target = str(args.get("to_currency", args.get("to_ccy", ""))).upper()
+    source = str(args.get("from_currency", "")).upper()
+    target = str(args.get("to_currency", "")).upper()
     if source not in FX_PER_USD or target not in FX_PER_USD:
         return {"error": UNSUPPORTED_CURRENCY, "supported": sorted(FX_PER_USD)}
     usd = amount / FX_PER_USD[source]

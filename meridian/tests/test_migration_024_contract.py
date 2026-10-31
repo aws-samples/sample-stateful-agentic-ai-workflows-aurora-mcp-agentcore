@@ -13,6 +13,7 @@ MIGRATIONS = REPO / "meridian" / "scripts" / "migrations"
 MIGRATION = MIGRATIONS / "024_journeys_snapshot_store.sql"
 OLD_NAME = "checkpoint_backend"
 ORIGINAL_TABLE = MIGRATIONS / "007_journey_shell.sql"
+CONTRACT = MIGRATIONS / "025_drop_journeys_checkpoint_backend.sql"
 
 
 def _code() -> str:
@@ -58,13 +59,14 @@ def test_backfill_precedes_not_null_and_the_old_column_stays(statements):
     assert not any("drop column" in s or "rename" in s for s in statements)
 
 
-def test_no_later_migration_names_either_column_in_a_function_body_or_view():
+def test_only_025_names_the_old_column_after_this_migration_and_it_drops_it():
     later = [
         p.name
         for p in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
         if p.name not in (ORIGINAL_TABLE.name, MIGRATION.name) and OLD_NAME in p.read_text()
     ]
-    assert later == []
+    assert later == [CONTRACT.name]
+    assert "drop column if exists checkpoint_backend" in CONTRACT.read_text().lower()
 
 
 def _tracked_or_untracked_paths() -> list[pathlib.Path]:
@@ -84,12 +86,9 @@ def test_no_application_code_names_the_old_column_or_the_old_health_field():
         MIGRATION,
         pathlib.Path(__file__).resolve(),
         REPO / "meridian" / "tests" / "test_health_config.py",
-        REPO / "meridian" / "tests" / "test_migration_024_live.py",
-        # The one-release response shim: old field names beside the new ones, never the column.
-        REPO / "meridian" / "backend" / "legacy_field_names.py",
-        REPO / "meridian" / "tests" / "test_legacy_field_names.py",
-        REPO / "meridian" / "frontend" / "src" / "api" / "legacyFieldNames.ts",
-        REPO / "meridian" / "frontend" / "src" / "api" / "legacyFieldNames.test.ts",
+        CONTRACT,
+        REPO / "meridian" / "tests" / "test_migration_025_contract.py",
+        REPO / "meridian" / "tests" / "test_migration_025_live.py",
     }
     retired = (OLD_NAME, "checkpoint_required")
     holders = []

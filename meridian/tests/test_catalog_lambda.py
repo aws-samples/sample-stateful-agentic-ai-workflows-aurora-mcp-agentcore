@@ -297,14 +297,13 @@ def test_currency_convert_and_its_answer_for_an_unknown_currency(world):
     assert answer["error"] == "unsupported_currency" and "USD" in answer["supported"]
 
 
-def test_currency_convert_still_accepts_the_old_argument_names_and_prefers_the_new(world):
+def test_currency_convert_reads_only_the_current_argument_names(world):
     world()
     expected = round(100 / 0.92 * 156.4, 2)
-    assert call("currency_convert", {"amount": 100, "from_ccy": "eur", "to_ccy": "JPY"})[
-        "converted"] == expected
-    both = {"amount": 100, "from_currency": "EUR", "to_currency": "JPY",
-            "from_ccy": "XXX", "to_ccy": "XXX"}
-    assert call("currency_convert", both)["converted"] == expected
+    current = {"amount": 100, "from_currency": "eur", "to_currency": "JPY"}
+    assert call("currency_convert", current)["converted"] == expected
+    retired = {"amount": 100, "from_" + "ccy": "EUR", "to_" + "ccy": "JPY"}
+    assert call("currency_convert", retired)["error"] == "unsupported_currency"
 
 
 def test_search_trips_binds_every_value_as_a_parameter(world):

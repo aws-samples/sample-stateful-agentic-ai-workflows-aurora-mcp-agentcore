@@ -19,7 +19,6 @@ from backend.agents.phase_05_workflow.graph import snapshot_key
 from backend.db.journey_document import assemble_journey_document
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal, authorize_traveler, require_http_principal
-from backend.legacy_field_names import with_legacy_names
 
 router = APIRouter(prefix="/api/journeys", tags=["journeys"])
 
@@ -188,7 +187,7 @@ async def list_journeys(
             )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return with_legacy_names({
+    return {
         "traveler_id": owner,
         "journeys": [
             {
@@ -202,7 +201,7 @@ async def list_journeys(
             }
             for r in rows
         ],
-    })
+    }
 
 
 @router.get("/{journey_id}")
@@ -219,9 +218,9 @@ async def read_journey(
     """
     owner = await authorize_traveler(principal, traveler_id)
     try:
-        return with_legacy_names(await assemble_journey_document(
+        return await assemble_journey_document(
             get_rds_data_client(), journey_id, owner
-        ))
+        )
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)

@@ -170,9 +170,7 @@ async def main(worker_login: bool = False) -> int:
             raise AssertionError("Replacement workflow did not finish its resume")
         if result.get("hold_id") != before[0]["booking_id"]:
             raise AssertionError("Replacement worker did not receive the persisted hold")
-        # A Runtime deployed before the snapshot rename names the field resumed_from_checkpoint.
-        resumed_from = result.get("resumed_from_snapshot", result.get("resumed_from_checkpoint"))
-        if resumed_from != snapshot.get("created_at"):
+        if result.get("resumed_from_snapshot") != snapshot.get("created_at"):
             raise AssertionError("Replacement worker resumed a different snapshot")
         executions = await client.execute(
             "SELECT status, worker_id FROM journey_executions "

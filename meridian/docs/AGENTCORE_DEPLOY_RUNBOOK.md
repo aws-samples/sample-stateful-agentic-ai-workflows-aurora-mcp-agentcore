@@ -17,24 +17,13 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`. The Gateway serves eleven tools; the Concierge model is offered ten, because `release_hold` is for the Phase 5 workflow |
 | Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the catalog tools, `get_package_details` and `loyalty_balance`; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget; `meridian_release_governance` permits a release only when the call names a hold request and a journey. In `jwt` mode the render adds a fifth rule, `meridian_traveler_binding`, which covers `loyalty_balance`, `create_courtesy_hold`, `confirm_booking` and `release_hold`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
 
-To move an existing deployment to the commit that renames the `journeys` store column to
-`snapshot_store` and the `currency_convert` arguments to `from_currency` and `to_currency`,
-go in this order. In this order nothing breaks between the steps:
-
-1. Apply migration `024_journeys_snapshot_store.sql` (see
-   [Prepare the database](OPERATIONS.md#prepare-the-database)). It only adds the new column and
-   a trigger that keeps it equal to the old one, so the deployed code keeps working.
-2. Update the catalog Lambda's code (step 2) before the stack. The new code accepts both argument
-   spellings; the code before this commit reads only `from_ccy` and `to_ccy`, so a stack deployed
-   first would send it names it cannot read.
-3. Deploy the AgentCore stack (step 5). It carries the regenerated `tool-schema.json`, which
-   advertises only the new argument names.
-4. Publish the web app. For one release the backend also sends each renamed response field under
-   its old name and the frontend reads either, so the site and the backend can go out in either
-   order.
-5. Verify.
-6. Apply migration 025 from the follow-up commit, which drops the old column and the trigger, and
-   ship that commit, which also removes the old argument names and the old response field names.
+The `journeys` store column is `snapshot_store` and the `currency_convert` arguments are
+`from_currency` and `to_currency`. A new deployment gets both from the migrations and the
+templates. A deployment from before commit `95eff0c5` moves in two releases, so nothing breaks
+between the steps: first deploy `95eff0c5`, which reads and writes both spellings on every
+boundary, the way its own runbook orders it (migration 024, the catalog Lambda, the AgentCore stack,
+the web app, verify); then deploy this commit, applying migration 025 before it, which drops the
+old column once nothing writes it.
 
 The resources are declared in
 [`meridian_agentcore/agentcore/agentcore.template.json`](../meridian_agentcore/agentcore/agentcore.template.json).

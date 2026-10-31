@@ -91,10 +91,7 @@ def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_d
     assert body["snapshot_store"]
     assert "snapshot_durable" in body
     assert "snapshot_required" in body
-    # For one release a site published before the backend still reads the old names.
-    assert body["checkpoint_backend"] == body["snapshot_store"]
-    assert body["checkpoint_durable"] == body["snapshot_durable"]
-    assert body["checkpoint_required"] == body["snapshot_required"]
+    assert not {"checkpoint_backend", "checkpoint_durable", "checkpoint_required"} & set(body)
 
 
 def _healthy_probe(monkeypatch):
