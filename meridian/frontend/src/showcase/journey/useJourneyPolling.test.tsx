@@ -42,7 +42,7 @@ let commits = 0;
 function documentAfter(count: number): JourneyDocument {
   return Object.assign({
     journey_id: 'jrn_live', traveler_id: 'trv_meridian_demo', status: 'running',
-    active_thread_id: THREAD, snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
+    active_thread_id: THREAD, snapshot_store: { kind: 'Aurora workflow_snapshots', durable: true },
     executions: unavailable, snapshot: unavailable, recommendations: unavailable,
     authorization: unavailable, hold: unavailable,
   }, ...recorded.slice(0, count)) as JourneyDocument;

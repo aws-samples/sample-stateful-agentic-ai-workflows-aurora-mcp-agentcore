@@ -22,7 +22,7 @@ import json
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from backend.activity import ActivityEntry, Product, create_activity
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 from backend.config import config
 from backend.db.embedding_service import EmbeddingUnavailable, get_embedding_service
 from backend.db.rds_data_client import get_rds_data_client

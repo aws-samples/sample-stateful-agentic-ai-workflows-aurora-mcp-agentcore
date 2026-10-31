@@ -155,8 +155,6 @@ class FakeDb:
 
 
 class FakeEmbeddings:
-    last_model_used = "cohere.embed-v4:0"
-
     def __init__(self, clock: FakeClock) -> None:
         self.clock = clock
 

@@ -63,7 +63,7 @@ from backend.search_utils import (
     search_title,
 )
 from backend.tools import catalog_tools
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 
 # MCP client - Phase 2 runs one MCP server, meridian-concierge
 # (backend.mcp.concierge_server), which exposes typed tools: search_trips,
@@ -599,8 +599,8 @@ async def _call_domain_tool(
     traveler_id: str,
 ) -> Optional[Dict[str, Any]]:
     """Pick the most relevant custom-MCP tool(s) for a domain-flavored
-    prompt and call them. Returns a single dict (legacy single-call path)
-    OR a dict with `tool='multi'` and a `calls` list when more than one
+    prompt and call them. Returns a single dict when one tool matched,
+    or a dict with `tool='multi'` and a `calls` list when more than one
     tool intent was detected (e.g. "compare ... in EUR" fires BOTH
     compare_packages and currency_convert). Each call carries `elapsed_ms`,
     measured around the MCP tool call or calls it made."""

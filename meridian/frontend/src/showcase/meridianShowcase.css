@@ -629,10 +629,9 @@
 }
 
 .mds-chat-transcript {
-  /* Unified scroll: the chat transcript no longer owns its own scrollbar.
-     The whole main column scrolls as one surface, so chat history and the
-     recommendation grid below flow together (Claude / ChatGPT pattern).
-     Older turns simply scroll up off-screen as new turns arrive. */
+  /* Unified scroll: the chat transcript has no scrollbar of its own. The whole
+     main column scrolls as one surface, so chat history and the recommendation
+     grid below flow together, and older turns scroll up as new ones arrive. */
   display: flex;
   flex-direction: column;
   gap: 28px;

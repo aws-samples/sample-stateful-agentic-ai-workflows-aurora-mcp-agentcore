@@ -1,1 +1,1 @@
-"""Tools that capture the signed-in app for the deck (see scripts/identity_capture/capture.mjs)."""
+"""Tools that capture screenshots of the signed-in app (see scripts/identity_capture/capture.mjs)."""

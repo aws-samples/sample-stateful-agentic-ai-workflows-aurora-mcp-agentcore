@@ -100,13 +100,7 @@ def main(argv: list[str] | None = None) -> None:
         help="required with --apply: acknowledges that it deletes bookings",
     )
     parser.add_argument("--booking-id", help="release only this booking owned by the traveler")
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="deprecated: listing is already the default; accepted so older runbooks still run",
-    )
     args = parser.parse_args(argv)
-    if args.dry_run and args.apply:
-        parser.error("--dry-run lists only and cannot be combined with --apply.")
     if args.apply and not args.confirmed:
         parser.error(
             f"--apply deletes bookings; add {CONFIRM_FLAG} to run it. Nothing was changed."

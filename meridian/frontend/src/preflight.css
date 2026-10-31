@@ -253,8 +253,7 @@ video {
 }
 
 .bg-app {
-  /* Legacy hook from the Tailwind build. It must not pin a fixed colour --
-     that overrode the themed body background and left a light ground under
-     the dark UI. */
+  /* The page's ground follows the theme. A fixed colour here would override the
+     themed body background and leave a light ground under the dark UI. */
   background-color: var(--mds-ground);
 }

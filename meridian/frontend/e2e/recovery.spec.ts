@@ -160,7 +160,7 @@ async function routeJourney(
   await page.route(url => url.pathname === '/api/journeys', route => {
     const thread = new URL(route.request().url()).searchParams.get('thread_id') ?? state.thread;
     return route.fulfill({ json: { journeys: thread ? [{
-      journey_id: 'jrn_e2e', status: 'active', snapshot_store: 'AuroraDataApiSaver',
+      journey_id: 'jrn_e2e', status: 'active', snapshot_store: 'Aurora workflow_snapshots',
       active_thread_id: thread, execution_count: 1,
       created_at: '2026-10-07 09:59:00+00', updated_at: '2026-10-07 09:59:00+00',
     }] : [] } });

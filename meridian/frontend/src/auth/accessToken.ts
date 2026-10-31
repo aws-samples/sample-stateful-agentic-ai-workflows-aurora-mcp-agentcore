@@ -1,8 +1,8 @@
 /**
  * The one place the API client learns the signed-in person's access token.
  *
- * The auth session installs a provider when it signs in. Until then, and in the legacy
- * shared-token mode, nothing is installed and requests carry no Authorization header of
+ * The auth session installs a provider when it signs in. Until then, and in the shared-token
+ * (iam) release, nothing is installed and requests carry no Authorization header of
  * their own.
  */
 type TokenProvider = () => string | null;

@@ -62,7 +62,6 @@ def env_lines(cfg) -> dict[str, str]:
         "AGENTCORE_RUNTIME_NAME": cfg.runtime_name,
         "AGENTCORE_GATEWAY_URL": cfg.gateway_url,
         "AGENTCORE_GATEWAY_NAME": cfg.gateway_name,
-        "AGENTCORE_GATEWAY_SEARCH_TOOL": cfg.gateway_search_tool,
         "AGENTCORE_MEMORY_ID": cfg.memory_id,
         "AGENTCORE_MEMORY_NAME": cfg.memory_name,
     }

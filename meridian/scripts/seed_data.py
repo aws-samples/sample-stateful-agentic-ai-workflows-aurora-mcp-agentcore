@@ -36,7 +36,7 @@ try:
         DEMO_BOOKINGS,
     )
 except ImportError:
-    # Backward-compatible path when executed as a script: python scripts/seed_data.py
+    # Run as a script (python scripts/seed_data.py): import the sibling module directly.
     from travel_catalog import (
         TRIP_PACKAGES,
         TRAVELERS,

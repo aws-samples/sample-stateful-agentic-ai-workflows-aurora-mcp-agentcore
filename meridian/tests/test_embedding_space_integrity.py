@@ -48,7 +48,6 @@ def test_failure_raises_rather_than_substituting_a_model():
     service.corpus_model_id = "cohere.embed-v4:0"
     service.dimensions = 1024
     service.EMBEDDING_ATTEMPTS = 2
-    service._last_model_used = None
     service.MAX_TEXT_LENGTH = 2048
 
     def always_fails(*_args, **_kwargs):
@@ -65,7 +64,6 @@ def test_a_wrong_dimension_is_refused_immediately():
     service.corpus_model_id = "cohere.embed-v4:0"
     service.dimensions = 1024
     service.EMBEDDING_ATTEMPTS = 2
-    service._last_model_used = None
     service.MAX_TEXT_LENGTH = 2048
     service._invoke_model = lambda *_a, **_k: [0.0] * 512
 
@@ -74,14 +72,12 @@ def test_a_wrong_dimension_is_refused_immediately():
     assert "512" in str(caught.value)
 
 
-def test_evidence_reports_the_model_that_actually_ran():
+def test_a_good_vector_is_returned_as_is():
     service = EmbeddingService.__new__(EmbeddingService)
     service.corpus_model_id = "cohere.embed-v4:0"
     service.dimensions = 4
     service.EMBEDDING_ATTEMPTS = 2
-    service._last_model_used = None
     service.MAX_TEXT_LENGTH = 2048
     service._invoke_model = lambda *_a, **_k: [0.1, 0.2, 0.3, 0.4]
 
-    service.generate_text_embedding("a query")
-    assert service.last_model_used == "cohere.embed-v4:0"
+    assert service.generate_text_embedding("a query") == [0.1, 0.2, 0.3, 0.4]

@@ -4,37 +4,13 @@ import hashlib
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, Optional
 
 from backend.trace_names import WORKFLOW_CODE
 
 AGENT_FILE = "agents/phase_05_workflow/graph.py"
 HOLD_MINUTES = int(os.getenv("MERIDIAN_HOLD_MINUTES", "15"))
 SNAPSHOT_STORE = "Aurora workflow_snapshots"
-
-
-class WorkflowState(TypedDict, total=False):
-    """The folded state the steps read. Run inputs plus every node's delta."""
-
-    query: str
-    traveler_id: str
-    conversation_id: str
-    journey_id: str
-    travelers_count: int
-    intent: str
-    packages: List[Any]
-    response: str
-    activities: List[Dict[str, Any]]
-    availability_checks: int
-    hold_id: str
-    hold_expires_at: str
-    hold_created_at: str
-    hold_observed_at: str
-    hold_status: str
-    hold_package: str
-    hold_duration: str
-    hold_seats_remaining: int
-    hold_intent: Dict[str, Any]
 
 
 class WorkflowAuthorizationError(PermissionError):

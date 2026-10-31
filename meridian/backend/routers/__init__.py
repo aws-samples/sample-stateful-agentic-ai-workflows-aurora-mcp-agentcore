@@ -3,7 +3,7 @@ API Routers for Meridian Backend.
 
 Contains route handlers for:
 - chat: Chat endpoints for agent interactions
-- products: Trip catalog endpoints (legacy /api/products alias)
+- products: the trip catalog, as /api/packages and in the frontend's Product shape as /api/products
 - memory: Traveler memory endpoints
 - diagnostics: RLS-probe and other live system diagnostics
 - journeys: journey evidence documents behind Presenter proof
@@ -11,7 +11,7 @@ Contains route handlers for:
 """
 
 from .chat import router as chat_router
-from .products import router as packages_router, legacy_router as products_router
+from .products import router as packages_router, product_router as products_router
 from .memory import router as memory_router
 from .diagnostics import router as diagnostics_router
 from .journeys import router as journeys_router

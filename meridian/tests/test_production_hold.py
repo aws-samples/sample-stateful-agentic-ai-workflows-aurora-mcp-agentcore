@@ -23,7 +23,7 @@ from backend.agents.phase_04_production.write_outcome import (
 )
 from backend.agents.phase_04_production import production_agent as production_agent_mod
 from backend.agents.phase_04_production.production_agent import HoldTarget
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 from tests.test_production_transaction_boundaries import build_agent, remembered, runtime_decision
 
 TARGET = HoldTarget(package_id="CTY-002", duration="7 nights", travelers=2, unit_price_cents=250000)

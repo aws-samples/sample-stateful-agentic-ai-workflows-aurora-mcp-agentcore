@@ -48,15 +48,3 @@ def test_an_unseeded_traveler_is_refused(client):
     assert exit_info.value.code == 3
     assert deletes(client) == []
 
-
-def test_the_deprecated_dry_run_flag_lists_and_deletes_nothing(client):
-    rdb.main(["--dry-run"])
-    assert deletes(client) == []
-    client.begin_transaction.assert_not_called()
-
-
-def test_dry_run_with_apply_is_refused(client):
-    with pytest.raises(SystemExit) as exit_info:
-        rdb.main(["--dry-run", "--apply", "--i-understand-this-changes-aws"])
-    assert exit_info.value.code == 3
-    assert deletes(client) == []

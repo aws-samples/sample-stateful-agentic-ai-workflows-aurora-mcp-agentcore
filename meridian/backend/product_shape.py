@@ -1,4 +1,4 @@
-"""Map trip_packages rows to legacy API Product shape (frontend compat)."""
+"""Map trip_packages rows to the Product shape the frontend reads (`product_id` is the `package_id`)."""
 
 from typing import Any, Dict
 

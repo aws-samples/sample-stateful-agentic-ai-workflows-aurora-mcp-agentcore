@@ -145,12 +145,12 @@ describe('TracePanel step sources', () => {
       selectedPhase: 3,
       messages: [{ role: 'bot', text: 'Two retreats.', modelLabel: 'Claude Haiku 4.5' }],
       traceSpans: [{
-        ...traceSpan, id: 'polish', sql: undefined, category: 'model', latencyMs: 1400,
-        name: 'Bedrock · concierge polish (global.anthropic.claude-haiku-4-5-20251001-v1:0)',
+        ...traceSpan, id: 'reply', sql: undefined, category: 'model', latencyMs: 1400,
+        agent: 'RetrievalAgent', name: 'Retrieval agent: reply written',
       }],
     })} />);
     expect(container.querySelector('.mds-step-source'))
-      .toHaveTextContent('Bedrock, Claude Haiku 4.5, 1.4 s');
+      .toHaveTextContent('Strands on Bedrock, Claude Haiku 4.5, 1.4 s');
   });
 });
 
@@ -256,8 +256,8 @@ describe('TracePanel collapse behavior', () => {
       traceSpans: [
         span('s1', 'security', 'Workload traveler grant allowed'),
         span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),
-        span('s3', 'gateway', 'AgentCore Gateway · tools/call → hybrid_trip_search'),
-        span('s4', 'runtime', 'AgentCore Runtime · turn complete'),
+        span('s3', 'gateway', 'AgentCore Gateway: tools/call → hybrid_trip_search'),
+        span('s4', 'runtime', 'AgentCore Runtime: turn complete'),
         span('s5', 'synthesis', 'Memory-grounded reply ready'),
       ],
     });
@@ -284,7 +284,7 @@ describe('TracePanel collapse behavior', () => {
   it('does not credit a failed query or a snapshot write as completed traveler recall', () => {
     render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [
       { ...traceSpan, status: 'error' },
-      { ...traceSpan, id: 'cp', category: 'memory_short', name: 'Checkpoint persisted', sql: undefined },
+      { ...traceSpan, id: 'cp', category: 'memory_short', name: 'Snapshot saved: AuroraSnapshotStorage.write', sql: undefined },
     ] })} />);
     expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-error');
     expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
@@ -292,7 +292,7 @@ describe('TracePanel collapse behavior', () => {
 
   it('still credits the opening step to the runtime turn that started it', () => {
     const state = makeState({
-      traceSpans: [{ ...traceSpan, id: 'r1', category: 'runtime', name: 'AgentCore Runtime · turn started', sql: undefined }],
+      traceSpans: [{ ...traceSpan, id: 'r1', category: 'runtime', name: 'AgentCore Runtime: turn started', sql: undefined }],
     });
     render(<TracePanel state={state} />);
     expect(screen.getByText('Understanding request').closest('li')).toHaveClass('is-done');
@@ -386,11 +386,11 @@ describe('TracePanel collapse behavior', () => {
     render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [] })} />);
     fireEvent.click(screen.getByText('Inspect evidence'));
     expect(screen.getByRole('button', { name: 'Run RLS probe' })).toBeVisible();
-    expect(screen.queryByText('Workload authorization + RLS · live')).not.toBeInTheDocument();
+    expect(screen.queryByText('Access check + RLS: live')).not.toBeInTheDocument();
   });
 
   it('preserves the observed MCP contract as the initial evidence view', () => {
-    render(<TracePanel state={makeState({ selectedPhase: 2, traceSpans: [{ ...traceSpan, name: 'postgres-mcp · run_query' }] })} />);
+    render(<TracePanel state={makeState({ selectedPhase: 2, traceSpans: [{ ...traceSpan, name: 'postgres-mcp: run_query' }] })} />);
     fireEvent.click(screen.getByText('Inspect evidence'));
     expect(screen.getByRole('region', { name: 'MCP tool contract' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'MCP tools' })).toHaveAttribute('aria-pressed', 'true');
@@ -578,7 +578,6 @@ describe('TracePanel collapse behavior', () => {
 it.each([
   'Snapshot saved: AuroraSnapshotStorage.write',
   'Workflow resumed from a saved step',
-  'Checkpoint · AuroraSnapshotStorage.write',
 ])('files "%s" under preparing the response, not recall', (name) => {
   render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [
     { ...traceSpan, id: 'saved', category: 'memory_short', type: 'tool_call', name, sql: undefined },

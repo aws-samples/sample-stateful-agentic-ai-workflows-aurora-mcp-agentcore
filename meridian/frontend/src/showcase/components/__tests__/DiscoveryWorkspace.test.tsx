@@ -99,7 +99,7 @@ describe('DiscoveryWorkspace catalog states', () => {
     const state = makeState({
       messages: [
         { role: 'user', text: 'What is the price range for Tokyo trips?' },
-        { role: 'bot', text: 'Price range for Tokyo: low $1,199 · average $1,950 · high $3,299.' },
+        { role: 'bot', text: 'Price range for Tokyo: low $1,199, average $1,950, high $3,299.' },
       ],
     });
     render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);

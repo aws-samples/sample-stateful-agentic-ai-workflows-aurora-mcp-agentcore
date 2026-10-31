@@ -247,10 +247,10 @@
   }
 }
 
-/* Concierge has a composer dock now, so its stage can no longer be pinned to
-   the full viewport height: at 100dvh the grid ran under the dock and the
-   dock sat over the bottom of the trip cards. The main grid's first row
-   already resolves to the space the dock leaves. */
+/* Concierge has a composer dock, so its stage is not pinned to the full viewport
+   height: at 100dvh the grid would run under the dock and the dock would sit over
+   the bottom of the trip cards. The main grid's first row resolves to the space
+   the dock leaves. */
 .mds-root .mds-desktop-app.is-discovery .mds-desktop-scroll {
   height: auto;
   min-height: 0;

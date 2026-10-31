@@ -603,16 +603,16 @@ describe('Experience presentation polish', () => {
       id: name, name, category: 'orchestration', type: 'tool_call', status: 'ok',
       latencyMs: null, fields: [], ...extra,
     });
-    const snapshot = traceSpan('Checkpoint · AuroraDataApiSaver.put', {
-      component: 'Aurora · LangGraph snapshot tables', latencyMs: 106,
-      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    const snapshot = traceSpan('Snapshot saved: AuroraSnapshotStorage.write', {
+      component: 'Aurora workflow_snapshots', latencyMs: 106,
+      fields: [{ label: 'snapshot_durable', value: 'true' }],
     });
     const paused = [
       traceSpan('Workflow node: classify → plan', {
-        component: 'LangGraph StateGraph', latencyMs: 0,
+        component: 'Strands Graph', latencyMs: 0,
       }),
       traceSpan('Workflow node: search', {
-        component: 'LangGraph → SearchAgent', latencyMs: 956,
+        component: 'Strands Graph → AgentCore Gateway: hybrid_trip_search', latencyMs: 956,
       }),
       traceSpan('Embedding generated', { latencyMs: 221 }),
       traceSpan('Hybrid candidates fetched', { latencyMs: 338, sql: 'SELECT 1' }),
@@ -658,10 +658,10 @@ describe('Experience presentation polish', () => {
 
   it('glows the Aurora mark once, when a watched run confirms the snapshot', () => {
     const snapshot = {
-      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      id: 'cp', name: 'Snapshot saved: AuroraSnapshotStorage.write', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph snapshot tables',
-      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+      component: 'Aurora workflow_snapshots',
+      fields: [{ label: 'snapshot_durable', value: 'true' }],
     };
     const search = {
       id: 'search', name: 'Workflow node: search', category: 'orchestration',
@@ -703,10 +703,10 @@ describe('Experience presentation polish', () => {
       </AnimatePresence>
     );
     const snapshot = {
-      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      id: 'cp', name: 'Snapshot saved: AuroraSnapshotStorage.write', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph snapshot tables',
-      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+      component: 'Aurora workflow_snapshots',
+      fields: [{ label: 'snapshot_durable', value: 'true' }],
     };
     const search = {
       id: 'search', name: 'Workflow node: search', category: 'orchestration',
@@ -736,10 +736,10 @@ describe('Experience presentation polish', () => {
 
   it('does not glow or animate a snapshot confirmed before the resume it watches', () => {
     const snapshot = {
-      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      id: 'cp', name: 'Snapshot saved: AuroraSnapshotStorage.write', category: 'memory_short',
       type: 'tool_call', status: 'ok', latencyMs: 106,
-      component: 'Aurora · LangGraph snapshot tables',
-      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+      component: 'Aurora workflow_snapshots',
+      fields: [{ label: 'snapshot_durable', value: 'true' }],
     };
     const search = {
       id: 'search', name: 'Workflow node: search', category: 'orchestration',
@@ -801,7 +801,7 @@ describe('Experience presentation polish', () => {
           traceSpans: [
             {
               id: 'snapshot-error',
-              name: 'LangGraph workflow error',
+              name: 'Workflow run failed',
               category: 'error',
               type: 'error',
               status: 'error',
@@ -900,14 +900,14 @@ describe('Experience presentation polish', () => {
       traceSpans: [
         {
           id: 'snapshot',
-          name: 'Checkpoint · PostgresSaver.put',
+          name: 'Snapshot saved: AuroraSnapshotStorage.write',
           category: 'memory_short',
           type: 'tool_call',
           status: 'ok',
           latencyMs: 12,
-          component: 'Aurora · LangGraph snapshot tables',
+          component: 'Aurora workflow_snapshots',
           fields: [
-            { label: 'checkpointer', value: 'PostgresSaver (Aurora · pooled)' },
+            { label: 'snapshot_store', value: 'Aurora workflow_snapshots' },
           ],
         },
       ],
@@ -1068,7 +1068,6 @@ describe('Experience presentation polish', () => {
   it.each([
     'Snapshot saved: AuroraSnapshotStorage.write',
     'Workflow resumed from a saved step',
-    'Checkpoint · AuroraSnapshotStorage.write',
   ])('shows the Saved chip once a "%s" span is in the trace', (name) => {
     const product = {
       product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
@@ -1182,10 +1181,10 @@ describe('Experience presentation polish', () => {
 
   it('keeps failed inventory, memory, and snapshot operations unverified', () => {
     const state = makeState({ traceSpans: [{
-      id: 'failed', name: 'Checkpoint · AuroraDataApiSaver.put',
+      id: 'failed', name: 'Snapshot saved: AuroraSnapshotStorage.write',
       details: 'availability fan-out, traveler memory, and loyalty failed',
       category: 'orchestration', type: 'tool_call', status: 'error',
-      latencyMs: 1, fields: [{ label: 'checkpoint_durable', value: 'true' }],
+      latencyMs: 1, fields: [{ label: 'snapshot_durable', value: 'true' }],
     }] });
     expect(deriveRecoveryEvidence(state)).toMatchObject({
       availabilityObserved: false, loyaltyObserved: false, memoryObserved: false,

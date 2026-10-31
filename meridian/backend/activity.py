@@ -38,7 +38,7 @@ class ActivityEntry(BaseModel):
 
 
 class Product(BaseModel):
-    """Trip package in API shape (legacy field names for frontend)."""
+    """A trip package in the Product shape the frontend reads."""
     product_id: str
     name: str
     brand: str

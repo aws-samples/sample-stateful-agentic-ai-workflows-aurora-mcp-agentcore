@@ -1,6 +1,6 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
 import {
-  isLegacyGraphComponent, isSnapshotTitle, isSqlStep, RUNTIME_TURN_COMPLETE,
+  isSnapshotTitle, isSqlStep, RUNTIME_TURN_COMPLETE,
 } from './spanTitles';
 
 // Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
@@ -24,13 +24,12 @@ const named = (span: ShowcaseTraceSpan) => `${span.name} ${component(span)}`;
 const identityRefused = (span: ShowcaseTraceSpan) =>
   span.fields.some(field => field.label === 'refused_by' && field.value === 'identity_check');
 
-// The Retrieval agent's own turn. Saved journeys and earlier backends carry the supervisor titles.
-const STRANDS_AGENT = new RegExp('^(Retrieval agent: (turn started|reply written)|'
-  + 'Supervisor (processing|completed)|RetrievalAgent invoked)', 'i');
+// The Retrieval agent's own turn.
+const STRANDS_AGENT = /^Retrieval agent: (turn started|reply written)/i;
 const CONCIERGE_SERVER = /meridian-concierge MCP server/i;
-const BEDROCK_CALL = /^Bedrock|concierge polish|embedding|^Cohere rerank/i;
+const BEDROCK_CALL = /^Bedrock|embedding|^Cohere rerank/i;
 const AURORA_QUERY = new RegExp('^(Semantic search|Hybrid candidate|Catalog card|'
-  + 'Lexical candidates|(Availability|PackageAgent): (Finding|Checking)|Aurora recall)', 'i');
+  + 'Availability: (Finding|Checking)|Aurora recall)', 'i');
 
 // First match wins. Routing and in-memory steps fall through to the app itself.
 const SERVICE_RULES: ServiceRule[] = [
@@ -44,7 +43,6 @@ const SERVICE_RULES: ServiceRule[] = [
   { service: 'AgentCore Runtime', matches: span => /AgentCore Runtime/i.test(named(span)) },
   { service: 'AgentCore Memory', matches: span => /AgentCore Memory/i.test(named(span)) },
   { service: 'AWS STS', matches: span => /AWS STS/i.test(component(span)) },
-  { service: 'Worker memory', matches: span => /MemorySaver/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => isSnapshotTitle(span.name) },
   { service: 'Aurora RLS', matches: span => /^Aurora RLS/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => /^Aurora/i.test(component(span)) },
@@ -54,9 +52,7 @@ const SERVICE_RULES: ServiceRule[] = [
   { service: 'Bedrock', matches: span => BEDROCK_CALL.test(span.name) },
   {
     service: 'Strands Graph',
-    matches: span => /^Strands Graph/i.test(component(span))
-      || isLegacyGraphComponent(component(span))
-      || /^Workflow node:/i.test(span.name),
+    matches: span => /^Strands Graph/i.test(component(span)) || /^Workflow node:/i.test(span.name),
   },
   {
     service: 'Aurora Data API',
@@ -70,9 +66,8 @@ export function stepService(span: ShowcaseTraceSpan): string {
   return SERVICE_RULES.find(rule => rule.matches(span))?.service ?? 'Meridian app';
 }
 
-// Steps a model wrote: the Retrieval agent's reply (and the polish saved journeys carry), and the Runtime's turn.
-const MODEL_STEP = new RegExp(
-  `concierge polish|Retrieval agent: reply written|${RUNTIME_TURN_COMPLETE.source}`, 'i');
+// Steps a model wrote: the Retrieval agent's reply and the Runtime's turn.
+const MODEL_STEP = new RegExp(`Retrieval agent: reply written|${RUNTIME_TURN_COMPLETE.source}`, 'i');
 
 function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: string): string | null {
   const decision = span.fields.find(field => field.label === 'cedar_decision')?.value;

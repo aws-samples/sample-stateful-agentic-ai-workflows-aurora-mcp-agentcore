@@ -15,13 +15,15 @@ function span(name: string, overrides: Partial<ShowcaseTraceSpan> = {}): Showcas
 const nb = (text: string) => text.replace(/(\d) (ms|s)\b/g, '$1 $2');
 const flow = { resumeMode: false, failed: false };
 
-// What the backend emits now.
-const current: ShowcaseTraceSpan[] = [
+// The Phase 5 spans the backend writes.
+const spans: ShowcaseTraceSpan[] = [
   span('Workflow node: classify → plan', {
     component: 'Strands Graph', latencyMs: 0,
     fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'plan' }],
   }),
-  span('Workflow node: search', { component: 'Strands Graph → SearchAgent', latencyMs: 956 }),
+  span('Workflow node: search', {
+    component: 'Strands Graph → AgentCore Gateway: hybrid_trip_search', latencyMs: 956,
+  }),
   span('Snapshot saved: AuroraSnapshotStorage.write', {
     component: 'Aurora workflow_snapshots', latencyMs: 458,
     sql: 'INSERT INTO workflow_snapshots (storage_key) VALUES ($1);',
@@ -37,29 +39,7 @@ const current: ShowcaseTraceSpan[] = [
   }),
 ];
 
-// What a journey saved before the rename replays from its stored snapshot.
-const legacy: ShowcaseTraceSpan[] = [
-  span('Workflow node: classify → plan', {
-    component: 'Strands Graph', latencyMs: 0,
-    fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'plan' }],
-  }),
-  span('Workflow node: search', { component: 'Strands Graph → SearchAgent', latencyMs: 956 }),
-  span('Checkpoint · AuroraSnapshotStorage.write', {
-    component: 'Aurora workflow_snapshots', latencyMs: 458,
-    sql: 'INSERT INTO workflow_snapshots (storage_key) VALUES ($1);',
-    fields: [
-      { label: 'checkpointer', value: 'Aurora workflow_snapshots' },
-      { label: 'checkpoint_durable', value: 'true' },
-      { label: 'checkpoint_store', value: 'workflow_snapshots' },
-    ],
-  }),
-  span('Workflow paused at checkpoint', {
-    component: 'Strands Graph', status: 'held',
-    fields: [{ label: 'checkpoint_durable', value: 'true' }],
-  }),
-];
-
-describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (_name, spans) => {
+describe('Phase 5 titles', () => {
   it('labels workflow nodes Strands Graph and the snapshot Aurora Data API', () => {
     expect(stepService(spans[0])).toBe('Strands Graph');
     expect(stepService(spans[2])).toBe('Aurora Data API');
@@ -82,7 +62,7 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
     expect(state.durable).toBe(true);
   });
 
-  it('reads the store and the table under either label', () => {
+  it('reads the store and the table', () => {
     const workflow = deriveWorkflowState(spans);
     expect(workflow.snapshot).toBe('Aurora workflow_snapshots');
     expect(workflow.table).toBe('workflow_snapshots');
@@ -91,30 +71,30 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
   it('refuses a snapshot that reports itself non-durable', () => {
     const notDurable = spans.map(item => ({
       ...item,
-      fields: item.fields.map(field => (/_durable$/.test(field.label)
+      fields: item.fields.map(field => (field.label === 'snapshot_durable'
         ? { ...field, value: 'false' } : field)),
     }));
     expect(hasDurableSnapshot(notDurable)).toBe(false);
   });
+
+  it('reports no durable snapshot when no span says so', () => {
+    expect(hasDurableSnapshot(spans.slice(0, 2))).toBe(false);
+  });
 });
 
-describe('titles with a colon or the saved-journey middle dot', () => {
-  it('takes the part after either separator', () => {
+describe('title and details parts', () => {
+  it('takes the part after the last colon', () => {
     expect(lastTitlePart('postgres-mcp: run_query')).toBe('run_query');
-    expect(lastTitlePart('postgres-mcp \u00b7 run_query')).toBe('run_query');
     expect(lastTitlePart('run_query')).toBe('run_query');
   });
 
-  it('finds the Runtime turn in both forms', () => {
+  it('finds the Runtime turn', () => {
     expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime: turn complete')).toBe(true);
-    expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime \u00b7 turn complete')).toBe(true);
     expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime: turn started')).toBe(false);
   });
 
-  it('splits the MCP details line in both forms', () => {
-    const now = MCP_ARGS_DETAILS.exec("args={'a': 1}, result: Compared 2 packages");
-    expect([now?.[1], now?.[2]]).toEqual(["{'a': 1}", 'Compared 2 packages']);
-    const saved = MCP_ARGS_DETAILS.exec("args={'a': 1} \u00b7 Compared 2 packages");
-    expect([saved?.[1], saved?.[2]]).toEqual(["{'a': 1}", 'Compared 2 packages']);
+  it('splits the MCP details line', () => {
+    const parts = MCP_ARGS_DETAILS.exec("args={'a': 1}, result: Compared 2 packages");
+    expect([parts?.[1], parts?.[2]]).toEqual(["{'a': 1}", 'Compared 2 packages']);
   });
 });

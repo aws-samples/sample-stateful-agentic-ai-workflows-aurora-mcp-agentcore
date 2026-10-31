@@ -71,7 +71,6 @@ class EmbeddingService:
         # that looks like a ranking. Changing this value requires re-embedding
         # the corpus.
         self.corpus_model_id = os.getenv("EMBEDDING_MODEL", self.PRIMARY_MODEL)
-        self._last_model_used: Optional[str] = None
 
     @property
     def bedrock_client(self):
@@ -84,15 +83,6 @@ class EmbeddingService:
     def model_id(self) -> str:
         """The model the corpus is embedded with, and the only one queried."""
         return self.corpus_model_id
-
-    @property
-    def last_model_used(self) -> Optional[str]:
-        """The model that actually produced the most recent vector.
-
-        Evidence surfaces should report this rather than the configured model:
-        the two used to differ silently whenever a fallback fired.
-        """
-        return self._last_model_used
 
     @staticmethod
     def _truncate_for(model_id: str) -> str:
@@ -174,7 +164,6 @@ class EmbeddingService:
                     f"but the catalog column is {self.dimensions}"
                 ) from None
 
-            self._last_model_used = self.corpus_model_id
             return embedding
 
         raise EmbeddingUnavailable(

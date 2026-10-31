@@ -4,61 +4,35 @@ export const PAUSED_TITLE = 'Workflow paused at a saved step';
 export const RESUMED_TITLE = 'Workflow resumed from a saved step';
 export const DURABLE_FIELD = 'snapshot_durable';
 
-/** The fields that name the store and the table a snapshot went to, newest label first. */
-export const SNAPSHOT_STORE_FIELDS = ['snapshot_store', 'checkpointer'] as const;
-export const SNAPSHOT_TABLE_FIELDS = ['snapshot_table', 'checkpoint_store'] as const;
+/** The fields that name the store and the table a snapshot went to. */
+export const SNAPSHOT_STORE_FIELD = 'snapshot_store';
+export const SNAPSHOT_TABLE_FIELD = 'snapshot_table';
 
-/** The wording from before the Strands Graph. A journey saved earlier replays its spans from
- *  the stored snapshot, so the old titles and field name still reach every parser here. */
-export const LEGACY_TITLES = {
-  snapshotPrefix: 'Checkpoint · ',
-  paused: 'Workflow paused at checkpoint',
-  resumed: 'Workflow resumed from checkpoint',
-  durableField: 'checkpoint_durable',
-  storeField: 'checkpointer',
-  tableField: 'checkpoint_store',
-} as const;
+/** The part of a span title after its last colon. */
+export const lastTitlePart = (name: string) => name.split(':').pop()?.trim() ?? name;
 
-/** Phases 3 and 4 and journeys saved earlier still carry a middle dot between the parts of a
- *  span title or its details, so the parsers split on it. Nothing here shows it to the room. */
-export const LEGACY_SEPARATOR = '·';
+/** The Runtime's closing span. */
+export const RUNTIME_TURN_COMPLETE = /AgentCore Runtime: turn complete/i;
 
-/** The part of a title after its separator: a colon now, a middle dot in saved journeys. */
-export const lastTitlePart = (name: string) =>
-  name.split(new RegExp(`${LEGACY_SEPARATOR}|:`)).pop()?.trim() ?? name;
-
-/** The Runtime's closing span: "AgentCore Runtime: turn complete", or the saved-journey form. */
-export const RUNTIME_TURN_COMPLETE =
-  new RegExp(`AgentCore Runtime(?::|\\s${LEGACY_SEPARATOR}) turn complete`, 'i');
-
-/** The MCP details line: "args=..., result: summary", or the saved-journey "args=... · summary". */
-export const MCP_ARGS_DETAILS =
-  new RegExp(`^args=(.*?)(?:\\s+${LEGACY_SEPARATOR}\\s+|,\\s+result:\\s+)(.*)$`, 's');
-
-/** The component name earlier workflow spans carried, kept so a saved journey still routes. */
-export const isLegacyGraphComponent = (component: string) => /^LangGraph/i.test(component);
-
-const startsWithAny = (name: string, prefixes: string[]) =>
-  prefixes.some(prefix => name.startsWith(prefix));
+/** The MCP details line: "args=..., result: summary". */
+export const MCP_ARGS_DETAILS = /^args=(.*?),\s+result:\s+(.*)$/s;
 
 /** The span that records one snapshot written to Aurora. */
-export const isSnapshotTitle = (name: string) =>
-  startsWithAny(name, [SNAPSHOT_PREFIX, LEGACY_TITLES.snapshotPrefix]);
+export const isSnapshotTitle = (name: string) => name.startsWith(SNAPSHOT_PREFIX);
 
 /** The spans that report a run paused at, or resumed from, a saved step. */
 export const isSavedStepStatusTitle = (name: string) =>
-  startsWithAny(name, [PAUSED_TITLE, RESUMED_TITLE, LEGACY_TITLES.paused, LEGACY_TITLES.resumed]);
+  name.startsWith(PAUSED_TITLE) || name.startsWith(RESUMED_TITLE);
 
 /** Any span that says progress was saved. */
 export const isSavedStepTitle = (name: string) =>
   isSnapshotTitle(name) || isSavedStepStatusTitle(name);
 
 /** The field that says a snapshot reached Aurora. */
-export const isDurableField = (label: string) =>
-  label === DURABLE_FIELD || label === LEGACY_TITLES.durableField;
+export const isDurableField = (label: string) => label === DURABLE_FIELD;
 
-/** Trace steps that run as code carry these agent names. A journey saved earlier replays the
- *  names it was stored with, so the old ones still route. */
+/** Trace steps that run as code carry these agent names. The Phase 1 reference agent's own
+ *  entries carry its class name, SQLAgent. */
 export const CODE_AGENTS = {
   sql: 'SQL search (code)',
   retrieval: 'Hybrid retrieval (code)',
@@ -66,5 +40,4 @@ export const CODE_AGENTS = {
 
 export const isSqlStep = (agent?: string) => agent === CODE_AGENTS.sql || agent === 'SQLAgent';
 
-export const isRetrievalStep = (agent?: string) =>
-  agent === CODE_AGENTS.retrieval || agent === 'SearchAgent';
+export const isRetrievalStep = (agent?: string) => agent === CODE_AGENTS.retrieval;

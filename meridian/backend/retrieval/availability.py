@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from backend.activity import ActivityEntry, Product, create_activity
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 from backend.db.rds_data_client import get_rds_data_client
 from backend.search_utils import display_sql
 from backend.timing import clock, elapsed_ms

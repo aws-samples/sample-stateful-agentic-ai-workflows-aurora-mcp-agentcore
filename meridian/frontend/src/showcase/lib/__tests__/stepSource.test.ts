@@ -47,7 +47,7 @@ describe('formatLatency', () => {
 });
 
 describe('stepSourceLabel', () => {
-  it('routes SQL work by the code name, and still by the name saved journeys carry', () => {
+  it('routes SQL work by the code name and by the reference agent\'s name', () => {
     expect(label({
       name: 'Found 5 trips', agent: 'SQL search (code)', type: 'result', latencyMs: 323,
     }))
@@ -66,22 +66,15 @@ describe('stepSourceLabel', () => {
       category: 'memory_short', latencyMs: 59,
     })).toBe(nb('Aurora Data API, 59 ms'));
     expect(label({
-      name: 'Checkpoint · AuroraDataApiSaver.put',
-      component: 'Aurora: LangGraph snapshot tables', category: 'memory_short', latencyMs: 106,
-    })).toBe(nb('Aurora Data API, 106 ms'));
-    expect(label({
       name: 'Snapshot saved: AuroraSnapshotStorage.write',
       component: 'Aurora workflow_snapshots', category: 'memory_short', latencyMs: 106,
     })).toBe(nb('Aurora Data API, 106 ms'));
   });
 
   it('names the model that wrote the reply on the step it wrote, and only there', () => {
-    const polish = {
-      name: 'Bedrock: concierge polish (global.anthropic.claude-sonnet-5)', category: 'model',
-      agent: 'RetrievalAgent', latencyMs: 1400,
-    };
-    expect(label(polish, 'Claude Sonnet 5')).toBe(nb('Bedrock, Claude Sonnet 5, 1.4 s'));
-    expect(label({ name: 'Cohere rerank applied', agent: 'SearchAgent', latencyMs: 209 },
+    const reply = { name: 'Retrieval agent: reply written', agent: 'RetrievalAgent', latencyMs: 1400 };
+    expect(label(reply, 'Claude Sonnet 5')).toBe(nb('Strands on Bedrock, Claude Sonnet 5, 1.4 s'));
+    expect(label({ name: 'Cohere rerank applied', agent: 'RetrievalAgent', latencyMs: 209 },
       'Claude Sonnet 5')).toBe(nb('Bedrock, 209 ms'));
     const runtime = {
       name: 'AgentCore Runtime: turn complete', category: 'runtime',
@@ -114,34 +107,6 @@ describe('stepSourceLabel', () => {
     })).toBe('AgentCore Gateway');
   });
 
-  it('still reads the middle-dot titles that saved journeys and earlier backends carry', () => {
-    const runtime = {
-      name: 'AgentCore Runtime · turn complete', category: 'runtime',
-      component: 'Bedrock AgentCore Runtime · MeridianConcierge', latencyMs: 18363,
-    };
-    expect(label(runtime, 'Claude Sonnet 5'))
-      .toBe(nb('AgentCore Runtime, Claude Sonnet 5, 18.4 s'));
-    expect(label({
-      name: 'Bedrock · concierge polish (global.anthropic.claude-sonnet-5)', category: 'model',
-      agent: 'RetrievalAgent', latencyMs: 1400,
-    }, 'Claude Sonnet 5')).toBe(nb('Bedrock, Claude Sonnet 5, 1.4 s'));
-    expect(label({
-      name: 'AgentCore Gateway · tools/call → semantic_trip_search', category: 'gateway',
-      component: 'Bedrock AgentCore Gateway',
-    })).toBe('AgentCore Gateway');
-    expect(label({ name: 'postgres-mcp · run_query', agent: 'MCPAgent', sql: 'SELECT 1', latencyMs: 75 }))
-      .toBe(nb('MCP, postgres-mcp, 75 ms'));
-    expect(label({ name: 'MCP turn complete · 1 server', agent: 'MCPAgent', latencyMs: 1293 }))
-      .toBe(nb('MCP, 1.3 s'));
-    expect(label({
-      name: 'AgentCore Memory · session restored', component: 'Bedrock AgentCore Memory',
-    })).toBe('AgentCore Memory');
-    expect(label({
-      name: 'Strands @tool recall_session_context', component: 'Aurora · conversation_messages',
-      category: 'memory_short', latencyMs: 59,
-    })).toBe(nb('Aurora Data API, 59 ms'));
-  });
-
   it('names MCP servers and managed services by their spans', () => {
     expect(label({
       name: 'meridian-concierge: price_range', agent: 'MCPAgent', type: 'mcp', latencyMs: 425,
@@ -160,36 +125,23 @@ describe('stepSourceLabel', () => {
     })).toBe('AgentCore Memory');
     expect(label({ name: 'Workload identity: AWS STS', component: 'AWS STS' })).toBe('AWS STS');
     expect(label({
-      name: 'Workflow node: classify → plan', component: 'LangGraph StateGraph', latencyMs: 0,
+      name: 'Workflow node: classify → plan', component: 'Strands Graph', latencyMs: 0,
     })).toBe(nb('Strands Graph, <1 ms'));
   });
 
   it('credits the app itself, not a service, for routing and in-memory steps', () => {
     for (const name of [
-      'Processing with Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor',
-      'Search Agent completed',
+      'Processing with Production concierge (Runtime + Gateway + Memory)',
       'Availability: Duration inventory verified',
-      'PackageAgent: Duration inventory verified',
     ]) {
       expect(label({ name, agent: 'RetrievalAgent' })).toBe('Meridian app');
     }
   });
 
-  it('credits Amazon Aurora for the availability queries, under both the live and saved titles', () => {
-    for (const name of [
-      'Availability: Finding package',
-      'Availability: Checking duration inventory',
-      'PackageAgent: Finding package',
-      'PackageAgent: Checking duration inventory',
-    ]) {
+  it('credits Amazon Aurora for the availability queries', () => {
+    for (const name of ['Availability: Finding package', 'Availability: Checking duration inventory']) {
       expect(label({ name, latencyMs: 40 })).toBe(nb('Aurora Data API, 40 ms'));
     }
-  });
-
-  it('credits the Strands supervisor, which runs on a Bedrock model, for its own turn', () => {
-    expect(label({
-      name: 'Supervisor completed coordination', agent: 'RetrievalAgent', latencyMs: 10269,
-    })).toBe(nb('Strands on Bedrock, 10.3 s'));
   });
 
   it('credits the Retrieval agent, which runs on a Bedrock model, for its own turn', () => {

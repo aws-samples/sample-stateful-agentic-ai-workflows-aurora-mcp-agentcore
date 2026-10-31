@@ -243,7 +243,7 @@ it('retains a confirmed hold and workflow evidence without placing it again on r
   const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '', available_sizes: ['5 nights'] };
   const order = { order_id: 'HLD-existing', items: [{ product_id: 'tokyo', name: 'Tokyo', quantity: 2, unit_price: 100 }], subtotal: 200, tax: 0, shipping: 0, total: 200, status: 'held', hold_expires_at: new Date(Date.now() + 43200000).toISOString() };
   vi.mocked(processOrder).mockResolvedValue({ message: 'Held', order, activities: [] });
-  vi.mocked(sendChatMessage).mockResolvedValue({ message: 'Paused', workflow_status: 'paused', conversation_id: 'same-thread', activities: [{ id: 'saved', timestamp: new Date().toISOString(), activity_type: 'tool_call', title: 'Checkpoint · AuroraDataApiSaver.put', telemetry: { category: 'memory_short', component: 'AuroraDataApiSaver', status: 'ok', fields: [{ label: 'checkpoint_durable', value: 'true' }] } }] });
+  vi.mocked(sendChatMessage).mockResolvedValue({ message: 'Paused', workflow_status: 'paused', conversation_id: 'same-thread', activities: [{ id: 'saved', timestamp: new Date().toISOString(), activity_type: 'tool_call', title: 'Snapshot saved: AuroraSnapshotStorage.write', telemetry: { category: 'memory_short', component: 'Aurora workflow_snapshots', status: 'ok', fields: [{ label: 'snapshot_durable', value: 'true' }] } }] });
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   act(() => result.current.setSelectedPhase(5));
@@ -359,7 +359,7 @@ it.each(['phase', 'clear'])('ignores late responses after %s and leaves newer lo
 
 const healthyService = {
   status: 'healthy', bedrock_model_id: 'configured-model',
-  embedding_model_id: 'configured-embedding', snapshot_store: 'AuroraDataApiSaver',
+  embedding_model_id: 'configured-embedding', snapshot_store: 'Aurora workflow_snapshots',
 };
 
 describe('Live connection readiness', () => {

@@ -18,11 +18,11 @@ const saved = { resumeMode: false, failed: false };
 // The spans a paused recovery returns, in order, as the live backend records them.
 const paused: ShowcaseTraceSpan[] = [
   span('Workflow node: classify → plan', { component: 'Strands Graph', latencyMs: 0 }),
-  span('Workflow node: search', { component: 'Strands Graph → SearchAgent', latencyMs: 956 }),
-  span('Hybrid retrieval called directly', { agent: 'SearchAgent' }),
-  span('Embedding generated', { agent: 'SearchAgent', latencyMs: 221 }),
-  span('Hybrid candidates fetched', { agent: 'SearchAgent', latencyMs: 338, sql: 'SELECT 1' }),
-  span('Cohere rerank applied', { agent: 'SearchAgent', latencyMs: 396 }),
+  span('Workflow node: search', { component: 'Strands Graph → AgentCore Gateway: hybrid_trip_search', latencyMs: 956 }),
+  span('Hybrid retrieval called directly', { agent: 'Hybrid retrieval (code)' }),
+  span('Embedding generated', { agent: 'Hybrid retrieval (code)', latencyMs: 221 }),
+  span('Hybrid candidates fetched', { agent: 'Hybrid retrieval (code)', latencyMs: 338, sql: 'SELECT 1' }),
+  span('Cohere rerank applied', { agent: 'Hybrid retrieval (code)', latencyMs: 396 }),
   span('Snapshot saved: AuroraSnapshotStorage.write', {
     component: SNAPSHOT_TABLE, latencyMs: 106, fields: durable,
   }),
@@ -81,11 +81,10 @@ describe('deriveRecoverySteps', () => {
     expect(steps[3].source).toBe(nb('Aurora, 54 ms'));
   });
 
-  it('does not claim an Aurora snapshot for an in-process one', () => {
+  it('does not claim a snapshot that reports itself non-durable', () => {
     const inProcess = paused.map(item => (item.name.startsWith('Snapshot saved')
       ? {
-        ...item, component: 'LangGraph MemorySaver (in-process)',
-        fields: [{ label: 'snapshot_durable', value: 'false' }],
+        ...item, fields: [{ label: 'snapshot_durable', value: 'false' }],
       }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'saved', saved);

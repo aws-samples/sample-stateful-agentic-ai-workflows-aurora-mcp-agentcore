@@ -1,7 +1,7 @@
 """
 Configuration settings for Meridian backend.
 
-Centralizes all configurable values that were previously hardcoded.
+Every setting the backend reads from the environment, with its default.
 
 AWS docs (env vars used across phases):
   - Aurora + RDS Data API:

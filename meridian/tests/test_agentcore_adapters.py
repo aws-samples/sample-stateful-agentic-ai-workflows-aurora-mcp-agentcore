@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError, ConnectionClosedError, ReadTimeoutE
 from backend.agentcore import cli_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 from backend.agentcore.gateway import AgentCoreGatewayAdapter, get_agentcore_gateway
-from backend.agentcore.runtime import AgentCoreRuntimeAdapter, get_agentcore_runtime, parse_sse
+from backend.agentcore.runtime import AgentCoreRuntimeAdapter, get_agentcore_runtime, iter_sse
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def test_runtime_unconfigured_raises(unconfigured_agentcore):
         adapter.invoke_turn("conv-1", "trv_demo", "hello", "", budget_ceiling_cents=0, travelers_count=1)
 
 
-def test_parse_sse_unwraps_the_double_encoded_json_lines():
+def test_iter_sse_unwraps_the_double_encoded_json_lines():
     inner = json.dumps({"type": "activity", "title": "x"})
     raw = (
         f"data: {json.dumps(inner)}\n\n"
@@ -63,7 +63,7 @@ def test_parse_sse_unwraps_the_double_encoded_json_lines():
         '"follow_ups": [], "hold": null, "trace_id": "abc", "usage": {}, "elapsed_ms": 12}\n\n'
         ": keepalive\n\n"
     ).encode()
-    events = parse_sse(raw)
+    events = list(iter_sse([raw]))
     assert [event["type"] for event in events] == ["activity", "result"]
     assert events[0]["title"] == "x"
 

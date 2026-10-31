@@ -167,7 +167,7 @@ def service_definition(service: dict, image_uri: str, environment: dict, roles: 
                        secret_arn: str, mode: str = "iam") -> dict:
     """Preserve service settings; the mode decides the shared token and the sign-in settings.
 
-    In ``iam`` the legacy plaintext token becomes a secret reference and the settings only the jwt
+    In ``iam`` a plaintext token, if the service has one, becomes a secret reference and the settings only the jwt
     release sets are removed, so this is also the rollback. In ``jwt`` there is no shared token:
     the secret reference and the loopback switch are removed.
     """

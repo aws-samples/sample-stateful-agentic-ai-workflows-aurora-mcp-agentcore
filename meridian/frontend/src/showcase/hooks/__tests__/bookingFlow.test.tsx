@@ -208,7 +208,7 @@ it('does not dispatch a hold if its identity cannot be saved', async () => {
 
 const meridianHealth = {
   status: 'healthy', bedrock_model_id: 'model', embedding_model_id: 'embed',
-  snapshot_store: 'AuroraDataApiSaver',
+  snapshot_store: 'Aurora workflow_snapshots',
 };
 
 it('names the pending write and stays online when a confirmation is not received', async () => {

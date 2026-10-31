@@ -20,7 +20,6 @@ Gateway URL is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.js
 or env override:
 
     AGENTCORE_GATEWAY_URL=https://{id}.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
-    AGENTCORE_GATEWAY_SEARCH_TOOL=MeridianCatalog___hybrid_trip_search
     AGENTCORE_GATEWAY_ACCESS_TOKEN=   # optional; omit for IAM SigV4
 
 With ``MERIDIAN_AGENTCORE_AUTH=jwt`` every request carries the signed-in caller's Cognito access
@@ -42,7 +41,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-from botocore.exceptions import ClientError
 
 from backend.agentcore.auth_mode import jwt_mode
 from backend.agentcore.caller_claims import ensure_unexpired
@@ -66,12 +64,9 @@ NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirects)
 class AgentCoreGatewayAdapter:
     """MCP client for an AgentCore Gateway endpoint (tools/list + tools/call)."""
 
-    DEFAULT_SEARCH_TOOL = "MeridianCatalog___hybrid_trip_search"
-
     def __init__(
         self,
         gateway_url: Optional[str] = None,
-        search_tool: Optional[str] = None,
         access_token: Optional[str] = None,
         region: Optional[str] = None,
     ) -> None:
@@ -81,15 +76,8 @@ class AgentCoreGatewayAdapter:
         if self.gateway_url and not self.gateway_url.endswith("/mcp"):
             self.gateway_url = f"{self.gateway_url}/mcp"
 
-        self.search_tool = search_tool or cli.gateway_search_tool or self.DEFAULT_SEARCH_TOOL
         self.access_token = access_token or os.getenv("AGENTCORE_GATEWAY_ACCESS_TOKEN")
         self.region = region or cli.region
-        self.cli_sources = cli.sources
-        self._control = None
-        if not self.gateway_url:
-            self._gateway_url_missing = True
-        else:
-            self._gateway_url_missing = False
 
     @property
     def configured(self) -> bool:
@@ -104,23 +92,6 @@ class AgentCoreGatewayAdapter:
                 sources=cfg.sources,
             )
         return self.gateway_url
-
-    def _control_client(self):
-        if self._control is None:
-            self._control = boto3.client("bedrock-agentcore-control", region_name=self.region)
-        return self._control
-
-    def resolve_gateway_url_from_id(self, gateway_id: str) -> Optional[str]:
-        """Look up gateway MCP URL via control plane (for provisioning scripts)."""
-        try:
-            response = self._control_client().get_gateway(gatewayIdentifier=gateway_id)
-            gateway = response.get("gateway") or response
-            url = gateway.get("gatewayUrl") or gateway.get("gatewayEndpoint")
-            if url:
-                return url if url.endswith("/mcp") else f"{url.rstrip('/')}/mcp"
-        except ClientError as exc:
-            logger.warning("get_gateway failed: %s", exc)
-        return None
 
     # ----------------------------------------------------------- MCP transport
 

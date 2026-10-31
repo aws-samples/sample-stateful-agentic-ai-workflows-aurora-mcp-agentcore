@@ -181,7 +181,7 @@ async def test_registered_tool_serializes_through_fastmcp(monkeypatch):
     assert db.calls[0][1] == ("City Breaks", 2500.0, 3)
 
 
-# The JSON Schema each Python type hint becomes, as the deck's slide on typed MCP tools states.
+# The JSON Schema each Python type hint becomes in the MCP tool's input schema.
 SCHEMA_OF_HINT = {
     float: {"type": "number"},
     str: {"type": "string"},

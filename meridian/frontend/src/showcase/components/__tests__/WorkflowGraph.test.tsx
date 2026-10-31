@@ -52,7 +52,6 @@ describe('WorkflowGraph', () => {
             fields: [
               { label: 'node', value: 'classify' },
               { label: 'intent', value: 'plan' },
-              { label: 'checkpointer', value: 'PostgresSaver' },
             ],
           }),
           span({
@@ -65,8 +64,8 @@ describe('WorkflowGraph', () => {
           }),
           span({
             id: 'snapshot-search',
-            name: 'Checkpoint · PostgresSaver.put',
-            fields: [{ label: 'checkpointer', value: 'PostgresSaver' }],
+            name: 'Snapshot saved: AuroraSnapshotStorage.write',
+            fields: [{ label: 'snapshot_store', value: 'Aurora workflow_snapshots' }],
           }),
           span({
             id: 'availability',
@@ -96,7 +95,7 @@ describe('WorkflowGraph', () => {
     expect(screen.getAllByText('packages=5')).toHaveLength(2);
     expect(screen.getByText('rows=3, 2 of 2')).toBeInTheDocument();
     expect(screen.getByText('saved')).toBeInTheDocument();
-    expect(screen.getByText('Saved step, PostgresSaver')).toBeInTheDocument();
+    expect(screen.getByText('Saved step, Aurora workflow_snapshots')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Strands Graph workflow path' })).toBeInTheDocument();
     expect(screen.getByText('Strands Graph route')).toBeInTheDocument();
   });
@@ -122,9 +121,6 @@ describe.each([
   ['Snapshot saved: AuroraSnapshotStorage.write', 'snapshot_store'],
   ['Workflow paused at a saved step', 'snapshot_store'],
   ['Workflow resumed from a saved step', 'snapshot_store'],
-  ['Checkpoint · AuroraSnapshotStorage.write', 'checkpointer'],
-  ['Workflow paused at checkpoint', 'checkpointer'],
-  ['Workflow resumed from checkpoint', 'checkpointer'],
 ])('saved-step span "%s" with the %s label', (title, label) => {
   it('badges the last lit node and shows where it was saved', () => {
     render(<WorkflowGraph state={state([

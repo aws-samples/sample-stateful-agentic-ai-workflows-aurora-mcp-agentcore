@@ -3,8 +3,8 @@
 // capture_session.py creates a pipe, hands the write end to mint_session.py and the read end to
 // this script as --token-fd N. The tokens never touch standard input or output, argv, the
 // environment or a file, and stay in memory. No password is typed or read. Do not run this by hand.
-// Conventions are those of RIV/_deck-kit/tools/capture_storyboard.mjs: system Chrome, 1920 by 1080
-// at device scale 2 (3840 by 2160 pixels), dark theme, presentation mode, a problems log.
+// It drives system Chrome at 1920 by 1080 and device scale 2 (3840 by 2160 pixels), in the dark
+// theme and presentation mode, and keeps a problems log.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';

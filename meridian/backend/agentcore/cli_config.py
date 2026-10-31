@@ -55,7 +55,6 @@ class AgentCoreDeployedConfig:
     runtime_qualifier: str = "DEFAULT"
     gateway_url: Optional[str] = None
     gateway_name: Optional[str] = None
-    gateway_search_tool: Optional[str] = None
     memory_id: Optional[str] = None
     memory_name: Optional[str] = None
     cli_project_dir: Optional[str] = None
@@ -356,10 +355,6 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         runtime_qualifier=os.getenv("AGENTCORE_RUNTIME_QUALIFIER", "DEFAULT"),
         gateway_url=_normalize_gateway_url(merged["gateway_url"]),
         gateway_name=merged["gateway_name"],
-        gateway_search_tool=os.getenv(
-            "AGENTCORE_GATEWAY_SEARCH_TOOL",
-            "MeridianCatalog___hybrid_trip_search",
-        ),
         memory_id=merged["memory_id"],
         memory_name=merged["memory_name"],
         cli_project_dir=str(project_dir),

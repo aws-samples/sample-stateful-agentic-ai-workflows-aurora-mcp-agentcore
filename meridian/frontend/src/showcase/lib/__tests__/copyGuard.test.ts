@@ -7,8 +7,6 @@ const globs = {
 };
 const sources = globs as Record<string, string>;
 
-// spanTitles.ts is the one place that still names the wording saved journeys were stored with.
-const LEGACY_TABLE = '../spanTitles.ts';
 const BANNED = [
   /LangGraph/i, /\bAWS\sAurora\b/, /\u00b7/, /&middot;/i, /&#183;/, /&#xb7;/i,
   /\\00b7/i, // CSS escape
@@ -23,10 +21,6 @@ const USER_FACING_BANNED = [
 const isComment = (line: string) => /^\s*(\/\/|\/\*|\*)/.test(line);
 
 const isTest = (path: string) => /__tests__|\.test\.[tj]sx?$|\.spec\.ts$/.test(path);
-
-function lineIsCommentThatSaysWhy(line: string): boolean {
-  return /^\s*(\/\/|\/\*|\*)/.test(line) && /legacy|saved journeys/i.test(line);
-}
 
 const shortName = (path: string) => path.replace(/^(\.\.\/)+/, '');
 
@@ -65,21 +59,20 @@ function namedTravelerOffences(files: Record<string, string>, paths: string[]): 
 }
 
 describe('showcase copy', () => {
-  it('names no LangGraph or AWS Aurora and no middle dot outside the legacy-title table', () => {
-    const files = Object.keys(sources).filter(path => !isTest(path) && path !== LEGACY_TABLE);
+  it('names no LangGraph or AWS Aurora and no middle dot', () => {
+    const files = Object.keys(sources).filter(path => !isTest(path));
     expect(files.length).toBeGreaterThan(50);
     expect(files.some(path => path.endsWith('index.html'))).toBe(true);
     const offences = files.flatMap(path => sources[path].split('\n')
       .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
-      .filter(({ line }) => !lineIsCommentThatSaysWhy(line)
-        && BANNED.some(pattern => pattern.test(line)))
+      .filter(({ line }) => BANNED.some(pattern => pattern.test(line)))
       .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
     expect(offences).toEqual([]);
   });
 
   it('uses no em dash and never says demo in the words people read', () => {
     const copy = Object.keys(sources).filter(
-      path => /\.tsx?$|index\.html$/.test(path) && !isTest(path) && path !== LEGACY_TABLE,
+      path => /\.tsx?$|index\.html$/.test(path) && !isTest(path),
     );
     expect(copy.length).toBeGreaterThan(50);
     const offences = copy.flatMap(path => sources[path].split('\n')
@@ -114,7 +107,7 @@ describe('showcase copy', () => {
   });
 
   it('says saved step or snapshot, never checkpoint, in the words people read', () => {
-    const files = Object.keys(sources).filter(path => isPageCode(path) && path !== LEGACY_TABLE);
+    const files = Object.keys(sources).filter(path => isPageCode(path));
     expect(files.length).toBeGreaterThan(50);
     expect(checkpointOffences(sources, files)).toEqual([]);
   });

@@ -76,7 +76,7 @@ uses the governed Gateway path.
 | `backend/authorization.py` | Workload-to-traveler authorization types |
 | `backend/http_auth.py` | HTTP principal and traveler binding |
 | `backend/prompt_ladder.py` | The five-phase prompt ladder |
-| `backend/catalog_compat.py` | Maps `trip_packages` rows to the frontend's `Product` shape |
+| `backend/product_shape.py` | Maps `trip_packages` rows to the frontend's `Product` shape |
 | `backend/launch.py` | Container entry point that opens the port before the app loads |
 
 ### Frontend
@@ -121,7 +121,7 @@ uses the governed Gateway path.
 | `scripts/release_identity.py`, `scripts/identity_release/` | Operate the coordinated identity release: read every hop back (`check`), deploy the Gateway stages, attach the interceptor, move the Lambdas, save a snapshot and roll back; dry run unless given `--apply --i-understand-this-changes-aws` |
 | `scripts/prove_backend_login.py` | Run the real backend on this machine as the `meridian_backend` login and drive it through the phase paths before the cutover |
 | `scripts/identity_proof.py`, `scripts/identity_probes/` | Sign in as Jordan and the decoy and send the 19 probes that show the decoy is refused at the backend, the Runtimes, the Gateway and Aurora |
-| `scripts/identity_capture/` | Capture the signed-in app for the deck, with tokens held in memory and passed through a pipe |
+| `scripts/identity_capture/` | Capture screenshots of the signed-in app, with tokens held in memory and passed through a pipe |
 | `scripts/smoke_workflow_runtime.py` | Ping the deployed `MeridianWorkflow` Runtime without touching any journey or Aurora row |
 | `scripts/apply_rls_force_and_decoy.py` | One-shot: enable FORCE row level security on the Phase 4 tables and seed a decoy traveler's preferences |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |

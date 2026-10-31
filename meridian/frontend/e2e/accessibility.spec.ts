@@ -104,7 +104,7 @@ async function mockLiveCatalog(page: import('@playwright/test').Page) {
     status: 200, contentType: 'application/json', body: JSON.stringify({
       status: 'healthy', version: '1.0.0', environment: 'development',
       bedrock_model_id: 'global.anthropic.claude-sonnet-5', bedrock_model_label: 'Claude Sonnet 5',
-      embedding_model_id: 'cohere.embed-v4:0', snapshot_store: 'AuroraDataApiSaver',
+      embedding_model_id: 'cohere.embed-v4:0', snapshot_store: 'Aurora workflow_snapshots',
       snapshot_durable: true, snapshot_required: true, aurora_reachable: true,
       degraded_component: null, degraded_error_class: null,
     }),

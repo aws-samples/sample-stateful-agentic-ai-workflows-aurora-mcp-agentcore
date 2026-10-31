@@ -3,15 +3,15 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import require_http_principal
 
 router = APIRouter(prefix="/api/packages", tags=["packages"], dependencies=[Depends(require_http_principal)])
 
-# Legacy path alias
-legacy_router = APIRouter(prefix="/api/products", tags=["products"], dependencies=[Depends(require_http_principal)])
+# The same catalog in the Product shape the frontend reads.
+product_router = APIRouter(prefix="/api/products", tags=["products"], dependencies=[Depends(require_http_principal)])
 logger = logging.getLogger(__name__)
 CATALOG_UNAVAILABLE = "Trip data is temporarily unavailable. Please try again."
 
@@ -149,28 +149,11 @@ async def get_package(package_id: str) -> TripPackage:
         raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from e
 
 
-# --- Legacy /api/products responses (maps to packages) ---
-
-class LegacyProduct(BaseModel):
-    product_id: str = Field(validation_alias="package_id")
-    name: str
-    category: str = Field(validation_alias="trip_type")
-    brand: str = Field(validation_alias="operator")
-    price: float = Field(validation_alias="price_per_person")
-    description: str
-    image_url: str
-    destination: Optional[str] = None
-    region: Optional[str] = None
-    available_sizes: Optional[List[str]] = Field(default=None, validation_alias="durations")
-    availability: Optional[dict] = None
-    highlights: Optional[List[str]] = None
-    similarity: Optional[float] = None
-
-    model_config = {"populate_by_name": True}
+# --- /api/products: the catalog in the frontend's Product shape ---
 
 
-@legacy_router.get("")
-async def legacy_list(
+@product_router.get("")
+async def list_products(
     category: Optional[str] = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -179,7 +162,7 @@ async def legacy_list(
     try:
         data = await _list_packages(category, limit, offset, featured)
     except Exception as exc:
-        logger.exception("Legacy trip catalog read failed")
+        logger.exception("Trip catalog read failed")
         raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from exc
     return {
         "products": [
@@ -204,14 +187,14 @@ async def legacy_list(
     }
 
 
-@legacy_router.get("/{product_id}")
-async def legacy_get(product_id: str):
+@product_router.get("/{product_id}")
+async def get_product(product_id: str):
     try:
         p = await _get_package(product_id)
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Legacy trip package read failed")
+        logger.exception("Trip package read failed")
         raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from exc
     return {
         "product_id": p.package_id,

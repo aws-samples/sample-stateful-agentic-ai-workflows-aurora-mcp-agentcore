@@ -7,7 +7,7 @@ export interface MeridianWebRolesStackProps extends StackProps {
   /** The App Runner environment from serviceEnvironment(); supplies the ARNs the role may touch. */
   environment: Record<string, string>;
   /**
-   * The master login's secret, in the jwt release only. The service no longer uses it, but the role
+   * The master login's secret, in the jwt release only. The service does not use it, but the role
    * keeps the grant (and the shared-token secret's) until the tighten release, so a rollback to the
    * iam release still starts.
    */

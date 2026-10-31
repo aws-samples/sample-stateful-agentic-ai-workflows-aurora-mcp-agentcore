@@ -61,22 +61,6 @@ describe('showcase proof helpers', () => {
     expect(contracts[0].auroraOperation).toContain('compare');
   });
 
-  it('still reads the middle-dot MCP spans that saved journeys carry', () => {
-    const contracts = deriveMcpContracts([
-      span({ name: 'MCP server discovered: meridian-concierge (custom)' }),
-      span({
-        name: 'meridian-concierge · compare_packages',
-        details: "args={'package_ids': ['trip-1', 'trip-2']} · Compared 2 packages",
-        agent: 'MCPAgent',
-      }),
-      span({ name: 'postgres-mcp · session connected' }),
-      span({ name: 'postgres-mcp · run_query', sql: 'SELECT 1' }),
-    ]);
-    expect(contracts.map(contract => contract.tool)).toEqual(['compare_packages', 'run_query']);
-    expect(contracts[0].request).toContain('package_ids');
-    expect(contracts[0].result).toBe('Compared 2 packages');
-  });
-
   it('does not count session setup as an executed SQL tool', () => {
     const contracts = deriveMcpContracts([
       span({ name: 'MCP server discovered: awslabs.postgres-mcp-server' }),
@@ -110,11 +94,13 @@ describe('showcase proof helpers', () => {
         fields: [
           { label: 'node', value: 'classify' },
           { label: 'intent', value: 'plan' },
-          { label: 'checkpointer', value: 'PostgresSaver' },
         ],
       }),
       span({ name: 'Workflow node: search', fields: [{ label: 'node', value: 'search' }] }),
-      span({ name: 'Checkpoint · PostgresSaver.put', fields: [{ label: 'checkpointer', value: 'PostgresSaver' }] }),
+      span({ name: 'Snapshot saved: AuroraSnapshotStorage.write', fields: [
+        { label: 'snapshot_store', value: 'Aurora workflow_snapshots' },
+        { label: 'snapshot_durable', value: 'true' },
+      ] }),
     ]);
 
     expect(workflow.status).toBe('saved');
@@ -127,13 +113,13 @@ describe('showcase proof helpers', () => {
     expect(workflow.table).toBe('workflow_snapshots');
   });
 
-  it('does not present MemorySaver as durable Aurora proof', () => {
+  it('does not present a snapshot that says it is not durable as Aurora proof', () => {
     const spans = [
       span({
-        name: 'Checkpoint · MemorySaver.put',
+        name: 'Snapshot saved: AuroraSnapshotStorage.write',
         fields: [
-          { label: 'checkpointer', value: 'MemorySaver (in-process)' },
-          { label: 'checkpoint_store', value: 'process memory' },
+          { label: 'snapshot_store', value: 'Aurora workflow_snapshots' },
+          { label: 'snapshot_durable', value: 'false' },
         ],
       }),
     ];
@@ -144,29 +130,15 @@ describe('showcase proof helpers', () => {
   });
 });
 
-it.each(['AuroraDataApiSaver', 'AsyncPostgresSaver (Aurora)', 'NextSaver'])('uses explicit durable telemetry for %s', (kind) => {
-  const trace = [span({ name: `Checkpoint · ${kind}.put`, fields: [
-    { label: 'checkpointer', value: kind }, { label: 'checkpoint_durable', value: 'true' },
-  ] })];
-  expect(deriveWorkflowState(trace).durable).toBe(true);
-});
-
-it('recognizes old Aurora receipts but respects an explicit non-durable flag', () => {
-  const legacy = span({ name: 'Checkpoint · AuroraDataApiSaver.put', fields: [{ label: 'checkpointer', value: 'AuroraDataApiSaver' }] });
-  expect(deriveWorkflowState([legacy]).durable).toBe(true);
-  expect(deriveWorkflowState([{ ...legacy, fields: [...legacy.fields, { label: 'checkpoint_durable', value: 'false' }] }]).durable).toBe(false);
-});
-
-
 it('does not treat a failed snapshot operation as a durable save', () => {
   expect(hasDurableSnapshot([span({
-    name: 'Checkpoint · AuroraDataApiSaver.put',
+    name: 'Snapshot saved: AuroraSnapshotStorage.write',
     status: 'error',
-    fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    fields: [{ label: 'snapshot_durable', value: 'true' }],
   })])).toBe(false);
 });
 
-it('reads a new-title snapshot as a durable save and counts it', () => {
+it('reads a snapshot as a durable save and counts it', () => {
   const trace = [span({
     name: 'Snapshot saved: AuroraSnapshotStorage.write',
     fields: [{ label: 'snapshot_store', value: 'Aurora workflow_snapshots' }, { label: 'snapshot_durable', value: 'true' }],
@@ -177,12 +149,12 @@ it('reads a new-title snapshot as a durable save and counts it', () => {
   expect(workflow.snapshotCount).toBe(1);
 });
 
-it('treats a new-title snapshot with no snapshot_durable field as non-durable, on purpose', () => {
-  // Deliberate: only an explicit snapshot_durable (or the old snapshot_durable) of "true"
-  // proves a save reached Aurora. The title and the store name alone prove nothing.
+it('treats a snapshot with no snapshot_durable field as non-durable, on purpose', () => {
+  // Deliberate: only an explicit snapshot_durable of "true" proves a save reached Aurora.
+  // The title and the store name alone prove nothing.
   expect(hasDurableSnapshot([span({
     name: 'Snapshot saved: AuroraSnapshotStorage.write',
-    fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }],
+    fields: [{ label: 'snapshot_store', value: 'Aurora workflow_snapshots' }],
   })])).toBe(false);
 });
 

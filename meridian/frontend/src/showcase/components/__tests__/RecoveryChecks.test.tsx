@@ -18,7 +18,7 @@ function span(decision: string, status: string): ShowcaseTraceSpan {
 }
 function journey(thread = 'thread-current') {
   return {
-    active_thread_id: thread, snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
+    active_thread_id: thread, snapshot_store: { kind: 'Aurora workflow_snapshots', durable: true },
     snapshot: { status: 'observed', source: 'Aurora', snapshot_id: 'snapshot-1', thread_id: thread },
     hold: { status: 'held', source: 'Aurora', booking_id: 'booking-1', hold_records: 1 },
   } as JourneyDocument;

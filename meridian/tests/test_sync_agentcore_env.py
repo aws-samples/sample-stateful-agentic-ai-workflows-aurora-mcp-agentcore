@@ -13,7 +13,7 @@ WORKFLOW = "arn:aws:bedrock-agentcore:us-east-1:1:runtime/wf"
 def config(**overrides):
     values = {name: None for name in (
         "runtime_arn", "workflow_runtime_arn", "runtime_name", "gateway_url", "gateway_name",
-        "gateway_search_tool", "memory_id", "memory_name")}
+        "memory_id", "memory_name")}
     return SimpleNamespace(region="us-east-1", **{**values, **overrides})
 
 

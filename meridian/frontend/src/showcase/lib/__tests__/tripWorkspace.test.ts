@@ -33,13 +33,6 @@ describe('trip workspace per traveler', () => {
     expect(window.localStorage.length).toBe(0);
     expect(loadTripWorkspace(null)).toEqual({ savedTrips: [], compareTrips: [] });
   });
-
-  it('drops the shared key an older build wrote instead of handing it to anyone', () => {
-    const legacy = JSON.stringify({ savedTrips: [product('old')], compareTrips: [] });
-    window.localStorage.setItem('meridian.trip-workspace.v1', legacy);
-    expect(loadTripWorkspace('trv_a')).toEqual({ savedTrips: [], compareTrips: [] });
-    expect(window.localStorage.getItem('meridian.trip-workspace.v1')).toBeNull();
-  });
 });
 
 describe('trip workspace persistence', () => {

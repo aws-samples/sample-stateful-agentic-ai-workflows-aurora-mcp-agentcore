@@ -80,13 +80,13 @@ export function deriveRecoveryEvidence(
     searchObserved:
       recommendationCount > 0 ||
       texts.some((text) =>
-        /workflow node: search|semantic_trip_search|hybrid_trip_search|search_trips|hybrid retrieval|catalog search|searchagent/.test(
+        /workflow node: search|semantic_trip_search|hybrid_trip_search|search_trips|hybrid retrieval|catalog search/.test(
           text,
         ),
       ),
     alternativesObserved: recommendationCount > 0,
     availabilityObserved: texts.some((text) =>
-      /availability fan-out|duration inventory|packageagent|availability_checks/.test(
+      /availability fan-out|duration inventory|availability_checks/.test(
         text,
       ),
     ),

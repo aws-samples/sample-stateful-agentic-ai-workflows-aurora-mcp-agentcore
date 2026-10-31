@@ -191,13 +191,11 @@ def _decode(result: Any) -> Any:
     return decoded
 
 
-# Per-turn subprocess. We previously kept a long-lived singleton client
-# to avoid spawning Python on every tool call, but that failed in use:
-# the second turn would block forever because the cached stdio session
-# had wedged after the first turn (buffered output, half-closed pipe,
-# Aurora connection state, etc.). For this sample, predictability
-# matters more than the ~150ms saved by reusing a process - so each
-# session spawns a fresh subprocess and tears it down on exit.
+# Per-turn subprocess: each session spawns a fresh server process and tears it
+# down on exit. A cached stdio session can wedge after its first turn (buffered
+# output, a half-closed pipe, Aurora connection state), and then the next turn
+# blocks forever. Predictability matters more here than the ~150 ms a reused
+# process would save.
 @asynccontextmanager
 async def concierge_mcp_session():
     client = MeridianConciergeMCPClient()

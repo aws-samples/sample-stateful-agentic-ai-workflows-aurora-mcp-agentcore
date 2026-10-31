@@ -23,7 +23,7 @@ describe('chatResponseToMessages model badge', () => {
     const messages = chatResponseToMessages(
       [],
       'What is the price range for Tokyo trips?',
-      { message: 'Price range for Tokyo: low $1,199 · average $1,950 · high $3,299.', activities: [] },
+      { message: 'Price range for Tokyo: low $1,199, average $1,950, high $3,299.', activities: [] },
     );
     const bot = messages.find((m) => m.role === 'bot');
     expect(bot?.modelLabel).toBeUndefined();
@@ -115,7 +115,7 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
 describe('healthResponseToStatus', () => {
   it.each(['unhealthy', 'not ok', 'broken', undefined])('rejects an unready status: %s', (status) => {
     expect(healthResponseToStatus({
-      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', snapshot_store: 'AuroraDataApiSaver',
+      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', snapshot_store: 'Aurora workflow_snapshots',
     })).toBe('offline');
   });
   it('only accepts the Meridian backend health contract', () => {

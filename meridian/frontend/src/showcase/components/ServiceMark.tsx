@@ -105,7 +105,7 @@ export function ServiceMark({
   );
 }
 
-/** Aurora tile used wherever the interface previously used a database cylinder. */
+/** The Aurora tile, used wherever the interface shows the database. */
 export function AuroraIcon({ size = 20, className }: { size?: number; className?: string }) {
   return <ServiceMark name="aurora" size={Math.max(size, 20)} className={className} />;
 }

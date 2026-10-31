@@ -25,7 +25,7 @@ ROUTERS = [
     chat_router,
     packages_router,
     products_router,
-    products_module.legacy_router,
+    products_module.product_router,
     memory_router,
     diagnostics_router,
     journeys_router,

@@ -2,7 +2,7 @@
  *  classify, search, then a durable Aurora snapshot, each with its measured time. */
 export const PAUSED_ACTIVITIES = [
   ['Workflow node: classify → plan', 'Strands Graph', 0, []],
-  ['Workflow node: search', 'Strands Graph → SearchAgent', 956, []],
+  ['Workflow node: search', 'Strands Graph → AgentCore Gateway: hybrid_trip_search', 956, []],
   ['Snapshot saved: AuroraSnapshotStorage.write', 'Aurora workflow_snapshots', 458,
     [{ label: 'snapshot_durable', value: 'true' }]],
 ].map(([title, component, ms, fields], index) => ({

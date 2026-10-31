@@ -209,11 +209,6 @@ def iter_sse(chunks):
         yield decode(data)
 
 
-def parse_sse(raw: bytes) -> list[dict[str, Any]]:
-    """Compatibility helper for saved Runtime responses."""
-    return list(iter_sse([raw]))
-
-
 def stream_chunks(response: dict[str, Any]):
     body = response.get("response")
     try:
@@ -295,7 +290,6 @@ class AgentCoreRuntimeAdapter:
         self.runtime_arn = runtime_arn or cli.runtime_arn
         self.qualifier = qualifier or cli.runtime_qualifier
         self.region = region or cli.region
-        self.cli_sources = cli.sources
         self._client = None
         self._client_lock = threading.Lock()
 

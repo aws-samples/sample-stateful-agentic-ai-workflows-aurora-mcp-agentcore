@@ -36,7 +36,7 @@ from backend.agents.phase_05_workflow.governed_hold import (
 from backend.agents.phase_05_workflow.run_calls import call_of_response
 from backend.agents.phase_05_workflow.state import activity, utc_now
 from backend.audit_vocabulary import CODE_CLASSES, ERROR, ToolCall
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 from backend.tools.tool_names import bare_tool_name
 from backend.trace_names import WORKFLOW_CODE
 

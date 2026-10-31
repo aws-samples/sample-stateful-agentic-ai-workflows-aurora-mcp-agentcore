@@ -446,7 +446,7 @@ export function PresenterProof({
         <span>Aurora, MCP, AgentCore, Strands Graph</span>
         <span>
           Read from {document.snapshot_store.kind}
-          {document.snapshot_store.durable ? ', survives restart' : document.snapshot_store.kind === 'MemorySaver (in-process)' ? ', worker memory only' : ', durability not verified'}
+          {document.snapshot_store.durable ? ', survives restart' : ', durability not verified'}
         </span>
       </footer>
     </section>

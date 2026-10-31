@@ -19,7 +19,7 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
     journey_id: 'jrn_test',
     traveler_id: 'trv_meridian_demo',
     status: 'active',
-    snapshot_store: { kind: 'AuroraDataApiSaver', durable: true },
+    snapshot_store: { kind: 'Aurora workflow_snapshots', durable: true },
     active_thread_id: 'thread_test',
     executions: {
       status: 'observed',

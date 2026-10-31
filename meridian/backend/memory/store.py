@@ -568,6 +568,3 @@ def get_memory_store() -> MemoryStore:
         _store = MemoryStore()
     return _store
 
-
-# Legacy alias
-DEMO_CUSTOMER_ID = DEMO_TRAVELER_ID

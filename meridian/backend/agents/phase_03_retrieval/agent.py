@@ -30,7 +30,7 @@ from backend.agents.phase_03_retrieval.mcp_session import concierge_pool
 from backend.agents.phase_03_retrieval.tools import local_tools
 from backend.agents.strands_hooks import StopOnToolSetupError, ToolSetupError
 from backend.bedrock_model import bedrock_model
-from backend.catalog_compat import row_to_api_product
+from backend.product_shape import row_to_api_product
 from backend.config import config
 from backend.security.redaction import masked_traceback
 from backend.timing import clock, elapsed_ms

@@ -220,8 +220,6 @@ export interface Message {
   modelLabel?: string;
 }
 
-// Alias for backward compatibility
-export type ChatMessage = Message;
 
 export interface PhaseInfo {
   id: Phase;
