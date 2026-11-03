@@ -35,10 +35,10 @@ Then review and deploy the stack:
 ```bash
 cd infra
 npm ci && npm run build
-CONTEXT="-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name> \
-  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.3"
-npx cdk diff   --app 'node dist/bin/meridian-aurora.js' $CONTEXT
-npx cdk deploy --app 'node dist/bin/meridian-aurora.js' $CONTEXT
+CONTEXT=(-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name>
+  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.3)
+npx cdk diff   --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
+npx cdk deploy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 ```
 
 The stack outputs `ClusterArn` and `MasterSecretArn`; copy them into
@@ -47,11 +47,24 @@ Passing `-c snapshotArn=<snapshot-arn>` restores from a snapshot instead; the
 restored cluster keeps the snapshot's database users, so keep using the
 existing secret.
 
-To delete the cluster, first turn off deletion protection. The stack takes a
-final snapshot of the cluster and retains the writer instance, subnet group,
-security group and parameter group, so `cdk destroy` alone does not remove
-every billable resource; delete the retained resources and any snapshots you
-do not need.
+To delete the cluster, turn off the stack's termination protection and the
+cluster's deletion protection, then destroy the stack from `infra/` with the
+same `CONTEXT`:
+
+```bash
+aws cloudformation update-termination-protection --region <region> \
+  --stack-name MeridianAurora --no-enable-termination-protection
+aws rds modify-db-cluster --region <region> --db-cluster-identifier <cluster-name> \
+  --no-deletion-protection --apply-immediately
+npx cdk destroy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
+```
+
+The stack takes a final snapshot of the cluster, then deletes the cluster and
+its writer instance. It keeps the subnet group, security group and parameter
+group, which cost nothing; delete them if you want nothing left. Delete the
+final snapshot (`aws rds delete-db-cluster-snapshot`) once you no longer need
+it, because snapshot storage is billed. Check Secrets Manager afterwards for
+the `rds!cluster-` master secret and delete it if it remains.
 
 ## Prepare the database
 
@@ -214,7 +227,7 @@ the write idempotent and the execution resumable:
 | Hold committed, response lost | The retried intent returns the existing booking | Same request ID, booking ID and original expiry; one booking for the request |
 | Worker stops after the hold is saved | The remaining nodes run without placing another hold | The saved hold and the persisted booking |
 | A second worker while the lease is live | The second execution is refused | HTTP 409 and one running execution |
-| Runtime session stopped by the presenter | The next resume starts a new microVM on the same session and restores the newest snapshot | A `workflow_session_stops` row, a new execution attempt and the same hold |
+| Runtime session stopped by an operator | The next resume starts a new microVM on the same session and restores the newest snapshot | A `workflow_session_stops` row, a new execution attempt and the same hold |
 | Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
 | A step fails after the hold | The runner releases the hold through the Gateway's `release_hold` tool, for the hold this run placed only, with the run's execution ID | The booking reads `released` and its places count again. The Runtime's error event carries a `hold_release` phrase when the hold was left in place; read it in the Runtime output or log, because the backend log and the traveler see only the fixed reference message. `lost_response_proof.py` ends by doing this |
 
@@ -538,7 +551,7 @@ read a table the repository no longer has and that `PUBLIC` could still execute.
 
    As `meridian_catalog`, the catalog's own statements run; a SELECT on `traveler_identity_bindings`, an INSERT
    into `traveler_access_audit`, `SET ROLE meridian_app` and every write to `trip_packages` are refused with
-   `permission denied`. A failure is a finding for the owner: a grant is a migration, never a quick `GRANT`.
+   `permission denied`. Treat a failure as a defect: fix a missing grant with a migration, never a one-off `GRANT`.
 
 Then create the Lambda and its role, as section 2 of the
 [AgentCore deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md#2-create-the-catalog-lambda) says.
@@ -731,7 +744,7 @@ Undo in the reverse of the order above and stop at the step you need.
 1. Users. Delete the two Cognito users and the two `meridian/cognito/*`
    secrets, delete the `cognito` binding rows
    (`DELETE FROM traveler_identity_bindings WHERE identity_provider = 'cognito'`
-   as the master login), then remove the Keychain items:
+   as the master login), then, on the macOS machine that seeded them, remove the Keychain items:
 
    ```bash
    security delete-generic-password -s meridian-cognito -a jordan.morgan@example.com
@@ -744,7 +757,7 @@ Undo in the reverse of the order above and stop at the step you need.
    ```bash
    node_modules/.bin/cdk destroy -a "node dist/bin/meridian-identity.js" \
      -c domainPrefix=<unique-prefix> -c callbackUrls=<urls> --force
-   sed -i '' '/^MERIDIAN_COGNITO_/d' .env
+   sed -i '' '/^MERIDIAN_COGNITO_/d' .env   # macOS; on Linux: sed -i '/^MERIDIAN_COGNITO_/d' .env
    rm frontend/.env.development.local
    ```
 
@@ -768,6 +781,13 @@ Undo in the reverse of the order above and stop at the step you need.
 
    Roll it back only while nothing uses the login: the `meridian-catalog-tools` Lambda stops answering
    without it.
+
+   The workflow login is a fifth. Delete the AgentCore stack first (its Runtime role attaches
+   `MeridianWorkflowAuroraAccess`), then run `ALTER ROLE meridian_workflow NOLOGIN PASSWORD NULL`,
+   delete the `meridian/aurora/workflow-login` secret with `ForceDeleteWithoutRecovery`, delete the
+   policy's non-default versions and then the policy, and remove the `AURORA_WORKFLOW_SECRET_ARN`
+   line from `.env`. When you are deleting the cluster too, skip the `ALTER ROLE` and the SQL in
+   this step and the next, for every login.
 
 4. Migration 018. Run these as the master login, in this order. The five
    `admin_count_select` policies belong to the master, so `DROP OWNED BY` on
@@ -796,8 +816,7 @@ Undo in the reverse of the order above and stop at the step you need.
 
 `MERIDIAN_AGENTCORE_AUTH` chooses how every AgentCore call is authenticated. `iam` (unset means
 `iam`) signs each call with AWS credentials. `jwt` sends the signed-in person's Cognito access
-token on every hop. Any other value is refused by name. The hosted site was published in `jwt`
-mode on 2026-10-08.
+token on every hop. Any other value is refused by name.
 
 ### What `jwt` mode switches
 
@@ -1116,8 +1135,9 @@ you ran; `-` means the tool never returns it:
 
 ### Move the Lambdas to the gateway login
 
-One Lambda still connects as the master login until this step: the `MeridianHolds` Lambda (through
-the SSM parameter `/meridian/aurora/secret_arn`). The catalog Lambda is created on its own
+In a deployment that predates the gateway login, one Lambda still connects as the master login until
+this step: the `MeridianHolds` Lambda (through the SSM parameter `/meridian/aurora/secret_arn`). A new
+deployment publishes the gateway login from the start (step 7 of the deploy runbook). The catalog Lambda is created on its own
 `meridian_catalog` login and never moves, and `lambdas` checks it against that login at every stage.
 Every command below is a dry run until it gets `--apply
 --i-understand-this-changes-aws`, checks that the credentials belong to the account and Region of
@@ -1271,7 +1291,7 @@ a `MeridianCatalog` Gateway target served by the `meridian-catalog-tools` Lambda
    the login, its live test), then create the catalog Lambda and its role with its direct-invoke smoke
    (section 2 of the [deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md#2-create-the-catalog-lambda)). Nothing
    attaches to the Lambda yet.
-2. The deploy window, which is not yet scheduled and has not run. First save the configuration:
+2. The deploy window. First save the configuration:
    `venv/bin/python scripts/release_identity.py snapshot --service-arn "$SERVICE_ARN"` (add `--accept-baseline`
    if hops report findings; see [Save the configuration, then roll back](#save-the-configuration-then-roll-back)).
    Then Deploy A, from the Part I commit's tree, adds the `MeridianCatalog` target and the
@@ -1320,7 +1340,8 @@ Amazon Cognito access token and a real traveler row. Run it in `jwt` mode (see
 [Switch the AgentCore identity mode](#switch-the-agentcore-identity-mode)), from a clean checkout of the
 released commit. In `iam` mode, the default, the command refuses to run. It signs in as both users
 with tokens minted in memory from Secrets Manager, so it prints and stores no token and no password.
-It passed 17 of 17 probes against the hosted site on 2026-10-08, and the plan has 21 probes since Release 3.
+The plan has 21 probes. All 21 passed against the maintainers' `jwt` deployment on 2026-10-28 and
+2026-10-31; receipts stay out of the repository, so run the proof against your own deployment for yours.
 
 ```bash
 python scripts/identity_proof.py                                              # the plan only, no AWS call
@@ -1428,8 +1449,8 @@ Some residue stays on purpose and is listed under `notes` in the receipt. Audit 
 agent audit log) are append-only. The Concierge probes write AgentCore Memory events for Jordan's traveler, under the
 session ids the receipt names, and this command does not delete them; they expire with the memory's 30-day event expiry.
 
-The proof and the captures that use it run in an approved window. The
-proof passed 17 of 17 probes against the hosted site on 2026-10-08.
+Run the proof, and the captures that use it, only with approval to change the
+deployment: they sign in as the seeded users and write audit rows.
 
 ## Publish the web app
 
@@ -1536,7 +1557,11 @@ when you run the command; do not store it in a file.
 
 To tear down the hosted app, run `npx cdk destroy MeridianWeb` from `infra/`,
 delete the App Runner service, then run
-`npx cdk destroy MeridianWebBackend MeridianWebRoles`.
+`npx cdk destroy MeridianWebBackend MeridianWebRoles`. Delete the
+`meridian/web/api-token` secret if you created one. The backend images CDK pushed stay in the
+bootstrap stack's Amazon ECR repository; delete the `CDKToolkit` stack only if nothing else in the
+account and Region deploys with CDK, and empty its S3 bucket and ECR repository first if the delete
+stops on them.
 
 The container starts through `backend/launch.py`, which opens the port before
 the application finishes loading; [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md)

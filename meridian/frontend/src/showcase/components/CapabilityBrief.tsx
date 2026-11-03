@@ -21,9 +21,9 @@ const BRIEFS: Record<Phase, {
   2: {
     title: 'Give agents tools they can reuse.',
     description: 'Search, compare trips, and convert prices through named tools.',
-    route: ['Agent request', 'MCP tool contract', 'Aurora rows'],
+    route: ['Traveler request', 'MCP tool contract', 'Aurora rows'],
     evidence: 'Tool name, inputs, and result',
-    pattern: 'An MCP contract defines each tool’s inputs and result. The local app calls MCP servers over stdio.',
+    pattern: 'An MCP contract defines each tool’s inputs and result. The app calls its MCP server over stdio.',
     callout: 'A named tool still needs authorization and validated inputs. FX rates here are illustrative.',
   },
   3: {
@@ -39,7 +39,7 @@ const BRIEFS: Record<Phase, {
     description: 'Use saved preferences only after checking who may access them, and let policy decide every tool call.',
     route: ['Verified caller', 'Runtime + Gateway tools', 'Cedar decision', 'RLS write + audit'],
     evidence: 'Traveler authorization, Cedar allow or deny, hold row, and audit event',
-    pattern: 'Each hop checks the caller. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and an audit record captures each decision.',
+    pattern: 'Each hop checks the caller. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and audit records capture each access decision and each turn.',
     callout: 'The application pins traveler, confirmation and budget. The model cannot grant itself authority.',
   },
   5: {

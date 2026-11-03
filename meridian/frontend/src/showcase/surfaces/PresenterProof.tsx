@@ -232,7 +232,7 @@ export function PresenterProof({
           </h1>
         </div>
         <div className="mds-proof-head-meta">
-          <p>A Tokyo recovery plan.</p>
+          <p>A saved journey.</p>
           <p>
             {isObserved(snapshot) ? 'Saved step recorded.' : 'Awaiting saved step.'}
             {' '}{holdSummary}
@@ -387,7 +387,7 @@ export function PresenterProof({
             {isObserved(auth) ? (
               <div>
                 <strong>
-                  {document.traveler_id} owns {document.active_thread_id ?? document.journey_id}.
+                  {document.traveler_id} is the authorized traveler for {document.active_thread_id ?? document.journey_id}.
                 </strong>
                 <p>
                   Recorded {shortTime(auth.observed_at)} as{' '}
@@ -435,7 +435,7 @@ export function PresenterProof({
             ) : (
               <div className="mc-hold-pending">
                 <strong>No package hold recorded.</strong>
-                <p>A saved shortlist is only a saved step in the workflow. The hold begins after availability verification, when Aurora commits the booking.</p>
+                <p>A saved shortlist is only a saved step in the workflow. The hold begins after availability verification and the traveler’s confirmation, when Aurora commits the booking.</p>
               </div>
             )}
           </div>

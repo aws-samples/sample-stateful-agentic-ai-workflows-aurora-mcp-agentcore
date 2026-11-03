@@ -39,7 +39,7 @@ COGNITO_KEYS = ("MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID",
 EXIT_PASS, EXIT_FAIL, EXIT_LEFTOVERS, EXIT_REFUSED = 0, 1, 2, 3
 CONFIRM_FLAG = "--i-understand-this-creates-aws-resources"
 LIVE_COMMAND = (
-    "AWS_PROFILE=claude-code venv/bin/python scripts/run_gateway_harness.py "
+    "AWS_PROFILE=<profile> venv/bin/python scripts/run_gateway_harness.py "
     f"--apply {CONFIRM_FLAG}"
 )
 TAG_PERMISSIONS = (
@@ -150,7 +150,7 @@ def _connect(env: Mapping[str, str | None], deps: Dependencies) -> Clients:
     except (ClientError, BotoCoreError) as exc:
         raise guards.HarnessRefusal(
             f"cannot identify the AWS caller ({mask(str(exc))[:MAX_ERROR_TEXT]}); sign in with "
-            "the claude-code profile."
+            "a profile for the cluster's account."
         ) from None
     guards.check_caller(caller, session.region_name, (account, region))
     return Clients(

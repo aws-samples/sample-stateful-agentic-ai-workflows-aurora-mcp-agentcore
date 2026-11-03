@@ -1,0 +1,19 @@
+Meridian: stateful agentic AI on Amazon Aurora, MCP and AgentCore
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+The source code and documentation in this repository are licensed under the MIT No Attribution
+License (MIT-0); see LICENSE.
+
+Some image and icon files are not covered by MIT-0 and keep their own terms. Each folder's
+README.md records where its files come from and, where the source sets them, their license
+terms:
+
+- meridian/frontend/public/travel/ (photographs and generated images; includes photographs
+  under the Unsplash License and under CC BY 2.0, with the credits CC BY requires):
+  meridian/frontend/public/travel/README.md
+- meridian/frontend/public/brand/aws-2026-07-31/ (AWS Architecture Icons):
+  meridian/frontend/public/brand/aws-2026-07-31/README.md
+- meridian/frontend/public/brand/agentcore-purple/ (Amazon Bedrock AgentCore service icons):
+  meridian/frontend/public/brand/agentcore-purple/README.md
+- meridian/frontend/public/brand/bedrock.svg is the Amazon Bedrock icon from the AWS
+  Architecture Icons.

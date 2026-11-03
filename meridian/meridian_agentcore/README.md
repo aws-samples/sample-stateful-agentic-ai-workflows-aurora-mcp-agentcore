@@ -84,8 +84,7 @@ placeholders, or the next render overwrites it.
 ## Identity mode
 
 `MERIDIAN_AGENTCORE_AUTH` is `iam` (the default) or `jwt`. In `iam` mode the backend and both
-Runtimes sign every AgentCore call with AWS credentials. The hosted site has run in `jwt` mode
-since 2026-10-08. In `jwt` mode every hop carries the signed-in person's Cognito access token instead. The
+Runtimes sign every AgentCore call with AWS credentials. In `jwt` mode every hop carries the signed-in person's Cognito access token instead. The
 backend posts to each Runtime's invocation URL with a bearer token, each Runtime forwards the token
 to the Gateway, the Gateway's request interceptor
 (`agentcore/interceptors/traveler_pin/`) pins `travelerId` to the token's `traveler_id` claim, and
@@ -125,5 +124,5 @@ template with placeholder test values, so it runs without an AWS account.
 ## Documentation
 
 - [AgentCore CLI](https://github.com/aws/agentcore-cli)
-- [AgentCore CDK constructs](https://github.com/aws/agentcore-l3-cdk-constructs)
+- [AgentCore CDK constructs (`@aws/agentcore-cdk` on npm)](https://www.npmjs.com/package/@aws/agentcore-cdk)
 - [Amazon Bedrock AgentCore Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)

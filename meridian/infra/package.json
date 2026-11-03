@@ -12,7 +12,7 @@
     "watch": "tsc -w",
     "cdk": "npm run build && cdk",
     "synth": "npm run build && cdk synth",
-    "deploy": "npm run build && cdk deploy --require-approval never",
+    "deploy": "npm run build && cdk deploy",
     "diff": "npm run build && cdk diff",
     "clean": "rm -rf dist cdk.out"
   },
@@ -22,7 +22,6 @@
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "@aws-cdk/aws-apprunner-alpha": "2.265.0-alpha.0",
     "aws-cdk-lib": "~2.265.0",
     "constructs": "~10.7.0"
   }

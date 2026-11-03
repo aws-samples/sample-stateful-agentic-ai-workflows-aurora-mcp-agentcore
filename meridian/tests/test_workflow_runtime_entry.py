@@ -99,7 +99,7 @@ async def test_an_unusable_payload_is_a_request_error_and_runs_nothing(payload):
 async def test_ping_answers_without_running_the_workflow():
     runner = Runner(result={})
     out = await events({"event": "workflow_turn", "mode": "ping"}, runner, session="rt-wf-s")
-    worker = f"rt-wf-s/{entry.MICROVM_ID}"
+    worker = f"rt-wf-s/{entry.microvm_id()}"
     assert out == [{"type": "result",
                     "state": {"workflow_status": "ready", "worker_instance_id": worker}}]
     assert runner.commands == []
@@ -159,8 +159,32 @@ async def test_the_worker_id_names_the_session_and_this_microvm():
                                  heartbeat_seconds=10)
     await stream.__anext__()
     await stream.aclose()
-    assert re.fullmatch(r"vm-[0-9a-f]{12}", entry.MICROVM_ID)
-    assert seen == [f"rt-wf-s/{entry.MICROVM_ID}"] and len(seen[0]) <= 128
+    assert re.fullmatch(r"vm-[0-9a-f]{12}", entry.microvm_id())
+    assert seen == [f"rt-wf-s/{entry.microvm_id()}"] and len(seen[0]) <= 128
+
+
+def test_each_microvm_restored_from_one_startup_snapshot_gets_its_own_id(monkeypatch):
+    # AgentCore Runtime V2 starts every session from one snapshot taken after startup, so state
+    # made at import is shared by every microVM. The id must be made on the first request instead.
+    monkeypatch.setattr(entry, "_microvm_id", None)  # the module state the snapshot holds
+    first = entry.microvm_id()
+    assert entry.microvm_id() == first  # stable for the life of one microVM
+
+    monkeypatch.setattr(entry, "_microvm_id", None)  # a second microVM restored from that snapshot
+    second = entry.microvm_id()
+
+    assert re.fullmatch(r"vm-[0-9a-f]{12}", first) and re.fullmatch(r"vm-[0-9a-f]{12}", second)
+    assert first != second
+
+
+def test_importing_the_entry_makes_no_microvm_id():
+    import importlib
+
+    fresh = importlib.reload(entry)
+    try:
+        assert fresh._microvm_id is None
+    finally:
+        fresh.microvm_id()
 
 
 async def test_a_factory_failure_is_one_internal_event():

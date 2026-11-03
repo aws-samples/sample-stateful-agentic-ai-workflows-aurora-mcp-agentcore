@@ -94,7 +94,7 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
             <div className="mds-authz-step">
               <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
               <div>
-                <small>1. Verified caller</small>
+                <small>1. Verified workload</small>
                 <strong>{data.authorization.provider}</strong>
                 <code>{data.authorization.subject_id}</code>
               </div>

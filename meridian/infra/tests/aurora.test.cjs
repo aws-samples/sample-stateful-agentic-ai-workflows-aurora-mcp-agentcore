@@ -26,5 +26,9 @@ for (const snapshotArn of [undefined, 'arn:aws:rds:us-east-1:123456789012:cluste
     const cluster = Object.values(template.findResources('AWS::RDS::DBCluster'))[0];
     assert.equal(cluster.DeletionPolicy, 'Snapshot');
     assert.equal(cluster.UpdateReplacePolicy, 'Snapshot');
+    // A retained writer would make the cluster delete fail and keep billing after cdk destroy.
+    const writer = Object.values(template.findResources('AWS::RDS::DBInstance'))[0];
+    assert.equal(writer.DeletionPolicy, 'Delete');
+    assert.equal(writer.UpdateReplacePolicy, 'Delete');
   });
 }

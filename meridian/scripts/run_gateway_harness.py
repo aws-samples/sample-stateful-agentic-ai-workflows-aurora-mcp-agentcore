@@ -8,13 +8,13 @@ Live run (ask the owner first): create ``meridian-throwaway-<id>`` in the deploy
 probe it with the real jordan and decoy tokens (from scripts/cognito_tokens.py; never printed),
 print the verdict table, and delete everything in a ``finally`` block. It needs both flags, so it
 cannot run by accident:
-    AWS_PROFILE=claude-code venv/bin/python scripts/run_gateway_harness.py \\
+    AWS_PROFILE=<profile> venv/bin/python scripts/run_gateway_harness.py \\
         --apply --i-understand-this-creates-aws-resources
 
 Clean up after an interrupted run from its saved ledger (same confirmation). The ledger must be
 inside .local/gateway-harness (the resolved path is printed). A missing, unreadable or empty ledger
 is refused, and only the exact entries whose run tag matches are deleted:
-    AWS_PROFILE=claude-code venv/bin/python scripts/run_gateway_harness.py \\
+    AWS_PROFILE=<profile> venv/bin/python scripts/run_gateway_harness.py \\
         --teardown .local/gateway-harness/<name>/ledger.json \\
         --i-understand-this-creates-aws-resources
 

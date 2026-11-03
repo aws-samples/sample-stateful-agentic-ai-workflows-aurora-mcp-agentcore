@@ -22,6 +22,6 @@ Open SQL in the activity trace. Match the per-traveler price predicate to the re
 
 A valid query can answer the wrong business question. Define the metric and its units before executing SQL.
 
-## Transition
+## What comes next
 
 The next request needs reusable operations: compare three packages and convert prices.

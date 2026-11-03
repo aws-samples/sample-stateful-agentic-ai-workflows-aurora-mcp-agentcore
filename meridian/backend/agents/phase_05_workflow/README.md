@@ -30,7 +30,7 @@ The deployed workflow runs in the `MeridianWorkflow` AgentCore Runtime. The
 render stages this package, with the backend modules it imports, into the
 Runtime bundle, where it connects to Amazon Aurora as the `meridian_workflow` login.
 `runtime_entry.py` is the only entry. The backend invokes the Runtime on a session
-id derived from the thread. A presenter can stop that session; the next resume
+id derived from the thread. An operator can stop that session; the next resume
 starts a new microVM on the same session id, which claims the next attempt and
 restores the newest saved snapshot from Amazon Aurora, so no state lives on the microVM.
 
@@ -44,6 +44,6 @@ Continue at Recovery desk and choose Stop runtime session on the continuity rail
 
 A snapshot and a business write are separate transactions. Combine resumable execution with idempotent actions and authoritative readback.
 
-## Transition
+## What comes next
 
-Close in System evidence, then use Solution briefing for questions about the architecture.
+Open System evidence to see what Aurora recorded, then Solution briefing for the architecture.

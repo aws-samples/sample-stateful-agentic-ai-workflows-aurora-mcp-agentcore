@@ -38,7 +38,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
         <summary className="mds-brief-section-heading"><div><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Check permission, committed outcomes and recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
         <div className="mds-brief-section-body">
         <Facts items={[
-          ['Identity', 'The application binds the traveler and saved budget.'],
+          ['Identity', 'Sign-in names the traveler; the platform pins traveler and saved budget.'],
           ['Permission', 'Cedar decides whether a tool may run.'],
           ['Outcome', 'Aurora records what actually committed.'],
         ]} />
@@ -47,7 +47,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
             ['Seed', 'travel_catalog.py defines fictional inventory; seed_data.py loads Aurora and embeds descriptions.'],
             ['Retrieve', 'Query and catalog use the same embedding model. Tools recheck price, availability and access.'],
             ['Deliver', 'CloudFront serves S3 and routes the API to FastAPI on App Runner. Local development uses Vite and the same backend.'],
-            ['Persist', 'The RDS Data API connects Aurora catalog, traveler state, saved steps, leases and bookings. AgentCore resources are declared in agentcore.json.'],
+            ['Persist', 'The RDS Data API connects Aurora catalog, traveler state, saved steps, leases and bookings. AgentCore resources are declared in agentcore.template.json and rendered to agentcore.json.'],
           ]} />
           <p>The workflow keeps its saved steps in Amazon Aurora snapshots. A saved step is separate from the booking receipt.</p>
         </Detail>
@@ -57,14 +57,14 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker searches the catalog, places its hold and gives back a failed run&rsquo;s hold through the same Gateway under Cedar.</p>
           <dl className="mds-brief-tools">{TOOLS.map(([name, kind, body]) => <div key={name}><dt><span>{kind}</span><code>{name}</code></dt><dd>{body}</dd></div>)}</dl>
           <h3>Configured Cedar policies</h3>
-          <p><code>MeridianGovernance</code> uses ENFORCE mode and default deny. A denied call does not execute the target. The gateway ARN’s account portion is abbreviated below; this reference is not a live policy decision.</p>
+          <p><code>MeridianGovernance</code> uses ENFORCE mode and default deny. A denied call does not execute the target. The gateway ARN below uses placeholders for the Region, account and gateway ID; this reference is not a live policy decision.</p>
           {POLICIES.map(([name, plain, statement]) => <article className="mds-brief-policy" key={name}><h4><code>{name}</code></h4><p>{plain}</p><pre>{statement}</pre></article>)}
           <h3>Authorization at each boundary</h3><Facts items={CONTROLS} />
           <p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html">AgentCore Policy supports temporal conditions through Dogwood</a>. Meridian uses Cedar per-call policies; the proposed same-package lookup and five-minute session condition remain an <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/blob/main/meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md">assessed extension</a>, not enabled here.</p>
           <p>Trusted identity and row-level security govern access. Application deadlines, bounded retries and concurrency controls address workload pressure; separate pools alone do not reserve database compute.</p>
         </Detail>
         <Detail title="Recovery guarantees & evidence">
-          <p>The workflow runs classify → search → availability → prepare_hold → hold → synthesize. Before the write, prepare_hold saves the request and booking IDs as a step. The worker renews its lease in <code>journey_executions</code>; both worker and Lambda check the lease, with another Lambda check inside the write transaction.</p>
+          <p>On the recovery route the workflow runs classify → search → availability → prepare_hold → hold → synthesize; other requests skip steps or use memory_recall. Before the write, prepare_hold saves the request and booking IDs as a step. The worker renews its lease in <code>journey_executions</code>; the worker checks the lease before each Gateway call, and the Lambda checks it again inside the write transaction.</p>
           <Facts items={[
             ['Before the hold', 'After lease release or expiry, resume the saved graph with the intended request and booking IDs.'],
             ['Write committed, response lost', 'Retry the same intent. Aurora returns the existing booking with its original expiry. A permitted call alone does not prove that the write committed.'],
@@ -72,9 +72,9 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
             ['After the hold step is saved', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
           ]} />
           <p>A saved step and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
-          <p>Browser reload proves saved-state readback. The separate lost-response rehearsal discards a real committed reply, resumes on a replacement worker and checks the original receipt. It uses its own journey; it does not inject a fault into the open browser session.</p>
+          <p>Browser reload proves saved-state readback. The separate lost-response rehearsal discards a real committed reply, resumes on a replacement worker and checks the original receipt. It uses its own journey; it does not inject a fault into the open browser session. Stop runtime session on the Recovery desk does end the open journey’s Runtime session; the next resume starts on a new microVM.</p>
           <h3>Follow the result to its evidence</h3>
-          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread, saved steps and worker lease. Missing records remain unavailable.</p>
+          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread and saved steps; System evidence shows the worker lease. Missing records remain unavailable.</p>
           <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, saved steps and its Gateway hold decision. This briefing explains the design without making service calls.</p>
         </Detail>
         </div>

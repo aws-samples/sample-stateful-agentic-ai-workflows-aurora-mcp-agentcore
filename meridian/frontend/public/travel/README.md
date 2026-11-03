@@ -22,9 +22,6 @@ recovery views do not depend on an external image service.
   images supplied by the repository owner and cleared for redistribution in
   this sample. They are not photographs of the places they show and must not
   be described as documentary photography.
-- `catalog/CTY-004.jpg` and `catalog/BCH-003.jpg` held earlier catalog
-  photography until September 5, 2026, when they were replaced with the rest
-  of the catalog. That earlier version is only in git history.
 - Each package's image lives at `catalog/<package_id>.jpg`, and
   `scripts/travel_catalog.py` derives `image_url` from the package ID, so a
   replacement at the same path needs no code change.

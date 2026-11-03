@@ -417,12 +417,23 @@ function TraceSpanRow({ span, index, active, replyModel }: {
   );
 }
 
+/** Whether a URL's host is the AWS console, judged on the parsed host, not a substring. */
+function isAwsConsole(value: string): boolean {
+  let host: string;
+  try {
+    host = new URL(value).hostname;
+  } catch {
+    return false;
+  }
+  return host === 'console.aws.amazon.com' || host.endsWith('.console.aws.amazon.com');
+}
+
 /** Field values that are URLs (the CloudWatch trace link) open in a new tab. */
 function SpanFieldValue({ value }: { value: string }) {
   if (!/^https:\/\//.test(value)) return <>{value}</>;
   return (
     <a href={value} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-      {value.includes('console.aws.amazon.com') ? 'Open in CloudWatch' : value}
+      {isAwsConsole(value) ? 'Open in CloudWatch' : value}
     </a>
   );
 }

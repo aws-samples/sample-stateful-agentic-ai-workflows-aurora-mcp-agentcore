@@ -33,7 +33,7 @@ The AgentCore CLI deploys them as one CloudFormation stack,
 ## Prerequisites
 
 - The Aurora database is prepared (schema, migrations and seed data) as in the
-  [repository README](../../README.md#1-configure-and-prepare-the-database), and
+  [repository README](../../README.md#quick-start), and
   `meridian/.env` sets `AWS_DEFAULT_REGION`, `AURORA_CLUSTER_ARN`,
   `AURORA_SECRET_ARN` (the full ARN, with its six-character suffix) and
   `AURORA_DATABASE`.
@@ -50,9 +50,9 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   ```
 
   The render refuses to run without it. The `MeridianHolds` policy it writes may
-  read that secret. The `MeridianHolds` Lambda keeps running as the master login until
-  `scripts/release_identity.py lambdas` and its deploy steps move it (see
-  [OPERATIONS.md](OPERATIONS.md#move-the-lambdas-to-the-gateway-login)).
+  read only that secret, so the holds Lambda connects as the `meridian_gateway`
+  login once [Publish the holds Lambda's settings](#7-publish-the-holds-lambdas-settings)
+  points its settings there.
   The catalog Lambda runs as its own `meridian_catalog` login from the day you create it (step 2).
 - AWS credentials for the account that owns the cluster. Sign in with
   `aws login` or `aws sso login`, then confirm with
@@ -210,26 +210,10 @@ To deploy a code change later, run the `TARGET=` and `zip -j` lines again, then
 The CDK app grants the gateway role permission to invoke the function.
 
 The `currency_convert` argument names are part of the target's `tool-schema.json`, which the
-CDK deploy in step 5 publishes. The Lambda accepts the new and the old names while the Gateway
+CDK deploy in step 4 publishes. The Lambda accepts the new and the old names while the Gateway
 schema and the code are deployed separately.
 
-## 3. Publish the holds Lambda's settings
-
-The CDK-built `MeridianHolds` Lambda has no environment variables. It reads the
-cluster ARN, secret ARN and database name from SSM Parameter Store under
-`/meridian/aurora/`, and its IAM policy in the template is scoped to those
-parameters, the cluster and the secret:
-
-```bash
-python meridian/scripts/publish_gateway_parameters.py
-python meridian/scripts/publish_gateway_parameters.py --apply --i-understand-this-changes-aws
-```
-
-The first command is a dry run that prints the three parameter names. The second checks that the
-credentials belong to the account and Region of `AURORA_CLUSTER_ARN`, writes the parameters and
-reads them back.
-
-## 4. Bootstrap CDK
+## 3. Bootstrap CDK
 
 Once per account and Region:
 
@@ -241,7 +225,7 @@ Once per account and Region:
 )
 ```
 
-## 5. Deploy
+## 4. Deploy
 
 A new account needs three passes, because each one creates an ID the next
 render needs. Run each pass from the repository root:
@@ -275,7 +259,7 @@ is missing, for example on another machine, pass the IDs to
 policy engine ID needs the gateway ID with it, because the engine's policies
 name the gateway.
 
-## 6. Grant the holds Lambda access to the sample traveler
+## 5. Grant the holds Lambda access to the sample traveler
 
 The `MeridianHolds` Lambda is a workload: before it sets a traveler scope it
 needs its own row in `traveler_identity_bindings`.
@@ -284,7 +268,7 @@ needs its own row in `traveler_identity_bindings`.
 python meridian/scripts/bind_gateway_workload.py
 ```
 
-## 7. Point the backend at the deployment
+## 6. Point the backend at the deployment
 
 ```bash
 python meridian/scripts/sync_agentcore_env.py --write
@@ -297,12 +281,15 @@ runtime. The backend also reads the deployment state directly through
 [`backend/agentcore/cli_config.py`](../backend/agentcore/cli_config.py);
 variables in `.env` take precedence.
 
+Then complete the [Workflow Runtime steps](#workflow-runtime-steps) and
+[publish the holds Lambda's settings](#7-publish-the-holds-lambdas-settings).
+
 ## Workflow Runtime steps
 
 The `MeridianWorkflow` Runtime runs Phase 5 and connects to Amazon Aurora as the
 `meridian_workflow` login, which is not the admin role. Its password lives only
 in a Secrets Manager secret. Run these steps from the repository root, in this
-order. Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
+order (the numbers below belong to this list). Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
 Runtime, so confirm each before you run it.
 
 1. Apply the migrations that create the login and the stop record. 015, 016 and
@@ -392,6 +379,30 @@ run `scripts/stop_and_resume_proof.py` from `meridian/`. `--during waiting`, the
 default, stops the session while it waits for review. `--during running` stops it
 while the hold step is running. Each run removes the rows it creates.
 
+## 7. Publish the holds Lambda's settings
+
+The CDK-built `MeridianHolds` Lambda has no environment variables. It reads the
+cluster ARN, the secret ARN and the database name from SSM Parameter Store under
+`/meridian/aurora/`. Its IAM policy in the template may read only those
+parameters, the cluster and the `meridian_gateway` login's secret, so the secret
+parameter must name that login. Run this after the Workflow Runtime steps, once
+`sync_agentcore_env.py --write` has recorded both Runtimes: the script finds the
+deployed Gateway and Runtimes from those settings, and it refuses, writing
+nothing, until the holds Lambda's role can read the gateway login's secret.
+Holds, in the Concierge and in Phase 5, work only after this step.
+
+```bash
+python meridian/scripts/publish_gateway_parameters.py --gateway-login
+python meridian/scripts/publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws
+```
+
+The first command is a dry run that prints the three parameter names. The second checks that the
+credentials belong to the account and Region of `AURORA_CLUSTER_ARN`, writes the parameters and
+reads them back. A holds Lambda that has already handled a request keeps the values it read at its
+cold start; force a new one with `release_identity.py lambdas --restart-holds`. A deployment whose
+holds Lambda still connects as the master login moves with
+[Move the Lambdas to the gateway login](OPERATIONS.md#move-the-lambdas-to-the-gateway-login).
+
 ## Verify
 
 From the repository root:
@@ -466,7 +477,7 @@ new `iam` Gateway with a new URL.
 ## Change the deployment
 
 Edit `meridian/meridian_agentcore/agentcore/agentcore.template.json`, then
-render, validate and deploy as in step 5. A resource's `name` becomes its
+render, validate and deploy as in step 4. A resource's `name` becomes its
 CloudFormation logical ID, so renaming a resource replaces it; renaming
 `meridian_session` replaces the memory and discards its history.
 Changes to other fields update resources in place.
@@ -500,6 +511,21 @@ aws iam delete-role --role-name MeridianCatalogToolsRole
 aws ssm delete-parameters --region "$REGION" \
   --names /meridian/aurora/cluster_arn /meridian/aurora/secret_arn /meridian/aurora/database
 ```
+
+In `jwt` mode, also delete the Gateway's request interceptor Lambda and its role, which
+`release_identity.py interceptor` created outside the stack (it deletes only the tagged ones):
+
+```bash
+python meridian/scripts/release_identity.py interceptor-delete --apply --i-understand-this-changes-aws
+```
+
+The service logins' secrets and their managed policies (`MeridianBackendAuroraAccess`,
+`MeridianGatewayAuroraAccess`, `MeridianIdentityAuroraAccess`, `MeridianCatalogAuroraAccess` and
+`MeridianWorkflowAuroraAccess`) are not part of the stack either. Delete each login's
+`meridian/aurora/<login>-login` secret (`backend`, `gateway`, `identity`, `catalog` and `workflow`)
+and its policy as step 3 of
+[Roll back the service logins and sign-in](OPERATIONS.md#roll-back-the-service-logins-and-sign-in)
+says; when you are deleting the cluster as well, skip its database statements.
 
 The catalog login has its own teardown, in the Roll back the service logins and sign-in section of
 [Operations](OPERATIONS.md#roll-back-the-service-logins-and-sign-in).

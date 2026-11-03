@@ -23,6 +23,6 @@ Compare retrieved candidates and the reranked order. Read back actual package de
 
 Relevance finds candidates. Availability, authorization and factual claims need separate checks.
 
-## Transition
+## What comes next
 
 The next request requires the known traveler, saved preferences and governed actions.

@@ -1,7 +1,7 @@
 # Meridian agent instructions
 
-Read this at the start of every session, with the owner's global rules. Global rules cover
-coding standards and workflow; this file covers only what is specific to this repository.
+Read this at the start of every session. It covers what is specific to this repository; the
+general contribution rules are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 Commands run from `meridian/` unless a line says otherwise. The Git root is one level up.
 
 ## 1. What this is and where things live
@@ -22,7 +22,7 @@ retrieval, a production Concierge with memory, and a durable Workflow. Real sign
 | `tests/` | Pytest suite; `database`-marked tests need a live cluster |
 | `docs/` | Operations, architecture, runbooks, learnings |
 | `examples/` | SQL examples, plus `examples/langgraph/`, a maintained second implementation of the workflow that the application never imports |
-| `.local/`, `.superpowers/` | Scratch, receipts and specs. Git-ignored. Never commit from them |
+| `.local/` | Local scratch and receipts. Git-ignored. Never commit from it |
 
 The Python version is 3.13 (the `Dockerfile` and CI). The local environment is `venv/`. Use
 `venv/bin/python` and `venv/bin/ruff`, never the system Python.
@@ -79,20 +79,20 @@ npm run format:check
   `venv/bin/python -m pytest --collect-only -q` lists tests offline. Unit tests get fake AWS
   credentials and no network from `tests/conftest.py`; never turn that off.
 - `database`-marked tests need the live cluster. Tests for anything touching Aurora must read what
-  the database holds afterwards, not a recorded call log (fakes hid four real defects once).
+  the database holds afterwards, not a recorded call log: a fake has no column types,
+  constraints or transactions, so it passes code that Aurora rejects.
 - `-W error` cannot be used with pytest here. `pytest.ini` already filters one upstream warning.
 - The Playwright suite runs ungated (`--mode e2e`) on port 4174 and never reads
   `frontend/.env.development.local`. The sign-in screen is covered by the `gated` project.
-- macOS: `npm` and `npx` are nvm aliases that contain a `;`. In `npm run a && npm run b` the `;`
-  ends the chain, so a failed gate is ignored. Call the real binary
-  (`$HOME/.nvm/versions/node/v22.20.0/bin/npm`), run each gate as its own command, and
-  read its exit status. Do not put the nvm bin directory first on `PATH`.
+- If `npm` or `npx` is a shell alias that contains a `;` (some nvm setups), the `;` ends a
+  chain such as `npm run a && npm run b`, so a failed gate is ignored. Call the real binary, run
+  each gate as its own command, and read its exit status.
 - `git apply` from a subdirectory silently skips paths outside it. From the Git root use
   `git apply --directory=meridian`, or use `patch -p1`.
 
 ## 3. Hard rules
 
-Live tools. Anything that calls AWS needs the owner's explicit approval for that step. That covers
+Live tools. Anything that calls AWS needs explicit approval for that step from whoever owns the account. That covers
 `scripts/release_identity.py`, `scripts/publish.py`, `scripts/prove_backend_login.py`,
 `scripts/identity_proof.py`, `scripts/run_gateway_harness.py`, the provisioning, seed and bind
 scripts, `scripts/sync_*` and `scripts/seed_*` tools, and `agentcore deploy`.
@@ -103,8 +103,9 @@ scripts, `scripts/sync_*` and `scripts/seed_*` tools, and `agentcore deploy`.
   `docs/OPERATIONS.md#read-the-release-back` for `release_identity.py`.
 - Never run `scripts/apply_migrations.py` bare. Run it with `--pending` first and apply one
   migration at a time, with a rolled-back dry run before the real apply.
-- Deploy AgentCore only with `/opt/homebrew/bin/agentcore`. An older `agentcore` in the nvm bin
-  directory fails synth with a cloud assembly schema mismatch. Never use `npx agentcore`.
+- The release tools call `/opt/homebrew/bin/agentcore` (`scripts/identity_release/settings.py`),
+  so they assume macOS with Homebrew in `/opt/homebrew` (the Apple silicon default). Keep one current global `agentcore` install: an older one
+  fails synth with a cloud assembly schema mismatch. Never use `npx agentcore`.
 - Never run release or publish tools "to check". `check` subcommands that only read still call AWS.
 
 Secrets and identifiers. Never print, log, paste into a doc or commit credentials, tokens, secret
@@ -126,7 +127,8 @@ values, Cognito pool or client ids, the hosted-UI host, or 12-digit AWS account 
   browser path uses the alias `me`; `authorize_traveler` resolves it (`backend/http_auth.py`).
 - RLS is pinned per transaction. `scoped_session` in `backend/db/rds_data_client.py` steps down to
   `meridian_app` with `SET LOCAL ROLE`. The master login is not subject to RLS even with FORCE, so
-  any read outside a scoped session bypasses every policy. Test cleanup and seeding rely on that.
+  any read outside a scoped session bypasses every policy. Test cleanup and seeding rely on that;
+  deployed workloads must not, so they connect as the service logins below, never as the master.
 - FORCE-RLS tables need `app.current_traveler_id` set; `bookings` also needs `app.agent_type`. A
   read without the pins silently matches zero rows, so an empty result is not proof of no data.
 - Least-privilege logins: `meridian_backend`, `meridian_gateway`, `meridian_identity`,
@@ -143,10 +145,10 @@ values, Cognito pool or client ids, the hosted-UI host, or 12-digit AWS account 
   `scripts/stage_workflow_runtime.py`. Edit the source under `backend/`, not the copy.
 - `meridian_agentcore/app/MeridianConcierge/concierge_definition.py` is generated by
   `scripts/stage_concierge_runtime.py`. Edit `backend/agents/concierge_definition.py`, not the copy.
-- Data API limits measured on this cluster: a response over 1 MB fails; the 64 KB row limit in
+- Data API limits, as measured: a response over 1 MB fails; the 64 KB row limit in
   some AWS posts does not apply. Size guards target the 1 MB response.
 - Migrations in `scripts/migrations/` are append-only. Never edit or reorder an applied file; add
-  the next number. They are applied to the live cluster separately, by the owner's decision.
+  the next number. Apply them to a live cluster only with approval, as above.
 - The holds Lambda and every booking go through the governed Gateway path. No catalog agent
   writes a booking directly. The Phase 5 workflow searches the catalog through
   `MeridianCatalog___hybrid_trip_search` and gives a hold back through
@@ -181,22 +183,18 @@ These apply to user-facing text, docs, test names and test strings.
 - Tests first. Write the failing test, watch it fail for the right reason, then fix. Prove a
   safety test by breaking the guarded code (a mutation) and seeing it fail.
 - Reviews are read-only. A reviewer reports; it does not edit.
-- Several agents can share the working tree and the Git index. Stage by explicit path, check
-  `git diff --cached --name-only` first, and never run `git add -A` or `git add .`. Never
-  force-add anything under `.superpowers/`. Do not stash, reset or revert work you did not make.
-- Commit trailers, when the session provides them: `Co-Authored-By: <model> <noreply@anthropic.com>`
-  and `Claude-Session: <url>`, after a blank line. Subject: imperative mood, at most 72 characters.
-- All work lands on `main`. Push only reviewed commits. Never rewrite history or force push.
-- Leave scratch clean. Use `trash`, not `rm -rf`. Stop servers you started and remove temp
-  directories and worktrees you made.
+- Another agent or person may share the working tree. Stage by explicit path, check
+  `git diff --cached --name-only` first, and never run `git add -A` or `git add .`. Do not stash,
+  reset or revert work you did not make.
+- Commit subject: imperative mood, at most 72 characters. Add no tool-generated trailers or
+  attribution lines.
+- Contribute through pull requests, as [CONTRIBUTING.md](../CONTRIBUTING.md) describes. Never
+  rewrite published history or force push.
+- Leave scratch clean: stop servers you started and remove temp directories and worktrees you
+  made.
 - Do not widen scope. If you see adjacent breakage, report it.
 
-## 7. Out-of-repo material
-
-- Talk material (slides, speaker notes, captures and renders) lives outside this repository.
-  Do not add it, or paths to it, to committed files.
-
-## 8. Which document to open
+## 7. Which document to open
 
 | Need | Open |
 | --- | --- |

@@ -213,7 +213,7 @@ function RecoveryContext({ stage, state }: {
       {(stage === 'saved' || stage === 'action') && (
         <p className="mc-recovery-action-note">
           Recovery checks package availability and requests a 15-minute courtesy hold on the
-          leading option. No payment is taken; booking confirmation happens later in Concierge.
+          option you choose, or the leading one. No payment is taken; booking confirmation happens later in Concierge.
         </p>
       )}
       <details className="mc-trip-context">

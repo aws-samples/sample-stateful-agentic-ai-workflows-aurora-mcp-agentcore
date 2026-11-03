@@ -28,7 +28,7 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Prepare hold', { exact: true })).not.toBeVisible();
     fireEvent.click(screen.getByRole('heading', { name: 'Phase 5 - Workflow' }));
     expect(screen.getByText('Prepare hold', { exact: true })).toBeVisible();
-    expect(screen.getByText('Save the write intent')).toBeVisible();
+    expect(screen.getByText('Confirm, then save intent')).toBeVisible();
   });
 
   it('states how access is checked without naming a signing scheme', () => {

@@ -22,6 +22,6 @@ Inspect the tool names, inputs and responses in the trace. The comparison and co
 
 MCP standardizes the interface; teams still own validation, permissions and execution budgets. Currency rates are illustrative.
 
-## Transition
+## What comes next
 
 The next request describes a feeling rather than exact catalog filters: a quiet wine-country retreat.

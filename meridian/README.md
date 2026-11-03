@@ -100,7 +100,7 @@ writes a booking. Every hold and confirmation uses the governed Gateway path.
 | Runtime session and semantic context across turns | AgentCore Memory | AgentCore APIs, through the runtime's Strands session manager |
 | Workflow state: Strands Graph snapshots, append-only JSONB, one row per node | Aurora PostgreSQL table `workflow_snapshots` | Written and read by the `MeridianWorkflow` Runtime as the `meridian_workflow` login, with the traveler pinned per transaction under RLS |
 | Journey binding, worker leases and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
-| Presenter session stops | Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, read back under RLS |
+| Operator session stops | Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, read back under RLS |
 | Holds from any phase and from the Phase 5 workflow, and a failed run's release | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
 | Booking confirmation | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda changing the booking from `held` to `confirmed` |
 
@@ -381,8 +381,8 @@ backend, both Runtimes and the Gateway each verify the person's Amazon Cognito
 access token, and row-level security is the last check. A second seeded user, the
 decoy, has a valid token and a real traveler row; `scripts/identity_proof.py`
 records that the decoy is refused at all four layers (backend, Runtimes, Gateway
-and Amazon Aurora) and that Jordan is allowed at each. The proof has 21 probes. Its last recorded pass, 17 of 17
-probes on 2026-10-08 in `jwt` mode, predates the current plan. The five hops are in
+and Amazon Aurora) and that Jordan is allowed at each. The proof has 21 probes, and all 21
+passed in `jwt` mode on 2026-10-28 and 2026-10-31. The five hops are in
 [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md#identity-five-hops),
 the command is in
 [docs/OPERATIONS.md](docs/OPERATIONS.md#prove-the-decoy-is-refused), and the

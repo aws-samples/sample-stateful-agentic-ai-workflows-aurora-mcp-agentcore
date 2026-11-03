@@ -8,7 +8,7 @@ Run a governed concierge for an authorized traveler.
 
 | Source | Role |
 | --- | --- |
-| [`concierge.py`](concierge.py): `process_turn` | Checks the workload grant, reads traveler context under RLS, calls the runtime, writes the turn's audit row, then persists the turn. |
+| [`production_agent.py`](production_agent.py): `process_turn` | Checks the workload grant, reads traveler context under RLS, calls the runtime, writes the turn's audit row, then persists the turn. |
 | [`agentcore/runtime.py`](../../agentcore/runtime.py) | The managed Runtime adapter forwards real text deltas; the main Concierge exposes them through `/api/chat/stream`. |
 | [`MeridianConcierge/main.py`](../../../meridian_agentcore/app/MeridianConcierge/main.py) | The deployed Strands loop, Gateway tools and AgentCore Memory. |
 | [`agentcore.template.json`](../../../meridian_agentcore/agentcore/agentcore.template.json) | Gateway targets and enforced Cedar policies. |
@@ -23,6 +23,6 @@ Turn on Use traveler context in the ladder. Follow authorization, runtime and Ga
 
 The model proposes. Trusted code pins traveler, confirmation and budget; Cedar governs the call, and Aurora enforces row access and records the result.
 
-## Transition
+## What comes next
 
 A laptop or worker can disappear. The next capability makes multi-step work resumable.

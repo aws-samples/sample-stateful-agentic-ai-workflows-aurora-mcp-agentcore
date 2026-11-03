@@ -81,7 +81,7 @@ def check_caller(caller_account: str, caller_region: str, expected: tuple[str, s
     if caller_account != account:
         raise HarnessRefusal(
             "refusing to run: the AWS credentials belong to a different account than "
-            "AURORA_CLUSTER_ARN (<acct> expected). Use the claude-code profile."
+            "AURORA_CLUSTER_ARN (<acct> expected). Use a profile for that account."
         )
     if caller_region != region:
         raise HarnessRefusal(

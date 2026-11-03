@@ -23,7 +23,7 @@ these shared scripts keep one stable command path for operators and CI.
 | **07 - Publish** | `publish.py`, `published.py` | Review the CDK plan, apply to the established hosting resources, then inspect the non-secret local release record. Publication does not replace authenticated validation: run `warm_demo.py --hosted --verify` to move the record from `deployed_pending_verification` to `verified`. |
 | **08 - Maintain** | `release_demo_bookings.py`, `install_catalog_images.py` | `release_demo_bookings.py` lists a seeded traveler's bookings and deletes nothing unless given `--apply --i-understand-this-changes-aws` (exit 3 and no change when the confirm flag is missing). `--traveler` accepts only the two seeded travelers. `install_catalog_images.py` installs catalog artwork. |
 
-Retired manual cluster create/delete helpers and the orphaned root Node lockfile
-were removed. Use the maintained CDK provisioning and teardown path. Local logs,
+Provision and tear down Aurora with the CDK app in
+[OPERATIONS.md](../docs/OPERATIONS.md#provision-aurora). Local logs,
 release receipts, generated configuration, credentials and build output stay
 outside Git.

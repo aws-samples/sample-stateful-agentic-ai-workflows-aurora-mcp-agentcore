@@ -117,7 +117,7 @@ with a window where they disagree.
 - **Failure modes.** Clock skew rejects valid tokens. A rotation mismatch rejects all scopes
   at once and the failure looks like an RLS denial with zero rows, which is hard to tell from
   an empty result (inferred). A signer outage stops every database access, including the
-  read-only presenter views.
+  read-only views.
 - **Blast radius of the key.** An HMAC key forges any traveler. It would sit in Secrets
   Manager, in the signer, and in a table readable by the migration owner, which is the master
   login that already bypasses RLS. That adds a forge-anyone capability to the signer, in place

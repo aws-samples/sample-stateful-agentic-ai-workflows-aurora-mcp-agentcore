@@ -33,10 +33,10 @@ const MIN_REFRESH_DELAY_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 export const MESSAGES = {
-  refused: 'Sign-in was not completed. Try again, or ask the presenter to check your access.',
+  refused: 'Sign-in was not completed. Try again, or ask whoever runs this deployment to check your access.',
   unverified: 'Sign-in could not be verified. Try again.',
   failed: 'We could not complete sign-in. Try again.',
-  unlinked: 'This account has no traveler attached. Ask the presenter to check your access.',
+  unlinked: 'This account has no traveler attached. Ask whoever runs this deployment to check your access.',
   ended: 'Your session ended. Sign in again.',
 } as const;
 

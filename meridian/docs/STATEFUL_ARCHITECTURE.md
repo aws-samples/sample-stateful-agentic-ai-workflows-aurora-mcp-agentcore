@@ -16,7 +16,7 @@ prior work.
 | Managed session and semantic memory across turns, when configured | Amazon Bedrock AgentCore Memory | AgentCore APIs |
 | Phase 5 workflow state: one Strands Graph snapshot per node, append-only JSONB | Amazon Aurora PostgreSQL table `workflow_snapshots` | The `MeridianWorkflow` Runtime, as the `meridian_workflow` login, over the RDS Data API |
 | Journey ownership, execution leases, and hold-request identity | Amazon Aurora PostgreSQL | Scoped RDS Data API transactions |
-| Presenter stops of a Runtime session | Amazon Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, in a scoped Data API transaction |
+| Operator stops of a Runtime session | Amazon Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, in a scoped Data API transaction |
 | Courtesy holds, from the Phase 4 agent and the Phase 5 workflow | Amazon Aurora PostgreSQL | AgentCore Gateway tool under Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction; the workflow passes its saved request ID, booking ID and execution ID so the Lambda checks the worker's lease and a resumed worker replays the same booking |
 | Phase 4 agent conversation | Amazon Bedrock AgentCore Memory | The Runtime's Strands session manager |
 | In-turn model reasoning | AgentCore Runtime microVM | Transient by design; spans and the trace ID persist in CloudWatch |
@@ -240,8 +240,8 @@ its Data API saver and its own tests, is in
 
 In `jwt` mode, a signed-in person is the only source of the traveler. The Amazon Cognito access token
 carries a `traveler_id` claim, copied from the user's active `cognito` row in `traveler_identity_bindings` by a
-pre-token-generation trigger. Each hop below checks the token itself; none trusts the one before it. The hosted
-site has run in `jwt` mode since 2026-10-08. With `MERIDIAN_AGENTCORE_AUTH` unset the mode is `iam`, the other
+pre-token-generation trigger. Each hop below checks the token itself; none trusts the one before it.
+With `MERIDIAN_AGENTCORE_AUTH` unset the mode is `iam`, the other
 supported mode, and the Runtimes and the Gateway use IAM authorizers (see
 [Switch the AgentCore identity mode](OPERATIONS.md#switch-the-agentcore-identity-mode)).
 
@@ -254,8 +254,8 @@ supported mode, and the Runtimes and the Gateway use IAM authorizers (see
 | Amazon Aurora | The Lambda sets `app.current_traveler_id` from the argument and steps down to `meridian_app`. Row-level security filters every row to that traveler | Zero rows; a grant denial before any scope is set |
 
 `scripts/identity_proof.py` records, for each layer, that a second signed-in user (the decoy) is refused and that
-Jordan is allowed (see [Prove the decoy is refused](OPERATIONS.md#prove-the-decoy-is-refused)); it passed 17 of 17
-probes on 2026-10-08. One limit stays. Aurora cannot see the token behind the Data API, so the traveler setting is pinned by our
+Jordan is allowed (see [Prove the decoy is refused](OPERATIONS.md#prove-the-decoy-is-refused)); all 21 of its
+probes passed on 2026-10-28 and 2026-10-31. One limit stays. Aurora cannot see the token behind the Data API, so the traveler setting is pinned by our
 code. Having the database verify a signed scope was evaluated and not shipped; see
 [SIGNED_SCOPE_EVALUATION.md](SIGNED_SCOPE_EVALUATION.md).
 

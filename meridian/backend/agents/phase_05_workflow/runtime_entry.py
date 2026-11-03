@@ -37,7 +37,7 @@ from backend.security.redaction import mask_account_ids
 logger = logging.getLogger(__name__)
 
 WORKFLOW_EVENT = "workflow_turn"
-MICROVM_ID = f"vm-{uuid.uuid4().hex[:12]}"
+_microvm_id: Optional[str] = None
 HEARTBEAT_SECONDS = 10
 MODES = ("ping", "resume", "start")
 TURN_KEYS = frozenset({
@@ -195,6 +195,19 @@ def _with_release_note(event: Dict[str, Any], exc: BaseException) -> Dict[str, A
     return {**event, "hold_release": note} if isinstance(note, str) else event
 
 
+def microvm_id() -> str:
+    """This microVM's id, made on its first request and kept for its life.
+
+    AgentCore Runtime V2 starts every session from one snapshot taken after startup, so an id
+    made at import would be the same in every microVM, and a resumed run could not tell that it
+    moved. Made on first use, it differs per microVM on V1 and on V2.
+    """
+    global _microvm_id
+    if _microvm_id is None:
+        _microvm_id = f"vm-{uuid.uuid4().hex[:12]}"
+    return _microvm_id
+
+
 def default_runner(worker_id: str) -> WorkflowRunner:
     """The production runner, recording ``worker_id`` on its lease and snapshots."""
     from backend.agents.phase_05_workflow.run_audit import AuroraRunAuditor
@@ -232,7 +245,7 @@ async def workflow_turn(
     Yields:
         Heartbeats, then one result or one error.
     """
-    worker_id = f"{session_id or 'local'}/{MICROVM_ID}"
+    worker_id = f"{session_id or 'local'}/{microvm_id()}"
     # The Gateway client below this point forwards the caller's token. Tasks started after this
     # line, including the run, share it.
     bind_caller_token(bearer_from_headers(headers) if jwt_mode() else None)

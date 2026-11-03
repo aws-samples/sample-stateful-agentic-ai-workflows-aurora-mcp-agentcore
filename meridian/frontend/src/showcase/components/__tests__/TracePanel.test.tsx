@@ -430,6 +430,28 @@ describe('TracePanel collapse behavior', () => {
     expect(link).toHaveAttribute('target', '_blank');
   });
 
+  it('labels a link as CloudWatch only when its host is the AWS console', () => {
+    const lookalike = 'https://console.aws.amazon.com.example.test/cloudwatch/home';
+    const span: ShowcaseTraceSpan = {
+      id: 'span-lookalike',
+      name: 'Lookalike trace link',
+      category: 'security',
+      type: 'security',
+      status: 'success',
+      latencyMs: 12,
+      agent: 'ProductionAgent',
+      file: 'meridian_agentcore/app/MeridianConcierge/main.py',
+      details: 'A trace field whose host only contains the console name.',
+      fields: [{ label: 'trace_console', value: lookalike }],
+    };
+    render(<TracePanel state={makeState({ traceSpans: [span], expandedSpanId: 'span-lookalike' })} />);
+
+    fireEvent.click(screen.getByText('Understanding request'));
+    fireEvent.click(screen.getByText('Lookalike trace link'));
+    expect(screen.queryByRole('link', { name: 'Open in CloudWatch' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: lookalike })).toHaveAttribute('href', lookalike);
+  });
+
   /** The status line under one recorded event, as the reader sees it. */
   function eventMeta(name: string) {
     return screen.getByText(name).closest('details')!.querySelector('.mds-activity-event-meta');

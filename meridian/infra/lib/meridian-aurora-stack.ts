@@ -13,7 +13,10 @@ export interface MeridianAuroraStackProps extends StackProps {
   snapshotArn?: string;
 }
 
-/** Isolated, retained Aurora resources. No plaintext credential ever enters CDK. */
+/**
+ * Isolated Aurora resources. No plaintext credential ever enters CDK. Deleting the stack takes a
+ * final cluster snapshot and deletes the writer with the cluster, so nothing keeps billing.
+ */
 export class MeridianAuroraStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianAuroraStackProps) {
     super(scope, id, { ...props, terminationProtection: true });
@@ -50,7 +53,7 @@ export class MeridianAuroraStack extends Stack {
       dbClusterIdentifier: cluster.ref, engine: 'aurora-postgresql', dbInstanceClass: 'db.serverless',
       publiclyAccessible: false, autoMinorVersionUpgrade: true,
     });
-    writer.applyRemovalPolicy(RemovalPolicy.RETAIN);
+    writer.applyRemovalPolicy(RemovalPolicy.DESTROY);
     subnetGroup.applyRemovalPolicy(RemovalPolicy.RETAIN);
     securityGroup.applyRemovalPolicy(RemovalPolicy.RETAIN);
     parameters.applyRemovalPolicy(RemovalPolicy.RETAIN);

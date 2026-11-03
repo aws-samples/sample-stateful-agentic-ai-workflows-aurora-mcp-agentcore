@@ -59,4 +59,4 @@ Only trusted repository paths and deployment inputs should reach CDK.
 3. Run `python -m pip_audit -r requirements.txt` and `npm audit --audit-level=high` in each Node project.
 4. For infrastructure updates, synthesize and review the complete CDK diff before deployment. A dependency-only change can still change deployed resources.
 
-Audit results are point-in-time evidence; run them again before the event.
+Audit results are point-in-time evidence; run them again before you deploy.
