@@ -45,7 +45,9 @@ The stack outputs `ClusterArn` and `MasterSecretArn`; copy them into
 `AURORA_CLUSTER_ARN` and `AURORA_SECRET_ARN`, and set `AURORA_DATABASE=meridian`.
 Passing `-c snapshotArn=<snapshot-arn>` restores from a snapshot instead; the
 restored cluster keeps the snapshot's database users, so keep using the
-existing secret.
+existing secret. Pass the same `-c snapshotArn` on every later `cdk diff` and
+`cdk deploy` of a stack created that way: without it the template drops
+`SnapshotIdentifier`, and the diff replaces the cluster and its writer.
 
 To delete the cluster, turn off the stack's termination protection and the
 cluster's deletion protection, then destroy the stack from `infra/` with the
@@ -931,6 +933,9 @@ the state does not yet list. `release_identity.py deploy` checks that the render
 and the live Gateway agree, reads the plan, deploys once and reads the Gateway back by name. Before anything
 else it refuses a missing or stale staged Concierge copy or Workflow bundle with exit 2, before the confirmation
 check (restage with `scripts/stage_concierge_runtime.py` and `scripts/stage_workflow_runtime.py`; the render does both).
+It also refuses, in the dry run as well, a render whose Runtimes differ from `agentcore.template.json` in name or
+`runtimeVersion` (render again): a render made before a Python pin moved would otherwise ship the new code on the old
+runtime.
 
 | Stage | The render holds | What the deploy does | Why it is separate |
 | --- | --- | --- | --- |

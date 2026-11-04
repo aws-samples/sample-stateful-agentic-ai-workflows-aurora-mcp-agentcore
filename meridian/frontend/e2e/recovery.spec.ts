@@ -86,7 +86,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     });
     await page.getByRole('button', { name: 'Start recovery' }).click();
     const snapshot = page.locator('.mds-recovery-launch-steps li')
-      .filter({ hasText: 'Save a step in Aurora' });
+      .filter({ hasText: 'Review and confirm' });
     await expect(snapshot).toHaveClass(/is-visited/);
     await expect(snapshot.locator('.mds-step-source')).toHaveText('Aurora Data API, 458 ms');
     await expect(page.locator('.mds-decision-status')).toHaveText('Shortlist saved');

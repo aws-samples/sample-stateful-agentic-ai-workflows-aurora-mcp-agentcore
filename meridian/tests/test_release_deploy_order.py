@@ -236,12 +236,16 @@ PLANS = {stages.TARGETS: fx.targets_stage, stages.GOVERNANCE: fx.governance_stag
          stages.COMPLETE: lambda gateway: fx.complete_stage()}
 
 
-def project(tmp_path, rendered=None, deployed=None, targets=True):
+def project(tmp_path, rendered=None, deployed=None, targets=True, template=None):
     folder = tmp_path / "project" / "agentcore"
     (folder / ".cli").mkdir(parents=True, exist_ok=True)
     if rendered is not None:
         (folder / "agentcore.json").write_text(
             rendered if isinstance(rendered, str) else json.dumps(rendered))
+    if template is None:
+        runtimes = rendered.get("runtimes", []) if isinstance(rendered, dict) else []
+        template = {"runtimes": runtimes}
+    (folder / "agentcore.template.json").write_text(json.dumps(template))
     if deployed not in (None, False):
         (folder / ".cli" / "deployed-state.json").write_text(
             deployed if isinstance(deployed, str) else json.dumps(deployed))
@@ -252,7 +256,7 @@ def project(tmp_path, rendered=None, deployed=None, targets=True):
 
 def run(argv, world, tmp_path, runner, rendered=None, deployed=None, snaps="auto",
         proof=True, environment=None, mode=None, stage=stages.COMPLETE, changes=None,
-        configure_live=True, stale_copies=(), copy_check=None):
+        configure_live=True, stale_copies=(), copy_check=None, template=None):
     mode = mode or world.mode
     if configure_live:
         world.cloud.at_stage(mode, stage)
@@ -260,7 +264,7 @@ def run(argv, world, tmp_path, runner, rendered=None, deployed=None, snaps="auto
         runner.plan = (PLANS[stage](CONSTRUCTS[mode]) if stage in PLANS
                        else (fx.first_stage() if mode == "jwt" else IAM_REPLACES_JWT))
     root = project(tmp_path, spec(mode, stage) if rendered is None else rendered,
-                   state(mode, stage) if deployed is None else deployed)
+                   state(mode, stage) if deployed is None else deployed, template=template)
     release = tmp_path / "release"
     modes = operator_snapshots(mode) if snaps == "auto" else snaps
     for index, kept in enumerate(modes):
@@ -284,6 +288,36 @@ def replacement(mode="jwt", **kwargs):
 
 
 # ------------------------------------------------------------------ dry runs
+
+
+def python_spec(version):
+    rendered = spec()
+    rendered["runtimes"] = [{**runtime, "runtimeVersion": version}
+                            for runtime in rendered["runtimes"]]
+    return rendered
+
+
+def test_an_apply_refuses_a_render_on_another_python_than_the_template(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+    template = {"runtimes": python_spec("PYTHON_3_13")["runtimes"]}
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner,
+               rendered=python_spec("PYTHON_3_14"), template=template)
+    captured = capsys.readouterr()
+    assert code == 2
+    assert runner.deploys == []
+    assert "runs MeridianConcierge on PYTHON_3_14 but the template says PYTHON_3_13" in (
+        captured.out + captured.err)
+
+
+def test_the_dry_run_flags_a_runtime_the_render_lacks(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    template = {"runtimes": [*python_spec("PYTHON_3_13")["runtimes"],
+                             {"name": "MeridianWorkflow", "runtimeVersion": "PYTHON_3_13"}]}
+    code = run(["deploy"], world, tmp_path, Cli(world), rendered=python_spec("PYTHON_3_13"),
+               template=template)
+    assert code == 2
+    assert "the render has no MeridianWorkflow Runtime" in capsys.readouterr().out
 
 
 def test_the_dry_run_lists_the_preflight_and_deploys_nothing(tmp_path, capsys):

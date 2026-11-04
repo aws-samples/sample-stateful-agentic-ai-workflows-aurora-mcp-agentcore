@@ -19,7 +19,7 @@ const field = (span: ShowcaseTraceSpan | undefined, label: string) =>
 /** The latest hold step: a Gateway call, or a resumed step that found the hold its saved
  *  request had already placed, and so made no call for Cedar to decide. */
 function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Check {
-  const check = { id: 'policy', title: 'Check the hold' };
+  const check = { id: 'policy', title: 'Place hold' };
   const foundIn = field(span, 'reconciled_from');
   if (span && foundIn) {
     return {
@@ -108,7 +108,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     },
     policyCheck(policySpan, paused),
     {
-      id: 'hold', title: 'Verify the receipt',
+      id: 'hold', title: 'Show results',
       status: hold ? hold.status === 'held' ? 'Hold recorded' : hold.status === 'confirmed' ? 'Booking confirmed' : `Recorded: ${hold.status}`
         : receiptWaiting ? RUNS_AFTER_RESUME : 'Receipt unavailable',
       tone: hold ? 'observed' : 'pending',

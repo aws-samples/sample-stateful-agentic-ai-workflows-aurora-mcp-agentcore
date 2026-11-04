@@ -100,26 +100,26 @@ const LAUNCH_STEPS: {
   {
     id: 'understand',
     icon: AlertTriangle,
-    label: 'Understand disruption',
+    label: 'Start recovery',
     detail: 'Classify the canceled-flight recovery.',
   },
   {
     id: 'search',
     icon: Search,
-    label: 'Search and rank',
-    detail: 'Retrieve and rerank live Tokyo options.',
+    label: 'Find alternatives',
+    detail: 'Search and rerank live Tokyo options.',
   },
   {
     id: 'snapshot',
     icon: AuroraIcon,
-    label: 'Save a step in Aurora',
-    detail: 'Persist the shortlist before verification.',
+    label: 'Review and confirm',
+    detail: 'Saved in Aurora; waits for your confirmation.',
   },
   {
     id: 'verify',
     icon: CheckCircle2,
-    label: 'Verify after resume',
-    detail: 'Check the top three options after the pause.',
+    label: 'Check places',
+    detail: 'Check places for the top three options.',
   },
 ];
 
@@ -132,7 +132,7 @@ function timelineNote(
 ): string {
   if (failed) return 'Check saved progress before retrying';
   if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
-  if (stage === 'saved') return 'Paused at a saved step';
+  if (stage === 'saved') return 'Paused for your review';
   if (stage === 'ready') return 'Workflow complete';
   return 'Runs after you confirm';
 }

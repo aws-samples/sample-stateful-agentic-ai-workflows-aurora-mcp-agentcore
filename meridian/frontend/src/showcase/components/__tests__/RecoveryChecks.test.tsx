@@ -34,7 +34,7 @@ describe('RecoveryChecks evidence boundaries', () => {
   it('shows the observed denial and opens the real evidence surface', () => {
     const onOpenProof = vi.fn();
     render(<RecoveryChecks state={state({ traceSpans: [span('deny', 'denied')] })} onOpenProof={onOpenProof} />);
-    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
     expect(screen.getByText('Cedar denied')).toBeVisible();
     expect(screen.getByText('meridian_hold_governance')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Open System evidence' }));
@@ -44,7 +44,7 @@ describe('RecoveryChecks evidence boundaries', () => {
     const denied = span('deny', 'denied');
     denied.fields.push({ label: 'gateway_error', value: 'the Gateway policy denied the call' });
     render(<RecoveryChecks state={state({ traceSpans: [denied] })} onOpenProof={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
     expect(screen.getByText('the Gateway policy denied the call')).toBeVisible();
     expect(screen.getByText(/The returned reason names the layer that refused it/)).toBeVisible();
   });
@@ -58,7 +58,7 @@ describe('RecoveryChecks evidence boundaries', () => {
       ],
     };
     render(<RecoveryChecks state={state({ traceSpans: [refused] })} onOpenProof={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
     expect(screen.getByText('Identity check refused')).toBeVisible();
     expect(screen.queryByText('Cedar denied')).not.toBeInTheDocument();
     expect(screen.getByText(/before Cedar or the hold target ran/)).toBeVisible();
@@ -76,7 +76,7 @@ describe('RecoveryChecks evidence boundaries', () => {
     };
     render(<RecoveryChecks state={state({ workflowStatus: 'resumed', traceSpans: [found] })}
       journeyDocument={journey()} onOpenProof={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
     expect(screen.getByText('Already placed')).toBeVisible();
     expect(screen.queryByText('Decision unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
@@ -99,7 +99,7 @@ describe('RecoveryChecks evidence boundaries', () => {
     const document = journey();
     document.hold = { ...document.hold, package_id: 'CTY-002' } as JourneyDocument['hold'];
     render(<RecoveryChecks state={state()} journeyDocument={document} onOpenProof={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Verify the receipt/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Show results/ }));
     expect(screen.getByText('Package')).toBeVisible();
     expect(screen.getByText('CTY-002')).toBeVisible();
   });

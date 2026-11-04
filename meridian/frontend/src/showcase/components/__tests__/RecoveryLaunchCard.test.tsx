@@ -15,7 +15,7 @@ function card(steps: RecoveryStepView[]) {
   );
 }
 
-const snapshotRow = () => screen.getByText('Save a step in Aurora').closest('li')!;
+const snapshotRow = () => screen.getByText('Review and confirm').closest('li')!;
 
 describe('RecoveryLaunchCard', () => {
   it('keys the Aurora glow on the snapshot step, wherever it sits in the list', () => {
@@ -29,7 +29,7 @@ describe('RecoveryLaunchCard', () => {
     ]));
     expect(container.querySelector('.mds-aurora-glow')).toBeNull();
     expect(snapshotRow()).toHaveClass('is-pending');
-    expect(screen.getByText('Search and rank').closest('li')).toHaveClass('is-visited');
+    expect(screen.getByText('Find alternatives').closest('li')).toHaveClass('is-visited');
 
     rerender(card([
       done('snapshot', 'Aurora Data API'), done('understand', 'Strands Graph'),

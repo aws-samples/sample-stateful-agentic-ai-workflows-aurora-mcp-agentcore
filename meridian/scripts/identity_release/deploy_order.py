@@ -59,6 +59,7 @@ from scripts.identity_release import stages
 from scripts.provision_service_logins import require_account
 
 RENDERED = Path("agentcore") / "agentcore.json"
+TEMPLATE = Path("agentcore") / "agentcore.template.json"
 TARGETS_FILE = Path("agentcore") / "aws-targets.json"
 STATE_FILE = Path("agentcore") / ".cli" / "deployed-state.json"
 DEPLOY_ARGV = (*settings.AGENTCORE_CLI, "deploy", "-y")
@@ -199,6 +200,24 @@ def live_gateway_stage(control: Any, gateway_id: str) -> str:
     if not holds:
         return stages.TARGETS
     return stages.COMPLETE if described.get("policyEngineConfiguration") else stages.GOVERNANCE
+
+
+def runtime_version_findings(rendered: Mapping[str, Any],
+                             template: Mapping[str, Any]) -> list[str]:
+    """Where a rendered Runtime is missing, or runs another Python than the committed template."""
+    wanted = {runtime.get("name"): runtime.get("runtimeVersion")
+              for runtime in template.get("runtimes", [])}
+    have = {runtime.get("name"): runtime.get("runtimeVersion")
+            for runtime in rendered.get("runtimes", [])}
+    found: list[str] = []
+    for name, version in wanted.items():
+        if name not in have:
+            found.append(f"the render has no {name} Runtime but the template does: the render "
+                         f"is stale; run {RENDER}")
+        elif have[name] != version:
+            found.append(f"the render runs {name} on {have[name]} but the template says "
+                         f"{version}: the render is stale; run {RENDER}")
+    return found
 
 
 def stage_findings(rendered: str, deployed: str, live: str | None, live_stage: str | None,
@@ -615,6 +634,8 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     control = session.client(gateway_release.CONTROL_SERVICE)
     live = preflight.find_gateway_id(control, wanted.gateway_name)
     found = render_findings(spec["agentCoreGateways"][0], wanted)
+    found += runtime_version_findings(
+        spec, _read_json(deps.agentcore_dir / TEMPLATE, "restore it from git"))
     found += stage_findings(stage, deployed_stage(deps.agentcore_dir, mode), live,
                             live_gateway_stage(control, live) if live else None,
                             wanted.gateway_name)
