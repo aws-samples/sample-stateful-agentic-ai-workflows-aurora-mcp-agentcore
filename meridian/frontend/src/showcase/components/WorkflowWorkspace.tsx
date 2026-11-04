@@ -17,8 +17,8 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
   const canContinue = !state.isLoading && (paused || finished);
   const steps = [
     { title: 'Find alternatives', detail: 'Classify the request and rank the trip options.', done: evidence.searchObserved },
-    { title: 'Save the next step', detail: 'Keep the shortlist and where to resume in a saved step.', done: evidence.snapshotObserved },
-    { title: 'Continue at the desk', detail: 'Check availability and request a timed package hold.', done: finished && evidence.availabilityObserved },
+    { title: 'Review and confirm', detail: 'Save the shortlist in Aurora and wait for your confirmation.', done: evidence.snapshotObserved },
+    { title: 'Continue at the desk', detail: 'Check places, place the hold and show results.', done: finished && evidence.availabilityObserved },
   ];
 
   return <section className="mc-workflow-lab" aria-label="Recovery workflow saved steps">

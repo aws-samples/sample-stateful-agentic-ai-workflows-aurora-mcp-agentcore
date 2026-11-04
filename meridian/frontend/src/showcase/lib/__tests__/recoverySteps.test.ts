@@ -42,6 +42,20 @@ const resumed: ShowcaseTraceSpan[] = [
   }),
 ];
 
+// A resumed run that placed the hold and wrote its answer.
+const completed: ShowcaseTraceSpan[] = [
+  ...resumed,
+  span('Workflow node: prepare_hold', { category: 'reasoning', latencyMs: 3 }),
+  span('Workflow node: hold', {
+    category: 'gateway', component: 'AgentCore Gateway, MeridianHolds Lambda, Aurora',
+    latencyMs: 2477, fields: [{ label: 'cedar_decision', value: 'allow' }],
+  }),
+  span('Snapshot saved: AuroraSnapshotStorage.write#3', {
+    component: SNAPSHOT_TABLE, latencyMs: 90, fields: durable,
+  }),
+  span('Workflow node: synthesize', { component: 'Strands Graph', latencyMs: 12 }),
+];
+
 // What a paused recovery records since the search runs behind the Gateway: one tool span.
 const pausedViaGateway: ShowcaseTraceSpan[] = [
   span('Workflow node: classify → plan', { component: 'Strands Graph', latencyMs: 0 }),
@@ -61,24 +75,55 @@ const pausedViaGateway: ShowcaseTraceSpan[] = [
 describe('deriveRecoverySteps', () => {
   it('credits the search step to the Gateway when the search ran as a Gateway tool', () => {
     const steps = deriveRecoverySteps(pausedViaGateway, 'saved', saved);
-    expect(steps[1].source).toBe(nb('AgentCore Gateway, 956 ms'));
+    expect(steps[0].source).toBe(nb('AgentCore Gateway, 956 ms'));
+  });
+
+  it('lists the five recovery steps in the order the talk names them', () => {
+    expect(deriveRecoverySteps([], 'saved', saved).map(step => step.id))
+      .toEqual(['search', 'snapshot', 'verify', 'hold', 'result']);
   });
 
   it('names each step\'s service and measured time once the backend confirms it', () => {
     const steps = deriveRecoverySteps(paused, 'saved', saved);
     expect(steps.map(step => step.state))
-      .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
+      .toEqual(['is-visited', 'is-visited', 'is-pending', 'is-pending', 'is-pending']);
     expect(steps.map(step => step.source)).toEqual([
-      nb('Strands Graph, <1 ms'), nb('Bedrock + Aurora, 956 ms'),
-      nb('Aurora Data API, 106 ms'), null,
+      nb('Bedrock + Aurora, 956 ms'), nb('Aurora Data API, 106 ms'), null, null, null,
     ]);
   });
 
   it('completes verification only when the resumed run reports it', () => {
     const steps = deriveRecoverySteps(resumed, 'ready', saved);
     expect(steps.map(step => step.state))
-      .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-visited']);
-    expect(steps[3].source).toBe(nb('Aurora, 54 ms'));
+      .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending', 'is-pending']);
+    expect(steps[2].source).toBe(nb('Aurora, 54 ms'));
+  });
+
+  it('credits the hold to the Gateway and Cedar, and the result to the graph', () => {
+    const steps = deriveRecoverySteps(completed, 'ready', saved);
+    expect(steps.map(step => step.state)).toEqual(Array(5).fill('is-visited'));
+    expect(steps[3].source).toBe(nb('AgentCore Gateway, Cedar allow, 2.5 s'));
+    expect(steps[4].source).toBe(nb('Strands Graph, 12 ms'));
+  });
+
+  it('credits a hold the resumed step found already placed to Aurora', () => {
+    const found = completed.map(item => (item.name === 'Workflow node: hold'
+      ? span('Workflow node: hold', {
+        category: 'database', component: 'Aurora hold_requests', latencyMs: 31,
+        fields: [{ label: 'reconciled_from', value: 'Aurora hold_requests' }],
+      })
+      : item));
+    expect(deriveRecoverySteps(found, 'ready', saved)[3].source).toBe(nb('Aurora Data API, 31 ms'));
+  });
+
+  it('does not complete the hold step for a hold that was refused or skipped', () => {
+    for (const name of ['Workflow node: hold not placed', 'Workflow node: hold skipped']) {
+      const refused = completed.map(item => (item.name === 'Workflow node: hold'
+        ? span(name, { status: name.endsWith('placed') ? 'denied' : 'ok' })
+        : item));
+      expect(deriveRecoverySteps(refused, 'ready', saved)[3])
+        .toEqual({ id: 'hold', state: 'is-pending', source: null });
+    }
   });
 
   it('does not claim a snapshot that reports itself non-durable', () => {
@@ -88,7 +133,7 @@ describe('deriveRecoverySteps', () => {
       }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'saved', saved);
-    expect(steps[2]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
+    expect(steps[1]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
   });
 
   it('claims no progress while a fresh run is in flight', () => {
@@ -99,22 +144,22 @@ describe('deriveRecoverySteps', () => {
   it('keeps the confirmed steps while resuming and marks verification in progress', () => {
     const steps = deriveRecoverySteps(paused, 'running', { resumeMode: true, failed: false });
     expect(steps.map(step => step.state))
-      .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-current']);
-    expect(steps[2].source).toBe(nb('Aurora Data API, 106 ms'));
-    expect(steps[3].source).toBeNull();
+      .toEqual(['is-visited', 'is-visited', 'is-current', 'is-pending', 'is-pending']);
+    expect(steps[1].source).toBe(nb('Aurora Data API, 106 ms'));
+    expect(steps[2].source).toBeNull();
   });
 
   it('names no service and completes no step it did not read from a span while resuming', () => {
     const steps = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
     expect(steps.map(step => step.state))
-      .toEqual(['is-pending', 'is-pending', 'is-pending', 'is-current']);
+      .toEqual(['is-pending', 'is-pending', 'is-current', 'is-pending', 'is-pending']);
     expect(steps.every(step => step.source === null)).toBe(true);
   });
 
   it('changes no confirmed step when Resume is clicked, only when a response arrives', () => {
     const before = deriveRecoverySteps([], 'saved', saved);
     const resuming = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
-    expect(resuming.slice(0, 3)).toEqual(before.slice(0, 3));
+    expect(resuming.slice(0, 2)).toEqual(before.slice(0, 2));
   });
 
   it('does not claim an Aurora snapshot for an in-process one while resuming', () => {
@@ -122,14 +167,14 @@ describe('deriveRecoverySteps', () => {
       ? { ...item, fields: [{ label: 'snapshot_durable', value: 'false' }] }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
-    expect(steps[2]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
-    expect(steps[1].source).toBe(nb('Bedrock + Aurora, 956 ms'));
+    expect(steps[1]).toEqual({ id: 'snapshot', state: 'is-pending', source: null });
+    expect(steps[0].source).toBe(nb('Bedrock + Aurora, 956 ms'));
   });
 
   it('marks nothing complete after a failure or before the traveler starts', () => {
     expect(deriveRecoverySteps(paused, 'action', { resumeMode: false, failed: true })
       .every(step => step.state === 'is-pending')).toBe(true);
     expect(deriveRecoverySteps([], 'action', saved).map(step => step.state))
-      .toEqual(['is-ready', 'is-pending', 'is-pending', 'is-pending']);
+      .toEqual(['is-ready', 'is-pending', 'is-pending', 'is-pending', 'is-pending']);
   });
 });

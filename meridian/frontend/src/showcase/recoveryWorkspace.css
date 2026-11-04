@@ -1802,7 +1802,7 @@
   z-index: 1;
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-content: center;
   gap: 0;
   margin: 0;

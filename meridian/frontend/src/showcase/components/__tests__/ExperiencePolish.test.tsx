@@ -524,7 +524,7 @@ describe('Experience presentation polish', () => {
       screen.getByRole('list', { name: 'Recovery workflow progress' }),
     ).toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: 'Recovery workflow progress' })).getByText('Find alternatives')).toBeInTheDocument();
-    expect(screen.getByText('Review and confirm')).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Recovery workflow progress' })).getByText('Review and confirm')).toBeInTheDocument();
     expect(
       screen.queryByRole('textbox', { name: 'Ask Meridian anything' }),
     ).not.toBeInTheDocument();
@@ -546,8 +546,12 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Waiting for saved results')).toBeInTheDocument();
     expect(
       within(screen.getByRole('list', { name: 'Recovery workflow progress' }))
-        .getByText('Start recovery').closest('li'),
+        .getByText('Find alternatives').closest('li'),
     ).toHaveClass('is-pending');
+    expect(
+      within(screen.getByRole('list', { name: 'Recovery workflow progress' }))
+        .queryByText('Start recovery'),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole('article', { name: 'Live recovery progress' }),
     ).toHaveClass('is-compact');
@@ -589,15 +593,13 @@ describe('Experience presentation polish', () => {
       />,
     );
 
-    expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
-    expect(
-      screen.getByText('Check places').closest('li'),
-    ).toHaveAttribute('aria-current', 'step');
-    // No span on this desk confirmed understanding, so clicking Resume does not either.
-    expect(
-      within(screen.getByRole('list', { name: 'Recovery workflow progress' }))
-        .getByText('Start recovery').closest('li'),
-    ).toHaveClass('is-pending');
+    expect(screen.getByText('Step 3 of 5')).toBeInTheDocument();
+    const progress = within(screen.getByRole('list', { name: 'Recovery workflow progress' }));
+    expect(progress.getByText('Check places').closest('li')).toHaveAttribute('aria-current', 'step');
+    // No span on this desk confirmed the search, so clicking Resume does not either.
+    expect(progress.getByText('Find alternatives').closest('li')).toHaveClass('is-pending');
+    expect(progress.getByText('Place hold').closest('li')).toHaveClass('is-pending');
+    expect(progress.getByText('Show results').closest('li')).toHaveClass('is-pending');
   });
 
   it('fills in each recovery step with its service and time as the backend confirms it', () => {
@@ -690,7 +692,7 @@ describe('Experience presentation polish', () => {
     })} />);
     watched.rerender(<RecoveryWorkspace state={saved} />);
     expect(watched.container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
-    const mark = screen.getByText('Review and confirm').closest('li')!
+    const mark = within(screen.getByRole('list', { name: 'Recovery workflow progress' })).getByText('Review and confirm').closest('li')!
       .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
     expect(mark.style.opacity).toBe('0');
   });
@@ -783,7 +785,7 @@ describe('Experience presentation polish', () => {
     const icons = Array.from(
       view.container.querySelectorAll<HTMLElement>('.mds-recovery-step-icon'),
     );
-    expect(icons).toHaveLength(4);
+    expect(icons).toHaveLength(5);
     expect(icons.some(icon => icon.style.opacity === '0')).toBe(false);
   });
 
@@ -824,7 +826,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Check saved progress before retrying')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry recovery' })).toBeInTheDocument();
     expect(
-      screen.getByText('Review and confirm').closest('li'),
+      within(screen.getByRole('list', { name: 'Recovery workflow progress' })).getByText('Review and confirm').closest('li'),
     ).toHaveClass('is-pending');
   });
 

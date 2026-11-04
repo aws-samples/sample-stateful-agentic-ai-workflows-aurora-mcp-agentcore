@@ -18,13 +18,13 @@ const WORKFLOW_NODES: NodeName[] = ['classify', 'search', 'availability', 'memor
 
 const NODE_LABELS: Record<GraphNodeName, string> = {
   start: 'START',
-  classify: 'Classify intent',
-  search: 'Retrieve packages',
-  availability: 'Check availability',
+  classify: 'Classify request',
+  search: 'Find alternatives',
+  availability: 'Check places',
   memory_recall: 'Recall memory',
-  prepare_hold: 'Prepare hold intent',
-  hold: 'Request governed hold',
-  synthesize: 'Compose answer',
+  prepare_hold: 'Save hold IDs',
+  hold: 'Place hold',
+  synthesize: 'Show results',
   end: 'END',
 };
 

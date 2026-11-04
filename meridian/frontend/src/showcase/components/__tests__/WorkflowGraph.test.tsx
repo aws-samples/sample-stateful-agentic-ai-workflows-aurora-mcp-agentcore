@@ -38,8 +38,8 @@ describe('WorkflowGraph', () => {
     ])} />);
 
     expect(screen.getByText('6 steps')).toBeInTheDocument();
-    expect(screen.getByText('Prepare hold intent')).toBeInTheDocument();
-    expect(screen.getByText('Request governed hold')).toBeInTheDocument();
+    expect(screen.getByText('Save hold IDs')).toBeInTheDocument();
+    expect(screen.getByText('Place hold')).toBeInTheDocument();
   });
 
   it('renders the routed Strands Graph path with branch labels and snapshot badges', () => {

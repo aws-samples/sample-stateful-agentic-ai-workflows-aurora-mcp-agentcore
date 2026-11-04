@@ -13,6 +13,7 @@ type Check = {
   facts: [string, string][];
 };
 const RUNS_AFTER_RESUME = 'Runs after you resume';
+const AVAILABILITY_NODE = /^Workflow node: availability/;
 const field = (span: ShowcaseTraceSpan | undefined, label: string) =>
   span?.fields.find(item => item.label === label)?.value;
 
@@ -65,6 +66,29 @@ function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Chec
     description: 'Cedar checks confirmation, party size, hold duration and saved budget. No decision is reported for the latest hold attempt.' };
 }
 
+/** The places check: the availability step the trace recorded for this recovery. */
+function placesCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Check {
+  const check = { id: 'places', title: 'Check places' };
+  if (span) {
+    const checks = field(span, 'checks') || '0';
+    return {
+      ...check, status: `${checks} ${checks === '1' ? 'option' : 'options'} checked`, tone: 'observed',
+      description: 'The workflow checked which trip lengths still have places for the party, for '
+        + 'the top options, in Amazon Aurora catalog inventory. A check does not hold inventory; '
+        + 'the hold is the next step.',
+      facts: [['Options checked', checks], ['Rows read', field(span, 'rows') || '0'],
+        ['Source', 'Current recovery workflow trace']],
+    };
+  }
+  if (paused) {
+    return { ...check, status: RUNS_AFTER_RESUME, tone: 'pending', facts: [],
+      description: 'The workflow is paused at its saved step, so places are not checked yet. '
+        + 'This check runs after you resume.' };
+  }
+  return { ...check, status: 'Not checked yet', tone: 'pending', facts: [],
+    description: 'Places are checked after the review, for the top three options.' };
+}
+
 /** Status is backed by records or structured fields, never assistant prose. */
 export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
   state: MeridianShowcaseState;
@@ -83,6 +107,8 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
       || field(span, 'reconciled_from'),
   ) : undefined;
   const paused = current && state.workflowStatus === 'paused';
+  const placesSpan = current ? [...state.traceSpans].reverse().find(span =>
+    AVAILABILITY_NODE.test(span.name) && span.status === 'ok') : undefined;
   const receiptWaiting = paused && !hold;
   const recommendations = current ? state.recommendations ?? [] : [];
   const checks: Check[] = [
@@ -96,7 +122,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
       facts: recommendations.length ? [['Leading option', recommendations[0].name], ['Source', 'Current recovery response']] : [],
     },
     {
-      id: 'snapshot', title: 'Save progress',
+      id: 'snapshot', title: 'Review and confirm',
       status: snapshot ? document?.snapshot_store.durable ? 'Saved outside the worker' : 'Worker memory only' : 'Not yet verified',
       tone: snapshot ? 'observed' : 'pending',
       description: snapshot
@@ -106,6 +132,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
         : 'A saved shortlist needs a saved step before it can resume. Open System evidence to inspect the active journey.',
       facts: snapshot ? [['Saved step', snapshot.snapshot_id], ['Thread', snapshot.thread_id], ['Source', snapshot.source]] : [],
     },
+    placesCheck(placesSpan, paused),
     policyCheck(policySpan, paused),
     {
       id: 'hold', title: 'Show results',

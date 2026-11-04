@@ -516,7 +516,7 @@ function RecoveryDecisionDashboard({
 /** The recovery's working area: the live console once a run starts, a
  *  reconciliation prompt when a response was lost, or the launch card. */
 function RecoveryConsole({
-  state, stage, evidence, steps, live, resumeMode, errorDetail, consoleRef, briefingRef,
+  state, stage, evidence, steps, live, errorDetail, consoleRef, briefingRef,
   onStart, onOpenProof,
 }: {
   state: MeridianShowcaseState;
@@ -524,7 +524,6 @@ function RecoveryConsole({
   evidence: RecoveryEvidence;
   steps: RecoveryStepView[];
   live: boolean;
-  resumeMode: boolean;
   errorDetail: string | null;
   consoleRef: RefObject<HTMLDivElement>;
   briefingRef: RefObject<HTMLElement>;
@@ -542,7 +541,6 @@ function RecoveryConsole({
           steps={steps}
           live={live}
           compact
-          resumeMode={resumeMode}
           disabled
           onStart={onStart}
         />
@@ -706,7 +704,7 @@ export function RecoveryWorkspace({
 
       <RecoveryConsole
         state={state} stage={recoveryStage} evidence={recoveryEvidence}
-        steps={recoverySteps} live={liveCues} resumeMode={isResumingFromSnapshot}
+        steps={recoverySteps} live={liveCues}
         errorDetail={workflowErrorDetail} consoleRef={consoleRef} briefingRef={briefingRef}
         onStart={startRecovery} onOpenProof={onOpenProof}
       />

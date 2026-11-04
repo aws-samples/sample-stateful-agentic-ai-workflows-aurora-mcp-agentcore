@@ -16,7 +16,7 @@ export interface ShowcasePhaseOption {
   label: ShowcasePhaseLabel;
   phase: Phase;
   description: string;
-  /** Presenter ladder shorthand: Query -> Tool -> Intent -> Trust -> Durable Workflow. */
+  /** Presenter ladder shorthand, as the talk names the rungs: Facts -> Tools -> Meaning -> Trust -> Continuity. */
   capability: string;
   /** The message the audience should retain after this phase. */
   takeaway: string;
@@ -118,7 +118,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'SQL',
     phase: 1,
     description: 'Direct SQL filters over trip_packages',
-    capability: 'Query',
+    capability: 'Facts',
     takeaway: 'Ground the assistant in live Aurora rows before adding agent abstractions.',
     proofPoint: 'SQL executed',
     // Phase 1 is the base rung - nothing to diff against.
@@ -128,7 +128,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'MCP',
     phase: 2,
     description: 'Catalog access through MCP tools',
-    capability: 'Tool',
+    capability: 'Tools',
     takeaway: 'Expose Aurora through named tool contracts with explicit inputs and results.',
     proofPoint: 'MCP tool invoked',
     adds: 'Named MCP tools reuse the same Aurora catalog, with explicit inputs and results.',
@@ -138,7 +138,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'Retrieval',
     phase: 3,
     description: 'Hybrid retrieval chosen by one agent',
-    capability: 'Intent',
+    capability: 'Meaning',
     takeaway: 'Match traveler intent with vectors, text search and reranking, chosen by one agent that also holds the earlier tools.',
     proofPoint: 'pgvector + rerank',
     adds: 'One agent chooses among the earlier tools and a hybrid search that combines meaning and keywords, then reranks.',
@@ -158,7 +158,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'Workflow',
     phase: 5,
     description: 'Strands Graph on AgentCore Runtime with saved steps',
-    capability: 'Durable Workflow',
+    capability: 'Continuity',
     takeaway: 'Make multi-step work explicit, inspectable, saved at each step, and resumable.',
     proofPoint: 'Saved step written',
     adds: 'The Strands Graph runs in its own AgentCore Runtime and saves each step in Amazon Aurora, so a replacement worker can resume the same thread.',

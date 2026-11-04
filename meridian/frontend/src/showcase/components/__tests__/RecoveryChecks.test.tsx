@@ -116,7 +116,7 @@ describe('RecoveryChecks evidence boundaries', () => {
   });
   it('says the hold steps run after resume while the workflow is paused', () => {
     render(<RecoveryChecks state={state({ workflowStatus: 'paused' })} onOpenProof={vi.fn()} />);
-    expect(screen.getAllByText('Runs after you resume')).toHaveLength(2);
+    expect(screen.getAllByText('Runs after you resume')).toHaveLength(3);
     expect(screen.queryByText('Decision unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('Receipt unavailable')).not.toBeInTheDocument();
   });
@@ -124,6 +124,33 @@ describe('RecoveryChecks evidence boundaries', () => {
     render(<RecoveryChecks state={state({ workflowStatus: 'paused', traceSpans: [span('allow', 'ok')] })}
       onOpenProof={vi.fn()} />);
     expect(screen.getByText('Cedar allowed')).toBeVisible();
-    expect(screen.getAllByText('Runs after you resume')).toHaveLength(1);
+    expect(screen.getAllByText('Runs after you resume')).toHaveLength(2);
+  });
+  it('lists the five recovery steps in the order the talk names them', () => {
+    render(<RecoveryChecks state={state()} onOpenProof={vi.fn()} />);
+    const list = screen.getByRole('list');
+    expect(Array.from(list.querySelectorAll('strong'), item => item.textContent)).toEqual([
+      'Find alternatives', 'Review and confirm', 'Check places', 'Place hold', 'Show results',
+    ]);
+  });
+  it('reports the places check from the availability step the trace recorded', () => {
+    const checked: ShowcaseTraceSpan = {
+      id: 'availability', name: 'Workflow node: availability fan-out', type: 'tool_call',
+      category: 'orchestration', status: 'ok', latencyMs: 54, fields: [
+        { label: 'node', value: 'availability' }, { label: 'checks', value: '3' },
+        { label: 'rows', value: '3' },
+      ],
+    };
+    render(<RecoveryChecks state={state({ workflowStatus: 'resumed', traceSpans: [checked] })}
+      onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Check places/ }));
+    expect(screen.getByText('3 options checked')).toBeVisible();
+    const detail = within(document.getElementById('recovery-check-places')!);
+    expect(detail.getByText('Options checked')).toBeVisible();
+    expect(detail.getByText(/does not hold inventory/)).toBeVisible();
+  });
+  it('does not report a places check before one is recorded', () => {
+    render(<RecoveryChecks state={state()} onOpenProof={vi.fn()} />);
+    expect(screen.getByText('Not checked yet')).toBeVisible();
   });
 });

@@ -86,23 +86,17 @@ interface RecoveryLaunchCardProps {
   errorDetail?: string | null;
   disabled?: boolean;
   compact?: boolean;
-  resumeMode?: boolean;
   onStart: () => void;
 }
 
-/** The four workflow steps, each named by the id its backend view carries. */
+/** The five workflow steps, in the talk's words and order, each named by the id its
+ *  backend view carries. */
 const LAUNCH_STEPS: {
   id: RecoveryStepId;
   icon: typeof Search | typeof AuroraIcon;
   label: string;
   detail: string;
 }[] = [
-  {
-    id: 'understand',
-    icon: AlertTriangle,
-    label: 'Start recovery',
-    detail: 'Classify the canceled-flight recovery.',
-  },
   {
     id: 'search',
     icon: Search,
@@ -121,17 +115,30 @@ const LAUNCH_STEPS: {
     label: 'Check places',
     detail: 'Check places for the top three options.',
   },
+  {
+    id: 'hold',
+    icon: ShieldCheck,
+    label: 'Place hold',
+    detail: 'One timed hold through the Gateway and Cedar.',
+  },
+  {
+    id: 'result',
+    icon: FileCheck2,
+    label: 'Show results',
+    detail: 'Report the hold as Aurora records it.',
+  },
 ];
 
 function stepView(steps: RecoveryStepView[], id: RecoveryStepId): RecoveryStepView {
   return steps.find(step => step.id === id) ?? { id, state: 'is-pending', source: null };
 }
 
+/** ``current`` is the 1-based position of the step in progress, or 0 when none is. */
 function timelineNote(
-  stage: RecoveryStage, failed: boolean, resumeMode: boolean, total: number,
+  stage: RecoveryStage, failed: boolean, current: number, total: number,
 ): string {
   if (failed) return 'Check saved progress before retrying';
-  if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
+  if (stage === 'running') return current ? `Step ${current} of ${total}` : 'Waiting for saved results';
   if (stage === 'saved') return 'Paused for your review';
   if (stage === 'ready') return 'Workflow complete';
   return 'Runs after you confirm';
@@ -503,11 +510,11 @@ export function RecoveryLaunchCard({
   errorDetail = null,
   disabled = false,
   compact = false,
-  resumeMode = false,
   onStart,
 }: RecoveryLaunchCardProps) {
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
+  const currentStep = LAUNCH_STEPS.findIndex(step => stepView(steps, step.id).state === 'is-current') + 1;
 
   return (
     <article
@@ -528,7 +535,7 @@ export function RecoveryLaunchCard({
 
       <div className="mds-recovery-timeline-heading">
         <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
-        <small>{timelineNote(stage, failed, resumeMode, LAUNCH_STEPS.length)}</small>
+        <small>{timelineNote(stage, failed, currentStep, LAUNCH_STEPS.length)}</small>
       </div>
 
       <RecoveryStepList steps={steps} live={live} running={running} failed={failed} />

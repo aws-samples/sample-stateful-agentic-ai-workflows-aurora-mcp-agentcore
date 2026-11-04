@@ -105,9 +105,11 @@ export function deriveRecoveryEvidence(
 }
 
 export type RecoveryStepState = 'is-ready' | 'is-pending' | 'is-current' | 'is-visited';
-export type RecoveryStepId = 'understand' | 'search' | 'snapshot' | 'verify';
+/** The five recovery steps, in the order the talk names them: find alternatives, review and
+ *  confirm, check places, place hold, show results. */
+export type RecoveryStepId = 'search' | 'snapshot' | 'verify' | 'hold' | 'result';
 
-/** One of the four recovery workflow steps, as the backend has reported it. */
+/** One of the five recovery workflow steps, as the backend has reported it. */
 export interface RecoveryStepView {
   /** Which step this is, so a view never depends on its position in a list. */
   id: RecoveryStepId;
@@ -116,9 +118,11 @@ export interface RecoveryStepView {
   source: string | null;
 }
 
-const CLASSIFY_NODE = /^Workflow node: classify/;
 const SEARCH_NODE = /^Workflow node: search$/;
 const VERIFY_NODE = /^Workflow node: availability/;
+// A placed or found hold. A refused or skipped hold has a longer title and confirms nothing.
+const HOLD_NODE = /^Workflow node: hold$/;
+const RESULT_NODE = /^Workflow node: synthesize/;
 const isStepBoundary = (span: ShowcaseTraceSpan) =>
   /^Workflow node:/.test(span.name) || isSnapshotTitle(span.name);
 
@@ -151,14 +155,20 @@ function snapshotSource(spans: ShowcaseTraceSpan[]): string | null {
   return snapshot && snapshot.status === 'ok' && durable ? stepSourceLabel(snapshot) : null;
 }
 
-const STEP_IDS: RecoveryStepId[] = ['understand', 'search', 'snapshot', 'verify'];
+/** The hold step's own span names its service: the Gateway that Cedar decided, or Aurora
+ *  when a resumed step found the hold its saved request had already placed. */
+function holdSource(spans: ShowcaseTraceSpan[]): string | null {
+  const hold = [...spans].reverse().find(span => HOLD_NODE.test(span.name));
+  return hold && hold.status === 'ok' ? stepSourceLabel(hold) : null;
+}
+
+const STEP_IDS: RecoveryStepId[] = ['search', 'snapshot', 'verify', 'hold', 'result'];
 
 const pending = (id: RecoveryStepId): RecoveryStepView => (
   { id, state: 'is-pending', source: null });
 
-/** Understand, search, snapshot and verify, each confirmed only by the spans
- *  the backend returned. A fresh run in flight claims no step: the trace arrives
- *  with the response. */
+/** The five steps, each confirmed only by the spans the backend returned. A fresh run in
+ *  flight claims no step: the trace arrives with the response. */
 export function deriveRecoverySteps(
   spans: ShowcaseTraceSpan[],
   stage: RecoveryStage,
@@ -166,14 +176,15 @@ export function deriveRecoverySteps(
 ): RecoveryStepView[] {
   if (failed || (stage === 'running' && !resumeMode)) return STEP_IDS.map(pending);
   if (stage === 'action') {
-    return STEP_IDS.map(id => (id === 'understand'
+    return STEP_IDS.map(id => (id === 'search'
       ? { id, state: 'is-ready', source: null } : pending(id)));
   }
   const sources: Record<RecoveryStepId, string | null> = {
-    understand: nodeSource(spans, CLASSIFY_NODE),
     search: nodeSource(spans, SEARCH_NODE),
     snapshot: snapshotSource(spans),
     verify: nodeSource(spans, VERIFY_NODE),
+    hold: holdSource(spans),
+    result: nodeSource(spans, RESULT_NODE),
   };
   return STEP_IDS.map((id): RecoveryStepView => {
     // Resuming changes nothing the paused run's spans confirmed; only the
