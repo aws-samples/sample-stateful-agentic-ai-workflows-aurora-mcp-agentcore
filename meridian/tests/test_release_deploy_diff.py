@@ -18,7 +18,7 @@ from scripts.identity_release import deploy_diff, stages
 from tests import release_plan_fixtures as fx
 from tests import release_support as rs
 
-ARGV = ("/opt/homebrew/bin/agentcore", "deploy", "--diff", "--json")
+ARGV = ("npx", "-y", "@aws/agentcore@0.31.2", "deploy", "--diff", "--json")
 ESC = "\x1b"
 STATUS = '{"success":true,"targetName":"default","stackName":"AgentCore-meridianv2-default"}'
 GATEWAY = "AWS::BedrockAgentCore::Gateway"

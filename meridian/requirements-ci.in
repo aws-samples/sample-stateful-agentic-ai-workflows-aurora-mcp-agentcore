@@ -1,0 +1,4 @@
+# Tools CI runs beside the app: the linter and the dependency audit.
+# Compile: uv pip compile --generate-hashes --python-version 3.13 --output-file requirements-ci.txt requirements-ci.in
+pip-audit==2.10.1
+ruff==0.16.6

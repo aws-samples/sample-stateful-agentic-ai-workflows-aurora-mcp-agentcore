@@ -62,8 +62,8 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   uses to package the Python runtime:
 
   ```bash
-  npm install -g @aws/agentcore
-  agentcore --version
+  npm install -g @aws/agentcore@0.31.2
+  agentcore --version   # 0.31.2; the release tools refuse any other release
   ```
 
 - Deploy AgentCore in the Aurora cluster's Region. The defaults assume

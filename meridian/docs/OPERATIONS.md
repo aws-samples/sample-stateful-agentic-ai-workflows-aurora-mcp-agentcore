@@ -1036,7 +1036,7 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
 
    ```bash
    venv/bin/python scripts/render_agentcore_config.py
-   (cd meridian_agentcore && /opt/homebrew/bin/agentcore validate --json)
+   (cd meridian_agentcore && npx -y @aws/agentcore@0.31.2 validate --json)
    venv/bin/python scripts/release_identity.py deploy
    venv/bin/python scripts/release_identity.py deploy --apply --i-understand-this-changes-aws
    venv/bin/python scripts/sync_agentcore_env.py --write
@@ -1047,8 +1047,8 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
    read too), the working tree is clean, the old Gateway's role is clear, a complete snapshot of the `iam`
    release exists that was taken of the old Gateway (the dry run prints its commit and age), the proof receipt is
    at this commit, the interceptor Lambda is deployed, and the plan from `agentcore deploy --diff --json` adds
-   the new Gateway and removes the old one and what belongs to it. It then runs
-   `/opt/homebrew/bin/agentcore deploy -y`, waits for the new Gateway, reads it back by name and reports the old
+   the new Gateway and removes the old one and what belongs to it, and the CLI reports the pinned release
+   (0.31.2). It then runs `npx -y @aws/agentcore@0.31.2 deploy -y`, waits for the new Gateway, reads it back by name and reports the old
    Gateway as `DRIFT` if it still exists, with the manual steps. The next steps are printed whatever the
    read-back found, because the deployed state has moved on. A failed deploy sends you to the stack status in
    CloudFormation first; a stack in `UPDATE_ROLLBACK_FAILED` needs `aws cloudformation
@@ -1579,7 +1579,7 @@ explains why App Runner needs this.
 | Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant for that traveler. Run `python scripts/bind_web_backend_role.py --apply`, with `--traveler trv_demo_decoy` for Jordan Lee. |
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
 | The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |
-| `npx agentcore` fails with a cloud assembly schema version error | `npx` resolved an older cached CLI. Run the globally installed `agentcore`. |
+| `agentcore` fails with a cloud assembly schema version error | The CLI that ran is not the pinned release (unscoped `npx agentcore` can resolve an older cached CLI). Run `npx -y @aws/agentcore@0.31.2`. |
 | `/api/health` reports `workflow_runtime_configured: false`, or Phase 5 reports AgentCore is not configured | The backend has no `AGENTCORE_WORKFLOW_RUNTIME_ARN`. Deploy `MeridianWorkflow`, run `python scripts/sync_agentcore_env.py --write` and restart the backend. See [Run the workflow Runtime](#run-the-workflow-runtime). |
 | Sign-in returns to the sign-in screen with "Sign-in was not completed" | The user has no active `cognito` binding, so the trigger refused the token. Run `python scripts/seed_cognito_users.py --apply`. |
 | The API returns 401 "A valid Meridian sign-in is required." | The token failed a check: expired, another app client, an ID token, or no `traveler_id` claim. Sign in again; the backend log names the reason code. |

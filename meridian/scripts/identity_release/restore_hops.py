@@ -593,9 +593,9 @@ def intact_remedy(ctx: Context) -> list[str]:
     return [
         f"  MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
         f"  python scripts/release_identity.py deploy --to {mode} --apply {settings.CONFIRM_FLAG}"
-        "   (it runs /opt/homebrew/bin/agentcore deploy -y from meridian_agentcore/ after its "
-        "checks; this restores the Runtime roles' InvokeGateway statement and the Cedar rules, "
-        "and never deletes a rule)",
+        f"   (it runs {' '.join(settings.AGENTCORE_CLI)} deploy -y from meridian_agentcore/ "
+        "after its checks; this restores the Runtime roles' InvokeGateway statement and the Cedar "
+        "rules, and never deletes a rule)",
         "  then, from the current checkout, read every hop back: venv/bin/python "
         f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
         f"  then verify: {ctx.rerun}",

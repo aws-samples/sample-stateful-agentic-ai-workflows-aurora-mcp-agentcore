@@ -46,7 +46,7 @@ def test_the_window_deploys_four_stages_then_attaches_the_interceptor_then_publi
 
 def test_no_command_block_in_the_window_runs_a_bare_agentcore_deploy():
     commands = [line.strip() for line in window().splitlines()
-                if line.strip().startswith(("agentcore", "/opt/homebrew/bin/agentcore"))]
+                if line.strip().startswith(("agentcore", "npx -y @aws/agentcore"))]
 
     assert not [line for line in commands if " deploy" in line]
 
@@ -82,7 +82,7 @@ def test_every_release_document_says_the_jwt_gateway_is_a_new_resource():
     assert "never run `agentcore deploy` bare in `jwt` mode" in flat(RUNBOOK).lower()
     assert "Never run `agentcore deploy` bare in `jwt` mode" in flat(README)
     assert "release_identity.py deploy" in RUNBOOK and "#the-window-order" in RUNBOOK
-    assert "`deploy` runs `/opt/homebrew/bin/agentcore deploy -y`" in README
+    assert "then runs `npx -y @aws/agentcore@0.31.2 deploy -y`" in README
     assert "cannot change an authorizer type" in flat(README)
     assert "four staged deploys" in flat(AGENTCORE_README)
     assert "construct id" in flat(LEARNINGS) and "four deploys" in flat(LEARNINGS)

@@ -27,8 +27,9 @@ Before it runs anything it checks, and an apply refuses (nothing deployed) on an
    ``release_identity.py holds-logs`` deletes it.
 
 Then it reads the plan (``agentcore deploy --diff --json``) and refuses one that is not the plan
-of the stage (``deploy_diff``), runs ``agentcore deploy -y`` (``/opt/homebrew/bin/agentcore``
-only), waits for the Gateway to be READY and reads it back; after the first stage it also reports
+of the stage (``deploy_diff``), checks that the CLI reports the pinned release
+(``settings.AGENTCORE_CLI_VERSION``), runs ``agentcore deploy -y`` through it, waits for the
+Gateway to be READY and reads it back; after the first stage it also reports
 the replaced Gateway as drift when it still exists. Whatever the read-back finds, the next steps
 are printed, because the deployed state has moved on. It never changes the Gateway itself: the
 interceptor is attached afterwards by ``release_identity.py gateway``.
@@ -60,8 +61,9 @@ from scripts.provision_service_logins import require_account
 RENDERED = Path("agentcore") / "agentcore.json"
 TARGETS_FILE = Path("agentcore") / "aws-targets.json"
 STATE_FILE = Path("agentcore") / ".cli" / "deployed-state.json"
-DEPLOY_ARGV = (settings.AGENTCORE_BIN, "deploy", "-y")
-DIFF_ARGV = (settings.AGENTCORE_BIN, "deploy", "--diff", "--json")
+DEPLOY_ARGV = (*settings.AGENTCORE_CLI, "deploy", "-y")
+DIFF_ARGV = (*settings.AGENTCORE_CLI, "deploy", "--diff", "--json")
+VERSION_ARGV = (*settings.AGENTCORE_CLI, "--version")
 DEPLOY_TIMEOUT_SECONDS = 3600
 RUN_TEMP_PREFIX = "meridian-agentcore-run-"
 TAIL_LINES = 30
@@ -386,8 +388,23 @@ def _tail(output: str, known: Sequence[str]) -> list[str]:
     return [deploy_diff.mask_identifiers(line, known) for line in lines]
 
 
+def _check_cli_version(deps: Any, say: Callable[[str], None]) -> None:
+    """Refuse to plan or deploy unless the CLI that runs reports the pinned release."""
+    say(f"Checking the AgentCore CLI: {' '.join(VERSION_ARGV)}.")
+    code, output = deps.run_command(list(VERSION_ARGV), deps.agentcore_dir)
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    reported = lines[-1] if lines else ""
+    if code != 0 or reported != settings.AGENTCORE_CLI_VERSION:
+        raise DeployOrderError(
+            f"refusing: the AgentCore CLI reported {reported or 'nothing'!r} (exit {code}), not "
+            f"the pinned {settings.AGENTCORE_CLI_VERSION}. Check that npx can reach the npm "
+            f"registry and that `{' '.join(VERSION_ARGV)}` prints {settings.AGENTCORE_CLI_VERSION}")
+    say(f"  AgentCore CLI {reported}.")
+
+
 def _check_plan(deps: Any, say: Callable[[str], None], stage: str, mode: str,
                 replacing: bool) -> None:
+    _check_cli_version(deps, say)
     say(f"Reading the plan: {' '.join(DIFF_ARGV)} in meridian_agentcore.")
     code, output = deps.run_command(list(DIFF_ARGV), deps.agentcore_dir)
     found = deploy_diff.plan_findings(code, output, DIFF_ARGV, stage=stage, mode=mode,

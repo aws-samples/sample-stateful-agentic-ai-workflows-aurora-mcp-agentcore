@@ -14,20 +14,20 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@types/jest": "~30.0.0",
-    "@types/node": "~24.13.3",
-    "aws-cdk": "~2.1126.0",
-    "jest": "~30.5.2",
-    "prettier": "~3.9.5",
-    "ts-jest": "~29.4.11",
-    "typescript": "~5.9.3"
+    "@types/jest": "30.0.0",
+    "@types/node": "24.13.3",
+    "aws-cdk": "2.1126.0",
+    "jest": "30.5.2",
+    "prettier": "3.9.6",
+    "ts-jest": "29.4.11",
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@aws/agentcore-cdk": "0.1.0-alpha.47",
-    "aws-cdk-lib": "~2.265.0",
-    "constructs": "~10.7.0"
+    "aws-cdk-lib": "2.273.0",
+    "constructs": "10.7.2"
   },
   "overrides": {
-    "zod": "^4.6.6"
+    "zod": "4.6.7"
   }
 }

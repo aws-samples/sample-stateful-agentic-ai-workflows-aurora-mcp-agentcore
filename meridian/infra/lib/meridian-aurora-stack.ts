@@ -49,9 +49,10 @@ export class MeridianAuroraStack extends Stack {
       }),
     });
     cluster.applyRemovalPolicy(RemovalPolicy.SNAPSHOT);
+    // The engine minor changes only through engineVersion: a maintenance window must not move it.
     const writer = new rds.CfnDBInstance(this, 'Writer', {
       dbClusterIdentifier: cluster.ref, engine: 'aurora-postgresql', dbInstanceClass: 'db.serverless',
-      publiclyAccessible: false, autoMinorVersionUpgrade: true,
+      publiclyAccessible: false, autoMinorVersionUpgrade: false,
     });
     writer.applyRemovalPolicy(RemovalPolicy.DESTROY);
     subnetGroup.applyRemovalPolicy(RemovalPolicy.RETAIN);

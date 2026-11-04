@@ -79,6 +79,17 @@ def test_runtime_pins_include_the_mcp_and_certificate_security_fixes(pyproject):
 
 
 @runtimes
+def test_opentelemetry_follows_its_stable_parent_and_is_never_overridden(pyproject):
+    # The 0.NNbN contrib packages are pre-releases, allowed only at the exact versions
+    # aws-opentelemetry-distro pins: an override would force them ahead of it.
+    project = _project(pyproject)
+    overrides = project["tool"]["uv"].get("override-dependencies", [])
+
+    assert [o for o in overrides if _name(o).startswith("opentelemetry")] == []
+    assert "aws-opentelemetry-distro==0.22.0" in project["project"]["dependencies"]
+
+
+@runtimes
 def test_an_override_installs_the_version_the_manifest_pins(pyproject):
     project = _project(pyproject)
     requirements = project["project"]["dependencies"] + project["tool"]["uv"][

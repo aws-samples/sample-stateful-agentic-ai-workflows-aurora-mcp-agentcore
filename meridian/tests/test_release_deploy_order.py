@@ -11,6 +11,7 @@ irreversible replacement needs is in place.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -27,8 +28,9 @@ from tests.gateway_release_support import bare, current
 from tests.test_release_identity_cli import NOW, env
 
 FLAG = settings.CONFIRM_FLAG
-DEPLOY_ARGV = ["/opt/homebrew/bin/agentcore", "deploy", "-y"]
-DIFF_ARGV = ["/opt/homebrew/bin/agentcore", "deploy", "--diff", "--json"]
+CLI = ["npx", "-y", "@aws/agentcore@0.31.2"]
+DEPLOY_ARGV = [*CLI, "deploy", "-y"]
+DIFF_ARGV = [*CLI, "deploy", "--diff", "--json"]
 GATEWAY_TYPE = "AWS::BedrockAgentCore::Gateway"
 JWT_REPLACES_IAM = fx.first_stage()
 IAM_REPLACES_JWT = fx.first_stage(new=fx.IAM_GATEWAY, old=fx.JWT_GATEWAY)
@@ -141,15 +143,19 @@ class Cli(Recorder):
     """A stand-in for the agentcore CLI: answers the diff, and a deploy creates the Gateway."""
 
     def __init__(self, world, plan=None, diff_code=0, code=0, output="deployed",
-                 creates=None, removes=None, error=None, keeps_removed=False):
+                 creates=None, removes=None, error=None, keeps_removed=False,
+                 version=(0, "0.31.2\n")):
         super().__init__()
         self.keeps_removed = keeps_removed
         self.world, self.plan, self.diff_code = world, plan, diff_code
         self.code, self.output, self.creates, self.removes = code, output, creates, removes
-        self.error = error
+        self.error, self.version = error, version
         self.diffs, self.deploys, self.events = [], [], []
 
     def __call__(self, argv, cwd):
+        if argv[-1] == "--version":
+            self.events.append("version")
+            return self.version
         if "--diff" in argv:
             self.diffs.append((list(argv), cwd))
             self.events.append("diff")
@@ -289,7 +295,7 @@ def test_the_dry_run_lists_the_preflight_and_deploys_nothing(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 0 and "DRY RUN" in out and runner.deploys == [] and runner.diffs == []
     assert "stage gateway (1 of 4)" in out
-    assert "/opt/homebrew/bin/agentcore deploy -y" in out and "deploy --diff --json" in out
+    assert "npx -y @aws/agentcore@0.31.2 deploy -y" in out and "deploy --diff --json" in out
     assert FLAG in out and rs.ACCOUNT not in out
     assert "BLOCKED" not in out
 
@@ -332,7 +338,7 @@ def test_the_first_stage_replaces_the_iam_gateway_with_the_jwt_one(tmp_path, cap
 
     out = capsys.readouterr().out
     assert code == 0
-    assert runner.events == ["diff", "deploy"]
+    assert runner.events == ["version", "diff", "deploy"]
     assert runner.diffs[0][0] == DIFF_ARGV and runner.deploys[0][0] == DEPLOY_ARGV
     assert runner.deploys[0][1] == tmp_path / "project"
     assert "Stage gateway deployed (1 of 4)" in out
@@ -341,13 +347,32 @@ def test_the_first_stage_replaces_the_iam_gateway_with_the_jwt_one(tmp_path, cap
     assert f"python scripts/release_identity.py deploy --to jwt --apply {FLAG}" in out
 
 
+@pytest.mark.parametrize(
+    "version", [(0, "0.27.0\n"), (0, "1.0.1\n"), (1, "npm error 404\n"), (0, "")])
+def test_an_apply_refuses_a_cli_that_is_not_the_pinned_release(tmp_path, capsys, version):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam", version=version)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    err = capsys.readouterr().err
+    assert code == 2 and runner.events == ["version"]
+    assert "not the pinned 0.31.2" in err
+
+
+def test_the_pinned_cli_release_is_a_stable_v0_release():
+    pinned = f"@aws/agentcore@{settings.AGENTCORE_CLI_VERSION}"
+    assert settings.AGENTCORE_CLI == ("npx", "-y", pinned)
+    assert re.fullmatch(r"0\.\d+\.\d+", settings.AGENTCORE_CLI_VERSION)
+
+
 def test_the_first_stage_back_to_iam_replaces_the_jwt_gateway(tmp_path, capsys):
     world = replacement("iam")
     runner = Cli(world, IAM_REPLACES_JWT, creates="iam", removes="jwt")
 
     code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
 
-    assert code == 0 and runner.events == ["diff", "deploy"]
+    assert code == 0 and runner.events == ["version", "diff", "deploy"]
 
 
 def test_the_iam_first_stage_needs_no_pool_proof_or_interceptor(tmp_path):
@@ -559,7 +584,7 @@ def test_a_missing_state_file_is_the_first_stage(tmp_path, capsys):
     code = run(["deploy", "--apply", FLAG], world, tmp_path, runner,
                rendered=spec("jwt", stages.GATEWAY), deployed=False)
 
-    assert code == 0 and runner.events == ["diff", "deploy"]
+    assert code == 0 and runner.events == ["version", "diff", "deploy"]
 
 
 # ----------------------------------------------------------------- the plan gate
@@ -619,7 +644,7 @@ def test_a_later_stage_deploys_once_after_the_plan_and_reads_the_gateway_back(tm
     code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.COMPLETE)
 
     out = capsys.readouterr().out
-    assert code == 0 and runner.events == ["diff", "deploy"]
+    assert code == 0 and runner.events == ["version", "diff", "deploy"]
     assert "Stage complete deployed (4 of 4)" in out
     assert f"python scripts/release_identity.py gateway --to jwt --apply {FLAG}" in out
     assert "python scripts/sync_agentcore_env.py --write" in out
@@ -1075,7 +1100,7 @@ def test_stage_two_proceeds_once_the_group_is_gone(tmp_path):
     assert run(["deploy", "--apply", FLAG], world, tmp_path, runner,
                stage=stages.TARGETS) == 0
 
-    assert runner.events == ["diff", "deploy"]
+    assert runner.events == ["version", "diff", "deploy"]
 
 
 def test_stage_two_with_a_live_holds_function_does_not_offer_the_delete(tmp_path, capsys):

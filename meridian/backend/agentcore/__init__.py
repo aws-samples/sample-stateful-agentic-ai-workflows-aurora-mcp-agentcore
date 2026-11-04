@@ -3,7 +3,7 @@ Bedrock AgentCore adapters for Phase 4 (Production mode).
 
 Provision and deploy with the **Node-based @aws/agentcore CLI** (preferred):
 
-    npm install -g @aws/agentcore
+    npm install -g @aws/agentcore@0.31.2
     cd meridian/meridian_agentcore && agentcore deploy -y
 
 Resource ARNs/URLs resolve via ``backend/agentcore/cli_config.py`` from

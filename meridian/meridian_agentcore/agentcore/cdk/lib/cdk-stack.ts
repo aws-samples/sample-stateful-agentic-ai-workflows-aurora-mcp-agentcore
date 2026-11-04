@@ -9,6 +9,7 @@ import { Construct } from 'constructs';
 import { correctPolicyPermissions } from './policy-compatibility';
 import { bindHoldBudget } from './hold-budget';
 import { grantModelAccess } from './model-access';
+import { pinRuntimePlatformVersion } from './platform-version';
 
 export interface AgentCoreStackProps extends StackProps {
   /**
@@ -59,6 +60,7 @@ export class AgentCoreStack extends Stack {
     correctPolicyPermissions(this);
     bindHoldBudget(this, spec);
     grantModelAccess(this.application, spec);
+    pinRuntimePlatformVersion(this);
 
     // Stack-level output
     new CfnOutput(this, 'StackNameOutput', {

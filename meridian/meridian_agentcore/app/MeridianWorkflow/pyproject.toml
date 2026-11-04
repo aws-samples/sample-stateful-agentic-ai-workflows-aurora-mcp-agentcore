@@ -9,7 +9,7 @@ description = "AgentCore Runtime Application running the Meridian Phase 5 workfl
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "aws-opentelemetry-distro==0.21.0",
+    "aws-opentelemetry-distro==0.22.0",
     "bedrock-agentcore==1.24.0",
     "boto3==1.43.107",
     "botocore[crt]==1.43.107",
@@ -23,80 +23,24 @@ packages = ["."]
 [tool.uv]
 # The AgentCore CLI runs `uv pip install -r pyproject.toml`, which ignores uv.lock but
 # honors these, so every package a deploy installs is fixed. Regenerate with:
-#   uv pip compile pyproject.toml --python-version 3.14 \
+#   uv pip compile pyproject.toml --python-version 3.13 \
 #     --python-platform aarch64-manylinux2014 --only-binary :all:
 # Every strands-agents release so far (through 1.62.0) declares mcp<2.2, and mcp patches
 # only the newest release of each line, so 2.x below 2.2 keeps the advisories 2.2.0 fixed
 # (CVE-2026-59951 and GHSA-5h93-6whr-6q8j, GHSA-rwrf-2pqf-9j8j, GHSA-qx49-fqc8-xw99).
 # Override that bound until strands-agents/harness-sdk#5264 (mcp<2.4) is released.
-# aws-opentelemetry-distro 0.21.0 (the newest) pins every OpenTelemetry package to 1.44.0 / 0.65b0,
-# which carries CVE-2026-114603; override those pins to the fixed 1.45.1 / 0.66b1 line.
+# aws-opentelemetry-distro 0.22.0 pins every OpenTelemetry package to 1.45.1 / 0.66b1, the line
+# that fixes CVE-2026-114603. The 0.66b1 contrib packages are pre-releases, allowed only at the
+# exact versions this stable parent pins (versions rule 14); never override them ahead of it.
 override-dependencies = [
     "mcp==2.3.0",
-    "opentelemetry-api==1.45.1",
-    "opentelemetry-distro==0.66b1",
-    "opentelemetry-exporter-otlp-proto-common==1.45.1",
-    "opentelemetry-exporter-otlp-proto-grpc==1.45.1",
-    "opentelemetry-exporter-otlp-proto-http==1.45.1",
-    "opentelemetry-instrumentation-aio-pika==0.66b1",
-    "opentelemetry-instrumentation-aiohttp-client==0.66b1",
-    "opentelemetry-instrumentation-aiokafka==0.66b1",
-    "opentelemetry-instrumentation-aiopg==0.66b1",
-    "opentelemetry-instrumentation-asgi==0.66b1",
-    "opentelemetry-instrumentation-asyncpg==0.66b1",
-    "opentelemetry-instrumentation-aws-lambda==0.66b1",
-    "opentelemetry-instrumentation-boto3sqs==0.66b1",
-    "opentelemetry-instrumentation-botocore==0.66b1",
-    "opentelemetry-instrumentation-cassandra==0.66b1",
-    "opentelemetry-instrumentation-celery==0.66b1",
-    "opentelemetry-instrumentation-confluent-kafka==0.66b1",
-    "opentelemetry-instrumentation-dbapi==0.66b1",
-    "opentelemetry-instrumentation-django==0.66b1",
-    "opentelemetry-instrumentation-falcon==0.66b1",
-    "opentelemetry-instrumentation-fastapi==0.66b1",
-    "opentelemetry-instrumentation-flask==0.66b1",
-    "opentelemetry-instrumentation-grpc==0.66b1",
-    "opentelemetry-instrumentation-httpx==0.66b1",
-    "opentelemetry-instrumentation-jinja2==0.66b1",
-    "opentelemetry-instrumentation-kafka-python==0.66b1",
-    "opentelemetry-instrumentation-logging==0.66b1",
-    "opentelemetry-instrumentation-mysql==0.66b1",
-    "opentelemetry-instrumentation-mysqlclient==0.66b1",
-    "opentelemetry-instrumentation-pika==0.66b1",
-    "opentelemetry-instrumentation-psycopg2==0.66b1",
-    "opentelemetry-instrumentation-pymemcache==0.66b1",
-    "opentelemetry-instrumentation-pymongo==0.66b1",
-    "opentelemetry-instrumentation-pymysql==0.66b1",
-    "opentelemetry-instrumentation-pyramid==0.66b1",
-    "opentelemetry-instrumentation-redis==0.66b1",
-    "opentelemetry-instrumentation-remoulade==0.66b1",
-    "opentelemetry-instrumentation-requests==0.66b1",
-    "opentelemetry-instrumentation-sqlalchemy==0.66b1",
-    "opentelemetry-instrumentation-sqlite3==0.66b1",
-    "opentelemetry-instrumentation-starlette==0.66b1",
-    "opentelemetry-instrumentation-system-metrics==0.66b1",
-    "opentelemetry-instrumentation-threading==0.66b1",
-    "opentelemetry-instrumentation-tornado==0.66b1",
-    "opentelemetry-instrumentation-tortoiseorm==0.66b1",
-    "opentelemetry-instrumentation-urllib3==0.66b1",
-    "opentelemetry-instrumentation-urllib==0.66b1",
-    "opentelemetry-instrumentation-wsgi==0.66b1",
-    "opentelemetry-instrumentation==0.66b1",
-    "opentelemetry-processor-baggage==0.66b1",
-    "opentelemetry-propagator-b3==1.45.1",
-    "opentelemetry-propagator-jaeger==1.45.1",
-    "opentelemetry-propagator-ot-trace==0.66b1",
-    "opentelemetry-proto==1.45.1",
-    "opentelemetry-sdk==1.45.1",
-    "opentelemetry-semantic-conventions==0.66b1",
-    "opentelemetry-util-http==0.66b1",
 ]
 constraint-dependencies = [
     "annotated-types==0.8.0",
     "anyio==4.15.1",
     "asgiref==3.12.1",
     "attrs==26.1.0",
-    "aws-opentelemetry-distro==0.21.0",
+    "aws-opentelemetry-distro==0.22.0",
     "awscrt==0.36.0",
     "bedrock-agentcore==1.24.0",
     "boto3==1.43.107",

@@ -1,7 +1,7 @@
 """
 Load AgentCore resource IDs from the @aws/agentcore CLI (preferred).
 
-The Node-based AgentCore CLI (`npm install -g @aws/agentcore`) is the supported
+The Node-based AgentCore CLI (`npm install -g @aws/agentcore@0.31.2`) is the supported
 way to provision Runtime, Gateway, Memory, and Identity.  After ``agentcore
 deploy``, resource ARNs and URLs land in:
 

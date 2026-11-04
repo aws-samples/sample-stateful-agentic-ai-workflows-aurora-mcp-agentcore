@@ -6,7 +6,9 @@
 # request time. Configuration arrives as App Runner environment variables and
 # the configured origin-access token; nothing from .env is copied in.
 
-FROM python:3.13-slim
+# The Python version matches .python-version; tests/test_version_pins.py fails when they drift.
+# The digest is the multi-architecture index of this tag; refresh both together.
+FROM python:3.13.18-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

@@ -78,6 +78,11 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
     Description: 'Name of the CloudFormation Stack',
   });
   expect(spec.runtimes.map((r: { name: string }) => r.name)).toEqual(['MeridianConcierge', 'MeridianWorkflow']);
+  // The Runtimes run the Python the rest of the repository runs: the Lambdas, the backend image and CI.
+  expect(spec.runtimes.map((r: { runtimeVersion: string }) => r.runtimeVersion)).toEqual([
+    'PYTHON_3_13',
+    'PYTHON_3_13',
+  ]);
   const workflow = spec.runtimes[1];
   expect(workflow.lifecycleConfiguration).toEqual({ idleRuntimeSessionTimeout: 900, maxLifetime: 3600 });
   expect(workflow.additionalPolicies).toHaveLength(1);
@@ -162,6 +167,14 @@ const idsOfType = (template: Record<string, any>, type: string): string[] =>
 
 const jwtSpec = (): Spec => JSON.parse(readFileSync(join(__dirname, 'fixtures', 'jwt-spec.json'), 'utf8'));
 const HOLDS_FUNCTION = 'meridianv2-MeridianHolds';
+
+test('every Runtime is pinned to platform version V1', () => {
+  const template = synthesize('jwt', jwtSpec());
+
+  const runtimes = ofType(template, 'AWS::BedrockAgentCore::Runtime');
+  expect(runtimes).toHaveLength(2);
+  expect(runtimes.map(runtime => runtime.Properties.PlatformVersion)).toEqual(['V1', 'V1']);
+});
 
 test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
   const template = synthesize('jwt', jwtSpec());

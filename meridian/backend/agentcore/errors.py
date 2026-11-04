@@ -22,7 +22,7 @@ class AgentCoreNotConfiguredError(RuntimeError):
         items = "\n  - ".join(self.missing)
         return (
             "AgentCore platform is not fully configured. Deploy with the CLI:\n"
-            "  npm install -g @aws/agentcore\n"
+            "  npm install -g @aws/agentcore@0.31.2\n"
             "  cd meridian/meridian_agentcore && agentcore deploy -y\n"
             "  cd .. && python scripts/sync_agentcore_env.py --write\n\n"
             f"Missing:\n  - {items}\n"

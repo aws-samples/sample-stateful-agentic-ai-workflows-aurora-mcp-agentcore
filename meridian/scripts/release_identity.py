@@ -42,9 +42,10 @@ and remove the grant, which is also how the Gateway that is about to be replaced
 stage of the mode's Gateway (gateway, targets, governance, complete; see ``stages.py``): a dry run
 reads the render, the CLI's deployed state and the live Gateway and refuses (exit 2) unless they
 agree on the stage and, for the first stage, everything the irreversible replacement of the other
-mode's Gateway needs is in place. An apply then reads the plan with ``agentcore deploy --diff
---json`` and refuses one that is not the stage's plan, runs ``/opt/homebrew/bin/agentcore deploy
--y`` and reads the Gateway back by name; it never changes the Gateway itself.
+mode's Gateway needs is in place. An apply then checks that the AgentCore CLI reports the pinned
+release, reads the plan with ``agentcore deploy --diff --json`` and refuses one that is not the
+stage's plan, runs ``agentcore deploy -y`` and reads the Gateway back by name; it never changes the
+Gateway itself. Both CLI calls run ``npx -y @aws/agentcore@<settings.AGENTCORE_CLI_VERSION>``.
 Before anything else, plan or apply, it refuses (exit 2) a missing or stale staged Concierge copy or
 Workflow bundle, through the two stagers' own ``check`` functions; the message names the stager.
 ``holds-logs`` deletes the old holds function's retained log group (``/aws/lambda/`` plus the

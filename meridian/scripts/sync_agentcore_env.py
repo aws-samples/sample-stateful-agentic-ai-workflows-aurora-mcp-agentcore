@@ -11,8 +11,8 @@ Preferred workflow (Node-based CLI):
     # --i-understand-this-changes-aws --write-env
     # (migration 018 must be applied first).
     cd meridian_agentcore
-    /opt/homebrew/bin/agentcore validate --json
-    /opt/homebrew/bin/agentcore deploy -y
+    npx -y @aws/agentcore@0.31.2 validate --json
+    npx -y @aws/agentcore@0.31.2 deploy -y
     python ../scripts/sync_agentcore_env.py --write
 
 Both runtimes resolve by name from the deployed state: AGENTCORE_RUNTIME_ARN is

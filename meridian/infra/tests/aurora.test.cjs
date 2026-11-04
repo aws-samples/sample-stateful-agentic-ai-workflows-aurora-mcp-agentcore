@@ -21,7 +21,10 @@ for (const snapshotArn of [undefined, 'arn:aws:rds:us-east-1:123456789012:cluste
       ...(snapshotArn ? { SnapshotIdentifier: snapshotArn, ManageMasterUserPassword: Match.absent() }
         : { ManageMasterUserPassword: true }),
     });
-    template.hasResourceProperties('AWS::RDS::DBInstance', { PubliclyAccessible: false });
+    template.hasResourceProperties('AWS::RDS::DBInstance', {
+      PubliclyAccessible: false, AutoMinorVersionUpgrade: false,
+    });
+    template.hasResourceProperties('AWS::RDS::DBCluster', { EngineVersion: '18.3' });
     template.hasResourceProperties('AWS::EC2::SecurityGroup', { SecurityGroupIngress: Match.absent() });
     const cluster = Object.values(template.findResources('AWS::RDS::DBCluster'))[0];
     assert.equal(cluster.DeletionPolicy, 'Snapshot');
@@ -32,3 +35,10 @@ for (const snapshotArn of [undefined, 'arn:aws:rds:us-east-1:123456789012:cluste
     assert.equal(writer.UpdateReplacePolicy, 'Delete');
   });
 }
+
+test('Aurora refuses an engine version without its minor', () => {
+  assert.throws(() => new MeridianAuroraStack(new App(), 'Aurora', {
+    env: { account: '123456789012', region: 'us-east-1' }, clusterIdentifier: 'isolated-rehearsal',
+    vpcId: 'vpc-12345678', subnetIds: ['subnet-12345678', 'subnet-87654321'], engineVersion: '18',
+  }), /verified Aurora PostgreSQL 18 version/);
+});

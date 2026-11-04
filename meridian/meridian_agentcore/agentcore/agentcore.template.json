@@ -13,7 +13,7 @@
       "build": "CodeZip",
       "entrypoint": "main.py",
       "codeLocation": "app/MeridianConcierge/",
-      "runtimeVersion": "PYTHON_3_14",
+      "runtimeVersion": "PYTHON_3_13",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
       "envVars": [
@@ -69,7 +69,7 @@
       "build": "CodeZip",
       "entrypoint": "main.py",
       "codeLocation": "app/MeridianWorkflow/",
-      "runtimeVersion": "PYTHON_3_14",
+      "runtimeVersion": "PYTHON_3_13",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
       "lifecycleConfiguration": {

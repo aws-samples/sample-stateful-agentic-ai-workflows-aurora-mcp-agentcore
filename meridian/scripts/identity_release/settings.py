@@ -31,7 +31,10 @@ CONFIRM_FLAG = "--i-understand-this-changes-aws"
 INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
 MERIDIAN_DIR = Path(__file__).resolve().parents[2]
 AGENTCORE_DIR = MERIDIAN_DIR / "meridian_agentcore"
-AGENTCORE_BIN = "/opt/homebrew/bin/agentcore"
+# The one AgentCore CLI release every deploy runs, from npm's v0-latest tag (a stable release).
+# 1.0 changes the project format and drops `deploy --diff`, so moving to it is its own upgrade.
+AGENTCORE_CLI_VERSION = "0.31.2"
+AGENTCORE_CLI = ("npx", "-y", f"@aws/agentcore@{AGENTCORE_CLI_VERSION}")
 RELEASE_DIR = MERIDIAN_DIR / ".local" / "release-b2"
 PROOF_PATH = RELEASE_DIR / "backend-login-proof.json"
 PROOF_FIELDS = {

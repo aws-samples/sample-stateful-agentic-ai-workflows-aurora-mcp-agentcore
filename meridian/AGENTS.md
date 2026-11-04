@@ -53,16 +53,17 @@ npm run test:accessibility
 # in infra
 npm ci
 npm test
+npm audit --audit-level=high
 # in meridian_agentcore/agentcore/cdk
 npm ci
 npm run build
 npm test -- --runInBand
 npm run format:check
+npm audit --audit-level=high
 ```
 
-- Two more CI jobs: the `Dockerfile` build with a network-less MCP server check, and
-  `.github/scripts/npm-audit-high.mjs` in `infra` and the AgentCore CDK app instead of a plain
-  `npm audit` (it allows one documented advisory; see `docs/DEPENDENCIES.md`).
+- One more CI job: the `Dockerfile` build, with a network-less MCP server check and a check
+  that the image runs the Python in `.python-version`.
 - Dependencies: `requirements.in` is the source, `requirements.txt` the hashed lock. Update with
   `uv pip compile --generate-hashes --upgrade-package <name> --output-file requirements.txt
   requirements.in`. Run `venv/bin/pip check` after installing.
@@ -103,9 +104,11 @@ scripts, `scripts/sync_*` and `scripts/seed_*` tools, and `agentcore deploy`.
   `docs/OPERATIONS.md#read-the-release-back` for `release_identity.py`.
 - Never run `scripts/apply_migrations.py` bare. Run it with `--pending` first and apply one
   migration at a time, with a rolled-back dry run before the real apply.
-- The release tools call `/opt/homebrew/bin/agentcore` (`scripts/identity_release/settings.py`),
-  so they assume macOS with Homebrew in `/opt/homebrew` (the Apple silicon default). Keep one current global `agentcore` install: an older one
-  fails synth with a cloud assembly schema mismatch. Never use `npx agentcore`.
+- The AgentCore CLI is pinned to one release, `AGENTCORE_CLI_VERSION` in
+  `scripts/identity_release/settings.py` (0.31.2, from npm's `v0-latest` tag). The release tools run
+  it as `npx -y @aws/agentcore@0.31.2` and refuse to plan or deploy when `--version` reports anything
+  else; a global install must be `npm install -g @aws/agentcore@0.31.2`. Never run the unscoped
+  `npx agentcore`, and never a `-preview`, `rc` or 1.x build: 1.0 changes the project format.
 - Never run release or publish tools "to check". `check` subcommands that only read still call AWS.
 
 Secrets and identifiers. Never print, log, paste into a doc or commit credentials, tokens, secret

@@ -23,6 +23,20 @@ rest of its set; there is no lock file with hashes). They cannot run on the Runt
 the Runtime test modules import the backend (`fastapi`, and `backend.mcp`, which uses the `mcp` 1.x
 `FastMCP` that `mcp` 2.x removed).
 
+## CDK projects - November 3, 2026
+
+- Web and AgentCore CDK projects: `npm audit --audit-level=high` reports no high or critical
+  finding after moving `aws-cdk-lib` from 2.265.0 to 2.273.0, which bundles the patched
+  `brace-expansion` 5.0.12 (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p, GHSA-q2hr-2g5m-vwhr). Both
+  CI jobs run a plain `npm audit --audit-level=high` again; the exception script is gone.
+- One moderate finding remains: the `minimatch` that `aws-cdk-lib` bundles (10.2.5) is in the
+  range of GHSA-g3hv-75wg-m249 (`<11.0.1`), and no `aws-cdk-lib` release through 2.275.0 bundles
+  `minimatch` 11. It runs only while CDK synthesizes, over paths written in this repository.
+- `aws-cdk-lib` stays at 2.273.0. From 2.274.0 it writes cloud assembly schema 55, and the CDK
+  toolkit inside the pinned AgentCore CLI 0.31.2 reads only schema 54, so every AgentCore deploy
+  would fail. `tests/test_version_pins.py` keeps both CDK apps on one release and the AgentCore
+  app on schema 54. Move past 2.273.0 together with the AgentCore CLI.
+
 ## Audit status - October 22, 2026
 
 - Frontend: `npm audit --audit-level=high` reports 0 vulnerabilities after moving `vite` 7.3.6 to 7.3.7 and `vitest` 4.1.11 to 4.1.12, which moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12. Lint, typecheck, unit tests, build and the accessibility suite pass.
@@ -45,11 +59,8 @@ Earlier status, October 1, 2026:
 
 - Frontend: clean after updating transitive `brace-expansion` to 1.1.21 and 5.0.12.
 - Backend: clean after updating `urllib3` to 2.8.0 and `PyJWT` to 2.15.1.
-- Web and AgentCore CDK projects: **open upstream finding**. `aws-cdk-lib` bundles `brace-expansion` 5.0.9, affected by recursion and expansion denial-of-service advisories. Even the inspected 2.272.0 release retains the affected bundle, so the established CDK version is retained. This dependency runs in infrastructure tooling, not the shipped browser or backend image. No hand-edited vendored patch is applied. In the `agentcore-cdk` and `web-infra` CI jobs, `.github/scripts/npm-audit-high.mjs` replaces `npm audit --audit-level=high` and allows exactly one exception: these three advisories on `node_modules/aws-cdk-lib/node_modules/brace-expansion`. It fails on any other high or critical finding, and it fails when the advisories no longer appear, which is the signal to delete the exception. The frontend job keeps a plain `npm audit --audit-level=high`.
+- Web and AgentCore CDK projects: open upstream finding. `aws-cdk-lib` bundled `brace-expansion` 5.0.9 through 2.272.0, and CI allowed exactly those three advisories through an exception script until 2.273.0 shipped the fix (see November 3, 2026).
 
-Track [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7),
-[GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p), and
-[GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
 Only trusted repository paths and deployment inputs should reach CDK.
 
 ## Update and verify

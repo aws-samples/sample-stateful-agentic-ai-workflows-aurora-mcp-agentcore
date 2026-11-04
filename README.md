@@ -138,8 +138,10 @@ v4 and Cohere Rerank 3.5, all on Amazon Bedrock. See
 
 ## Prerequisites
 
-- Python 3.13 and Node.js 22.12 or later (CI runs Python 3.13 and Node.js 22). Deploying the
-  AgentCore resources also needs [uv](https://docs.astral.sh/uv/getting-started/installation/) and
+- Python 3.13.18 and Node.js 22.23.4, the versions CI runs. They live in
+  [`meridian/.python-version`](meridian/.python-version) and [`meridian/.nvmrc`](meridian/.nvmrc),
+  so `uv python install` and `nvm install` in `meridian/` pick them up. Deploying the AgentCore
+  resources also needs [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.6 and
   the [AgentCore CLI](https://github.com/aws/agentcore-cli).
 - An AWS account and credentials (`aws login`, `aws sso login` or `aws configure`). Use
   `us-east-1`: the defaults assume it, and another Region needs the settings in the
