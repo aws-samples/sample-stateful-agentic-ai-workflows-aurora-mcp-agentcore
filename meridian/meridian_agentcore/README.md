@@ -88,8 +88,8 @@ Runtimes sign every AgentCore call with AWS credentials. In `jwt` mode every hop
 backend posts to each Runtime's invocation URL with a bearer token, each Runtime forwards the token
 to the Gateway, the Gateway's request interceptor
 (`agentcore/interceptors/traveler_pin/`) pins `travelerId` to the token's `traveler_id` claim, and
-Cedar denies a mismatch. The render script writes the value into both Runtimes' environment, and in
-`jwt` mode it adds the `meridian_traveler_binding` policy.
+Cedar denies a mismatch if the interceptor is detached. The render script writes the value into both
+Runtimes' environment, and in `jwt` mode it adds the `meridian_traveler_binding` policy.
 The policy is a `forbid ... unless` rule whose condition is one `&&` chain that starts with the
 `hasTag` and `has` guards, because the AgentCore Policy validator rejects a negated `hasTag` guard
 joined with `||`. An empty `traveler_id` claim is denied.

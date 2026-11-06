@@ -96,8 +96,9 @@ separate Gateway that it created and deleted, before anything was released. The 
 | C4 | Do `initialize` and `tools/list` still work? | PASS. Both pass through the interceptor. |
 | C5 | Does an update without the interceptor detach it? | PASS. `update_gateway` without `interceptorConfigurations` leaves no interceptor attached, so one call is the rollback. |
 
-The design that shipped is `both`: the interceptor replaces `travelerId` with the token's traveler and Cedar denies a
-mismatch, with `MERIDIAN_GATEWAY_ENFORCEMENT` unset. Cedar alone (`cedar`) is a valid fallback because of Q5. The
+The design that shipped is `both`, with `MERIDIAN_GATEWAY_ENFORCEMENT` unset: the interceptor replaces `travelerId`
+with the token's traveler, and Cedar denies a mismatch if the interceptor is detached. While it is attached, Cedar
+sees only the rewritten id (Q1). Cedar alone (`cedar`) is a valid fallback because of Q5. The
 Cedar denial text was not stored by the run; it is known only as `Tool Execution Denied` in an `isError` result, so
 the identity proof attributes a Gateway refusal by the change in `traveler_access_audit` deny rows or by a
 recognised refusal text or code, and counts nothing else as a refusal. The identity proof records, in every receipt, which part of the

@@ -1402,7 +1402,7 @@ account id (`account` is always `<acct>`); the writer refuses to write one that 
 Region, the last four characters of the pool id, the site host, the mode and the cleanup result. Each outcome
 records the probe, layer, actor, expectation, result, `refused_by`, a scrubbed detail, small evidence values and the
 time. `design` says which Gateway enforcement shipped: `both` (the interceptor replaces `travelerId` with the token's
-traveler and Cedar denies a mismatch), `cedar` or `interceptor`. `refused_by` is one of:
+traveler; Cedar denies a mismatch if the interceptor is detached), `cedar` or `interceptor`. `refused_by` is one of:
 
 | Value | Meaning |
 | --- | --- |
