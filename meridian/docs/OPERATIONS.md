@@ -308,7 +308,14 @@ The workflow searches the catalog, places holds and gives holds back through the
 | `hold` | `MeridianHolds___create_courtesy_hold` | Cedar `meridian_hold_governance`, then the holds Lambda |
 | compensation | `MeridianHolds___release_hold` | Cedar `meridian_release_governance`, then the holds Lambda, which checks the hold belongs to the pinned traveler and the run's lease is live |
 
-The availability, memory recall and read-back reads are scoped Aurora reads under the workflow login, not Gateway calls. A failed Gateway call fails the run with a code or a fixed phrase, never the Gateway's text. Each run that starts writes one `agent_audit_log` row (`operation = 'workflow_run'`) with `tool_calls` and `turn_error`; a malformed request and a busy thread write none. `tests/test_workflow_audit_aurora.py` shows the row the workflow login writes.
+The availability, memory recall and read-back reads are scoped Aurora reads under the workflow
+login, not Gateway calls. A failed Gateway call fails the run with a code or a fixed phrase,
+never the Gateway's text. Each run that starts attempts one final `agent_audit_log` row
+(`operation = 'workflow_run'`) with `tool_calls` and `turn_error`. A hard kill or audit-write
+failure can omit that row; a malformed request and a busy thread write none.
+`tests/test_workflow_audit_aurora.py` shows the row the workflow login writes. Separately, the
+holds Lambda commits `booking_action_audit` in the same transaction as a successful action or
+target replay. These application records carry service correlation IDs, not native Cedar decisions.
 
 ### Add a Gateway tool and its policy in `jwt` mode
 
@@ -326,7 +333,7 @@ bypass row-level security, and each holds only what its workload queries.
 | Login | Workload | Holds |
 | --- | --- | --- |
 | `meridian_backend` | The App Runner backend | SELECT on `traveler_identity_bindings` and `trip_packages`, INSERT on `traveler_access_audit`, EXECUTE on `backend_admin_count`, and SET ROLE to `meridian_app` |
-| `meridian_gateway` | The `MeridianHolds` Lambda | The same tables and SET ROLE to `meridian_app`, and no function |
+| `meridian_gateway` | The `MeridianHolds` Lambda | Identity and package reads, access audit INSERT, SET ROLE to `meridian_app`, EXECUTE on the three bounded booking functions, and SELECT/INSERT on `booking_action_audit`; no direct booking DML after migration 029 |
 | `meridian_identity` | The Amazon Cognito pre-token-generation Lambda | SELECT on `traveler_identity_bindings` |
 | `meridian_catalog` | The `meridian-catalog-tools` Lambda behind the `MeridianCatalog` target | SELECT on `trip_packages` and EXECUTE on `package_places_left`, and nothing else: no identity bindings, no audit, no SET ROLE |
 
@@ -1606,12 +1613,13 @@ work, because cancelling in the middle of a governed write could leave it half
 done. What survives once the browser or the server has closed the request:
 
 - A placed hold or booking is durable in Aurora.
-- The audit row and the Memory unit that follow it are best effort. They run
+- The final turn-summary audit row and the Memory unit are best effort. They run
   with no open request, App Runner gives no guarantee to work that outlives a
   request, and a deploy or scale-in in that window can drop them. A confirmed
-  booking or placed hold with no audit row is therefore possible after a call
-  that ran past the ceiling or a browser that left early. Check the trips and
-  the audit table together when reconciling such a call.
+  booking or placed hold with no final `agent_audit_log` row is therefore possible after a
+  call that ran past the ceiling or a browser that left early. This is separate from
+  `booking_action_audit`, which the updated holds Lambda commits in the business transaction.
+  Check the booking, action audit and service logs together when reconciling such a call.
 - The traveler's state stays true regardless, because the page reads what Aurora
   committed, not what the stream said.
 

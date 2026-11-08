@@ -71,7 +71,7 @@ QUERY = (
 )
 
 BOOKING_AGENT = "booking_agent"
-PINNED_TABLES = ("booking_lines", "bookings")
+PINNED_TABLES = ("booking_action_audit", "booking_lines", "bookings")
 UNPINNED_TABLES = (
     ("hold_requests", "journey_id"), ("journeys", "journey_id"),
     ("journey_executions", "thread_id"), ("journey_threads", "thread_id"),
@@ -330,18 +330,17 @@ async def _purge(client, journey_id: str, thread_id: str, traveler_id: str = TRA
     """Delete one run's rows, then count them again and raise if any table still has some.
 
     The booking ids are read before ``hold_requests`` goes, because that table is the only link
-    to them. The booking tables are deleted and counted in a transaction pinned to the traveler.
+    to them. Action audits, hold identities and bookings are deleted in one transaction pinned
+    to the traveler. This administrative reset removes commit evidence; capture receipts first.
 
     Raises:
         RuntimeError: When any table still holds a row of the run after the deletes.
     """
     bookings = await _booking_ids(client, journey_id)
     invisible = await _invisible_bookings(client, bookings, traveler_id)
-    for booking in bookings:
-        await client.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booking,))
     async with pinned_to_traveler(client, traveler_id) as transaction:
         for booking in bookings:
-            for table in PINNED_TABLES:
+            for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
                 await client.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,),
                                      transaction_id=transaction)
     await client.execute("DELETE FROM workflow_session_stops WHERE journey_id = %s", (journey_id,))

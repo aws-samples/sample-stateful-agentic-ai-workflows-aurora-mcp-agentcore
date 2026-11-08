@@ -1,0 +1,59 @@
+{
+  "folders": [{ "name": "Meridian", "path": "." }],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/meridian/venv/bin/python",
+    "python.terminal.activateEnvironment": true
+  },
+  "extensions": { "recommendations": ["ms-python.python", "ms-python.debugpy"] },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Meridian: frontend",
+        "type": "process",
+        "command": "npm",
+        "args": ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5176", "--strictPort"],
+        "options": {
+          "cwd": "${workspaceFolder}/meridian/frontend",
+          "env": { "VITE_API_ORIGIN": "http://127.0.0.1:8013" }
+        },
+        "isBackground": true,
+        "problemMatcher": {
+          "owner": "meridian-vite",
+          "pattern": { "regexp": "^(.*):(\\d+):(\\d+): (.*)$", "file": 1, "line": 2, "column": 3, "message": 4 },
+          "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "Local:.*http://127\\.0\\.0\\.1:5176" }
+        },
+        "presentation": { "reveal": "always", "panel": "dedicated" }
+      },
+      {
+        "label": "Meridian: check local configuration",
+        "type": "process",
+        "command": "${workspaceFolder}/meridian/venv/bin/python",
+        "args": ["scripts/run_local.py", "--check"],
+        "options": { "cwd": "${workspaceFolder}/meridian" },
+        "problemMatcher": []
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Meridian: local app",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceFolder}/meridian/scripts/run_local.py",
+        "python": "${workspaceFolder}/meridian/venv/bin/python",
+        "cwd": "${workspaceFolder}/meridian",
+        "console": "integratedTerminal",
+        "justMyCode": true,
+        "preLaunchTask": "Meridian: frontend",
+        "serverReadyAction": {
+          "pattern": "Uvicorn running on http://127\\.0\\.0\\.1:([0-9]+)",
+          "uriFormat": "http://127.0.0.1:5176/showcase",
+          "action": "openExternally"
+        }
+      }
+    ]
+  }
+}

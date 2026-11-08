@@ -30,7 +30,8 @@ no airline, supplier, payment or real reservation integration.
 
 **Start here:** [Five phases](#five-phases) | [Architecture](#architecture) |
 [Run locally](#quick-start) | [Deployment](#deploy-to-your-account) |
-[Verification](#tests-and-evidence) | [Costs and cleanup](#costs-and-clean-up)
+[Verification](#tests-and-evidence) | [Production guidance](#production-implementation-scalability-and-operational-resilience) |
+[Costs and cleanup](#costs-and-clean-up)
 
 > [!IMPORTANT]
 > Running the application uses billable AWS services. This is a reference application for
@@ -201,6 +202,22 @@ Open <http://127.0.0.1:5176/showcase>. Check `/api/health` and the UI's configur
 endpoint. The snapshot store is reported as `"snapshot_store": "Aurora workflow_snapshots"`.
 Keep the local open/shared-token modes on loopback. Use the signed-in release for hosted access.
 
+### Run from VS Code
+
+After completing setup, open [`meridian.code-workspace`](meridian.code-workspace), install its
+recommended Python extensions, and select **Meridian: local app** in Run and Debug. Press **F5**.
+The workspace starts Vite on port 5176 and the backend on port 8013, then opens the showcase.
+`scripts/run_local.py` selects `AURORA_BACKEND_SECRET_ARN` for that process; it leaves the
+administrator settings in `.env` unchanged and refuses to launch without the service secret.
+It preserves the configured authentication mode. Local sign-in also needs the Cognito frontend
+settings and a registered loopback callback from the operations guide.
+
+Use **Tasks: Run Task > Meridian: check local configuration** for an offline settings check.
+Stop the debugger to stop the backend; use **Tasks: Terminate Task > Meridian: frontend** to
+stop Vite. Port conflicts fail explicitly. The workspace assumes the macOS/Linux `venv/bin/python`
+layout shown above; Windows users must select `venv\\Scripts\\python.exe` in the workspace settings
+and launch configuration.
+
 ## Try the reference app
 
 | View | Exercise | Inspect |
@@ -267,12 +284,71 @@ Historical screenshots and recordings illustrate the captured release. They do n
 an upgrade. The [readiness review](meridian/docs/DAT307_READINESS.md) identifies the remaining
 live proofs and their expected outcomes.
 
+## Production implementation, scalability and operational resilience
+
+Meridian demonstrates production mechanisms, but it is not a capacity certification or a
+complete production operating model. Set service-level objectives, recovery point and recovery
+time objectives, and an expected traffic profile before adapting it for customer workloads.
+
+| Area | Implemented here | Production work to complete |
+| --- | --- | --- |
+| Identity and least privilege | JWT validation at backend, Runtimes and Gateway; trusted argument binding; Cedar; service logins and transaction-scoped RLS | Use your identity lifecycle, tenant model and credential rotation. Restrict direct Lambda invocation and service-secret access, which sit outside the traveler-facing boundary. Re-run cross-traveler and direct-access tests after IAM or policy changes. |
+| Horizontal scaling | Separate hosted backend and Runtimes; Aurora snapshots and leases coordinate workflow attempts | Load-test concurrent journeys and hot inventory keys. Match App Runner scaling, Runtime quotas and Lambda concurrency to database and model capacity. An SDK HTTP pool is not a PostgreSQL pool or a capacity reservation. |
+| Database capacity | One Serverless v2 writer, 0.5-16 ACUs in the supplied CDK template; shared inventory locks prevent oversubscription | Measure query latency, lock waits, ACU utilization and Data API throttling. Tune vector/full-text indexes and candidate limits using representative data. Decide whether a standby reader and failover topology meet your availability objectives; the template creates no reader. |
+| Retries and backpressure | Bounded retries, stable action IDs, committed-result lookup, worker leases and fenced writes | Apply admission limits per tenant and workload. Retry only transient failures with a bounded budget; preserve the same business intent on ambiguous commits. Do not turn a timeout into a new booking request. |
+| Long-running work | Streamed responses, saved progress and explicit outcome readback | Treat HTTP disconnection as loss of observation. Work after a web request is best effort; persist required follow-up work durably. Test scale-in, expired caller tokens, lost replies and failed snapshot writes under load. |
+| Availability and disaster recovery | Encrypted Aurora storage, deletion protection and seven-day backup retention in the template | Restore into an isolated environment and measure recovery time. Test writer failover and resume with the original IDs. Define regional recovery and backup retention for your business; this sample does not implement a cross-Region recovery plan. |
+| Observability and audit | Health checks, application traces, service correlation IDs, transactional action audit and best-effort turn summaries | Set alarms and owners for error rate, latency, throttling, lease age, snapshot failures and unresolved action outcomes. Correlate application records with native service logs. Define access, retention and immutable export requirements; administrator-editable rows alone are not tamper-proof evidence. |
+| Safe releases | Hashed dependencies, CI, staged Runtime bundles, migration sequencing, deployment readback and failure proofs | Use separate environments, reviewed changes, a maintenance procedure and measured rollback criteria. Follow the 026-029 cutover order; old writer code is incompatible with the final revoked grants. |
+
+The current write path has deliberate serialization points: one active worker per workflow
+thread and locks on the relevant inventory keys. Adding workers can increase independent
+journey throughput; it cannot remove contention for the same seats. Measure p95/p99 latency,
+success and refusal rates, token usage and cost per completed journey before increasing limits.
+No requests-per-second or concurrent-user target has been established by the functional tests.
+
+For operational procedures, use [waits, retries and readback](meridian/docs/OPERATIONS.md#waits-retries-and-readback),
+the [stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md), and the
+[release and failure matrix](meridian/docs/DAT307_RELEASE.md). For an unknown action outcome,
+look up the original intent and booking first. Capture evidence before an administrative reset;
+resetting a booking deletes its associated action audit and is not a recovery procedure.
+
 ## Costs and clean up
 
 Amazon Aurora compute, storage and backups incur charges while provisioned. Model inference,
 AgentCore, Lambda, logs, Secrets Manager and optional web hosting add usage or retained-resource
 costs. Read each service's current pricing before provisioning; the repository does not enforce
 an account spending limit.
+
+### Cost planning table
+
+Rates and meters were checked on **November 7, 2026**. Estimate in your target Region using the
+linked pricing pages and [AWS Pricing Calculator](https://calculator.aws/). Model selection,
+Runtime compute generation, traffic, session duration, storage and retention change the result.
+The table excludes credits, free-tier allowances, discounts, taxes and support charges.
+
+| Component | Usage to budget | Estimate and cost control |
+| --- | --- | --- |
+| [Aurora Serverless v2](https://aws.amazon.com/rds/aurora/pricing/) | ACU-hours for every instance, storage, backup storage and applicable I/O | Sum average ACUs x hours x the regional ACU rate. The template's nonzero 0.5-ACU floor does not auto-pause. Account separately for retained snapshots and any added readers. |
+| [Bedrock models](https://aws.amazon.com/bedrock/pricing/) | Input/output tokens, embedding input and rerank queries/chunks | Measure actual model calls per journey, including retries and catalog seeding. Apply the selected model and inference-tier rates; a user turn can cause several model calls. |
+| [AgentCore Runtime](https://aws.amazon.com/bedrock/agentcore/pricing/) | Metered CPU and memory consumption for both Runtimes | Use the rate for the deployed compute generation and observed session usage. Include review pauses and memory retention in measurements rather than pricing only model latency. |
+| [AgentCore Gateway, Policy and Memory](https://aws.amazon.com/bedrock/agentcore/pricing/) | Tool discovery/calls, policy evaluations, conversation events and memory operations | Count each metered operation, including retries and discovery. Workflow snapshots live in Aurora; Concierge conversation memory is a separate AgentCore cost. |
+| [Lambda](https://aws.amazon.com/lambda/pricing/) | Requests and duration x configured memory | Include targets, request interception and Cognito hooks. Bound timeout and concurrency; a denied tool call can still incur upstream authorization work. |
+| [Cognito](https://aws.amazon.com/cognito/pricing/) and secrets | Monthly active users, selected Cognito tier, secret storage and API calls | Include service-login secrets and any configured messaging or security features. See [Secrets Manager pricing](https://aws.amazon.com/secrets-manager/pricing/). |
+| [App Runner](https://aws.amazon.com/apprunner/pricing/) and optional hosting | Provisioned memory, active CPU, S3 storage/requests, CloudFront traffic and container images | Local web serving avoids hosted web costs, but still uses AWS data and agent services. App Runner's provisioned memory can incur idle charges. See [S3](https://aws.amazon.com/s3/pricing/), [CloudFront](https://aws.amazon.com/cloudfront/pricing/) and [ECR](https://aws.amazon.com/ecr/pricing/). |
+| [CloudWatch](https://aws.amazon.com/cloudwatch/pricing/) and networking | Log/trace ingestion, retention, queries, alarms and data transfer | Set retention and sampling deliberately. Include NAT gateways, endpoints or cross-Region transfer only if your chosen topology adds them. |
+
+**Compute-only illustration:** one Aurora Standard writer in US East (N. Virginia), held at
+0.5 ACU for 730 hours, at the published $0.12/ACU-hour example rate, costs
+`0.5 x 730 x $0.12 = $43.80`. This is not the full application price or an upper bound: it
+excludes scaling above the floor and every other row in the table.
+[Aurora pricing example](https://aws.amazon.com/rds/aurora/pricing/).
+
+Create budget alerts and resource tags before provisioning, then compare measured usage with
+the estimate after a representative rehearsal. Budget alerts do not stop spending. Retained
+backups, logs, secrets and images can continue to incur charges after compute is removed.
+
+### Clean up
 
 Remove resources in reverse dependency order using the runbooks:
 

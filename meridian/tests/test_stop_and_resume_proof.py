@@ -159,9 +159,10 @@ async def test_the_clean_up_refuses_a_thread_the_proof_did_not_create():
 
 THREAD = "phase5-proof-abcd1234"
 JOURNEY = "jrn-1"
-RUN_TABLES = ("bookings", "booking_lines", "hold_requests", "journeys", "journey_executions",
+RUN_TABLES = ("booking_action_audit", "bookings", "booking_lines", "hold_requests",
+              "journeys", "journey_executions",
               "journey_threads", "workflow_snapshots", "workflow_session_stops")
-FORCED = ("bookings", "booking_lines")
+FORCED = ("booking_action_audit", "bookings", "booking_lines")
 
 
 class FakeAurora:
@@ -182,6 +183,7 @@ class FakeAurora:
             "hold_requests": [{"journey_id": JOURNEY, "booking_id": "bk-1"}],
             "bookings": [{"booking_id": "bk-1", "traveler_id": traveler}],
             "booking_lines": [{"booking_id": "bk-1", "traveler_id": traveler}],
+            "booking_action_audit": [{"booking_id": "bk-1", "traveler_id": traveler}],
             "journey_executions": [{"thread_id": THREAD}],
             "workflow_snapshots": [{"session_id": THREAD}],
             "workflow_session_stops": [{"journey_id": JOURNEY}],

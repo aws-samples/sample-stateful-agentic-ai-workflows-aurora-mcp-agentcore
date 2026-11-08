@@ -306,19 +306,20 @@ Runtime, so confirm each before you run it.
    that has not applied it. Migration 016 adds the columns the stop record
    needs, 017 lets `stopped_during` accept `finished`, and 018 creates the
    service logins (see [Service logins](OPERATIONS.md#service-logins)).
-   `apply_migrations.py` applies every pending migration, so list the pending
-   ones first. `--pending` only reads and prints names:
+   List pending migrations first. `--pending` only reads and prints names:
 
    ```bash
    python meridian/scripts/apply_migrations.py --pending
    ```
 
-   Apply only when the list is exactly the migrations you expect (015, 016, 017
-   and, where not yet applied, 018); if anything else is listed, stop. Never run
-   `apply_migrations.py` without `--pending` first:
+   Apply the first pending migration individually, after reviewing its rolled-back dry run.
+   Repeat for 016, 017 and 018 only when each is the next pending file. Never run the script
+   bare. Later migrations have their own release ordering; existing installations through
+   025 must follow [the DAT307 release gates](DAT307_RELEASE.md#existing-installations).
 
    ```bash
-   python meridian/scripts/apply_migrations.py
+   python meridian/scripts/apply_migrations.py --dry-run --only 015_workflow_login.sql
+   python meridian/scripts/apply_migrations.py --only 015_workflow_login.sql
    ```
 
 2. Give the login its password and its access policy. Without `--apply` the

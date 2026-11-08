@@ -176,3 +176,59 @@ def test_action_audit_is_scoped_and_append_only_for_service_roles(target, bookin
                     statement += " SET replayed = true"
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     connection.execute(statement)
+
+
+class LocalProofClient:
+    """Run the administrative proof cleanup against the real local schema."""
+
+    def __init__(self, connection, *, fail_cleanup=False):
+        self.connection = connection
+        self.fail_cleanup = fail_cleanup
+
+    def begin_transaction(self):
+        self.connection.execute("BEGIN")
+        return "proof-cleanup"
+
+    def commit_transaction(self, _transaction):
+        self.connection.commit()
+
+    def rollback_transaction(self, _transaction):
+        self.connection.rollback()
+
+    async def execute(self, sql, params=(), **_kwargs):
+        if self.fail_cleanup and sql.startswith("DELETE FROM booking_lines"):
+            raise RuntimeError("proof cleanup interrupted")
+        cursor = self.connection.execute(sql, params)
+        return cursor.fetchall() if cursor.description else []
+
+
+async def test_recovery_proof_cleanup_removes_its_audit_before_business_rows(target, booking_db):
+    from scripts.kill_and_resume_proof import _purge
+
+    invoke()
+    with psycopg.connect(**booking_db.config, row_factory=dict_row, autocommit=True) as connection:
+        journey = connection.execute(
+            "SELECT journey_id FROM hold_requests"
+        ).fetchone()["journey_id"]
+        await _purge(LocalProofClient(connection), journey, "conv-audit", "t1")
+        for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
+            assert connection.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0
+        assert connection.execute(
+            "SELECT journey_id FROM journeys WHERE journey_id = 'j2'"
+        ).fetchone()
+
+
+async def test_interrupted_proof_cleanup_preserves_audit_and_business_rows(target, booking_db):
+    from scripts.kill_and_resume_proof import _purge
+
+    invoke()
+    with psycopg.connect(**booking_db.config, row_factory=dict_row, autocommit=True) as connection:
+        journey = connection.execute(
+            "SELECT journey_id FROM hold_requests"
+        ).fetchone()["journey_id"]
+        with pytest.raises(RuntimeError, match="proof cleanup interrupted"):
+            await _purge(
+                LocalProofClient(connection, fail_cleanup=True), journey, "conv-audit", "t1"
+            )
+        for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
+            assert connection.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 1

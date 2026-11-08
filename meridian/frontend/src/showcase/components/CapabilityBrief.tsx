@@ -15,7 +15,7 @@ const BRIEFS: Record<Phase, {
     description: 'Find trips by price, destination, and trip type in Aurora.',
     route: ['Traveler request', 'SQL filters', 'Aurora rows'],
     evidence: 'Executed SQL and returned rows',
-    pattern: 'SQL parameters carry the filter values. Aurora returns the matching catalog rows.',
+    pattern: 'Deterministic routing selects a parameterized query. SQL parameters carry the filter values; Aurora returns the matching catalog rows.',
     callout: 'Here, the price limit is per traveler. The business meaning comes before the query.',
   },
   2: {
@@ -23,7 +23,7 @@ const BRIEFS: Record<Phase, {
     description: 'Search, compare trips, and convert prices through named tools.',
     route: ['Traveler request', 'MCP tool contract', 'Aurora rows'],
     evidence: 'Tool name, inputs, and result',
-    pattern: 'An MCP contract defines each tool’s inputs and result. The app calls its MCP server over stdio.',
+    pattern: 'Deterministic routing selects the tool and explicit inputs. An MCP contract defines its inputs and result; the app calls its MCP server over stdio.',
     callout: 'A named tool still needs authorization and validated inputs. FX rates here are illustrative.',
   },
   3: {
@@ -38,8 +38,8 @@ const BRIEFS: Record<Phase, {
     title: 'Remember the traveler. Govern the action.',
     description: 'Use saved preferences only after checking who may access them, and let policy decide every tool call.',
     route: ['Verified caller', 'Runtime + Gateway tools', 'Cedar decision', 'RLS write + audit'],
-    evidence: 'Traveler authorization, Cedar allow or deny, hold row, and audit event',
-    pattern: 'Each hop checks the caller. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and audit records capture each access decision and each turn.',
+    evidence: 'Traveler authorization, Gateway outcome, committed hold and action audit; native policy logs corroborate permission',
+    pattern: 'Each hop checks the caller. Cedar governs Gateway calls; Aurora enforces traveler scope and commits the booking with its action audit. Turn summaries are best effort and can be absent after a hard stop.',
     callout: 'The application pins traveler, confirmation and budget. The model cannot grant itself authority.',
   },
   5: {

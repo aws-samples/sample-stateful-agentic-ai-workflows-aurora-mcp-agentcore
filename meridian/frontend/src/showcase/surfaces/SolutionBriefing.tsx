@@ -52,7 +52,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <p>The workflow keeps its saved steps in Amazon Aurora snapshots. A saved step is separate from the booking receipt.</p>
         </Detail>
         <Detail title="Tool contracts & Cedar policies">
-          <p>The model interprets the request, chooses tools and writes grounded replies. Application code establishes the traveler, pins explicit confirmation and the saved budget, and validates the returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
+          <p>The model chooses discovery tools and writes grounded replies. Hold and Confirm buttons execute the exact approved terms through Gateway; the model narrates the result. Application code pins identity, explicit confirmation and saved budget, and validates returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
           <h3>{toolsHeading()}</h3>
           <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker searches the catalog, places its hold and gives back a failed run&rsquo;s hold through the same Gateway under Cedar.</p>
           <dl className="mds-brief-tools">{TOOLS.map(([name, kind, body]) => <div key={name}><dt><span>{kind}</span><code>{name}</code></dt><dd>{body}</dd></div>)}</dl>
@@ -61,7 +61,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           {POLICIES.map(([name, plain, statement]) => <article className="mds-brief-policy" key={name}><h4><code>{name}</code></h4><p>{plain}</p><pre>{statement}</pre></article>)}
           <h3>Authorization at each boundary</h3><Facts items={CONTROLS} />
           <p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html">AgentCore Policy supports temporal conditions through Dogwood</a>. Meridian uses Cedar per-call policies; the proposed same-package lookup and five-minute session condition remain an <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/blob/main/meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md">assessed extension</a>, not enabled here.</p>
-          <p>Trusted identity and row-level security govern access. Application deadlines, bounded retries and concurrency controls address workload pressure; separate pools alone do not reserve database compute.</p>
+          <p>Trusted identity and row-level security govern access. This application uses the RDS Data API, with one transaction ID and transaction-local scope for each unit of work. It does not maintain a PostgreSQL connection pool.</p>
         </Detail>
         <Detail title="Recovery guarantees & evidence">
           <p>On the recovery route the workflow runs classify → search → availability → prepare_hold → hold → synthesize; other requests skip steps or use memory_recall. Before the write, prepare_hold saves the request and booking IDs as a step. The worker renews its lease in <code>journey_executions</code>; the worker checks the lease before each Gateway call, and the Lambda checks it again inside the write transaction.</p>
@@ -74,7 +74,8 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <p>A saved step and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
           <p>Browser reload proves saved-state readback. The separate lost-response rehearsal discards a real committed reply, resumes on a replacement worker and checks the original receipt. It uses its own journey; it does not inject a fault into the open browser session. Stop runtime session on the Recovery desk does end the open journey’s Runtime session; the next resume starts on a new microVM.</p>
           <h3>Follow the result to its evidence</h3>
-          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread and saved steps; System evidence shows the worker lease. Missing records remain unavailable.</p>
+          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, Gateway outcomes, and persisted hold identity. Policy permission inferred from a successful tool call is labeled as inference; native service logs corroborate authorization. Recovery desk shows the active thread and saved steps; System evidence shows the worker lease. Missing records remain unavailable.</p>
+          <p>Successful actions and target replays commit a booking_action_audit row with the business transaction. A workflow that reads an already committed result makes no new target call. Final turn summaries are best effort; a hard stop can leave them absent.</p>
           <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, saved steps and its Gateway hold decision. This briefing explains the design without making service calls.</p>
         </Detail>
         </div>
