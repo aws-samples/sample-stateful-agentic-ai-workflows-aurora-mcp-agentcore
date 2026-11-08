@@ -558,8 +558,10 @@ Then create the Lambda and its role, as section 2 of the
 A signed-in person is the only source of the traveler identity. The Amazon
 Cognito user pool has two seeded users: Jordan Morgan, bound to
 `trv_meridian_demo`, and Jordan Lee, the decoy, bound to `trv_demo_decoy`. The
-web client uses the authorization code flow with PKCE and an access token that
-lasts one hour. A pre-token-generation trigger reads the user's active
+web client signs in inline with Cognito's `USER_PASSWORD_AUTH` API over HTTPS.
+Passwords go directly to the regional Cognito endpoint, never to the backend or
+browser storage. Authorization code with PKCE remains the hosted fallback for
+additional verification. An access token lasts one hour. A pre-token-generation trigger reads the user's active
 `cognito` row in `traveler_identity_bindings` and copies its `traveler_id` into
 the access token. A user with no active binding cannot sign in.
 
@@ -584,11 +586,20 @@ the access token. A user with no active binding cannot sign in.
    seconds, and the function times out at 4. The trigger retries its Aurora
    lookup once after a dropped connection (never after an answer from the Data
    API or a read timeout), and only while the second attempt can end 0.3 s
-   before the function does. The client allows the authorization code
-   flow only for browsers, with the openid, profile and email scopes, no client
+   before the function does. The client allows `USER_PASSWORD_AUTH` for the inline
+   form and the authorization code flow with openid, profile and email scopes, no client
    secret, a one-hour access and ID token and a 24-hour refresh token. It also
    enables `ADMIN_USER_PASSWORD_AUTH`, which only a caller with IAM permission
-   can use; the live tests use it to mint real tokens.
+   can use; the live tests use it to mint real tokens. Inline sessions refresh through
+   `GetTokensFromRefreshToken` and revoke through `RevokeToken`. Tokens remain in memory,
+   so reloading requires another sign-in. The browser sends no credential request to an
+   arbitrary domain and refuses redirects on Cognito API requests.
+
+   Deploy this client setting before the inline frontend. The web stack's CSP allows
+   the configured Cognito domain and its regional API endpoint, with no wildcard.
+   An MFA or password-change challenge never opens the application: the form offers
+   the hosted flow to finish verification. The reference pool has MFA and account
+   self-recovery disabled; production rollout must choose and test those policies.
 
    `sync_cognito_env.py` writes `MERIDIAN_COGNITO_REGION`,
    `MERIDIAN_COGNITO_USER_POOL_ID` and `MERIDIAN_COGNITO_APP_CLIENT_ID` to `.env`,

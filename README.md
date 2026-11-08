@@ -205,9 +205,13 @@ Keep the local open/shared-token modes on loopback. Use the signed-in release fo
 
 ### Run from VS Code
 
-After completing setup, open [`meridian.code-workspace`](meridian.code-workspace), install its
-recommended Python extensions, and select **Meridian: local app** in Run and Debug. Press **F5**.
+After completing setup, choose **File > Open Workspace from File** in VS Code and open
+[`meridian.code-workspace`](meridian.code-workspace). Install its recommended Python extensions,
+then select **Meridian: local app** in Run and Debug and press **F5**.
 The workspace starts Vite at `http://localhost:5173` and the backend on port 8013, then opens the showcase.
+Enter your provisioned email and password in the inline form and choose **Sign in**.
+Credentials go directly to Amazon Cognito over HTTPS. The launcher never embeds them or
+automatically signs you in; tokens stay in memory and a page reload requires sign-in again.
 `scripts/run_local.py` selects `AURORA_BACKEND_SECRET_ARN` for that process; it leaves the
 administrator settings in `.env` unchanged and refuses to launch without the service secret.
 It preserves the configured authentication mode. Local sign-in also needs the Cognito frontend

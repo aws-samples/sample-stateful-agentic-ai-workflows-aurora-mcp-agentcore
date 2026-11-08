@@ -1,12 +1,12 @@
 /* Cognito classic supports only its documented customizable selectors and properties. */
-.background-customizable { background-color: #000000; }
+.background-customizable { background-color: #000000; border-radius: 16px; }
 .banner-customizable { padding: 32px 0px 24px 0px; background-color: #000000; }
 .logo-customizable { max-width: 80%; max-height: 100%; }
 .label-customizable { font-weight: 600; color: #ffffff; }
 .textDescription-customizable { padding-top: 12px; padding-bottom: 24px; font-size: 17px; color: #c8c8ca; }
-.inputField-customizable { width: 100%; height: 48px; color: #ffffff; background-color: #252527; border: 1px solid #848486; }
+.inputField-customizable { width: 100%; height: 48px; color: #ffffff; background-color: #252527; border: 1px solid #848486; border-radius: 12px; }
 .inputField-customizable:focus { border-color: #74acfe; outline: 2px; }
-.submitButton-customizable { font-size: 16px; font-weight: bold; margin: 24px 0px 16px 0px; width: 100%; height: 48px; color: #ffffff; background-color: #0071e3; }
+.submitButton-customizable { font-size: 16px; font-weight: bold; margin: 24px 0px 16px 0px; width: 100%; height: 48px; color: #ffffff; background-color: #0071e3; border-radius: 999px; }
 .submitButton-customizable:hover { color: #ffffff; background-color: #0064cc; }
 .errorMessage-customizable { margin: 16px 0px 16px 0px; padding: 12px; font-size: 15px; width: 100%; background: #252527; border: 1px solid #fe897a; color: #fe897a; box-sizing: border-box; }
 .redirect-customizable { color: #74acfe; }

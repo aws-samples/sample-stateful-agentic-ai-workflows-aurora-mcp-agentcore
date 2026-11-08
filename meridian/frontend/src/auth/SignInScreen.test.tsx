@@ -3,6 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { SignInScreen } from './SignInScreen';
 
 describe('SignInScreen', () => {
+  it('shows credentials inline and clears the password after submitting', () => {
+    const hosted = vi.fn();
+    const password = vi.fn();
+    render(<SignInScreen onSignIn={hosted} onPasswordSignIn={password} />);
+    expect(hosted).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan@example.test' } });
+    fireEvent.change(screen.getByLabelText('Password', { exact: true }), { target: { value: 'private' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+    expect(password).toHaveBeenCalledWith('jordan@example.test', 'private');
+    expect(screen.getByLabelText('Password', { exact: true })).toHaveValue('');
+    expect(hosted).not.toHaveBeenCalled();
+  });
   it('names the product and offers one way in', () => {
     const onSignIn = vi.fn();
     render(<SignInScreen onSignIn={onSignIn} />);

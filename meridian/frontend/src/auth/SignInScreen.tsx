@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ArrowRight, LockKeyhole, Plane } from 'lucide-react';
 import { MeridianMark } from '../components/MeridianMark';
+import { CredentialForm } from './CredentialForm';
 import '../showcase/signIn.css';
 
 interface SignInScreenProps {
@@ -9,9 +10,13 @@ interface SignInScreenProps {
   /** Sign-in is in progress, so the button waits. */
   busy?: boolean;
   onSignIn?: () => void;
+  onPasswordSignIn?: (email: string, password: string) => void | Promise<void>;
+  needsHostedSignIn?: boolean;
 }
 
-export function SignInScreen({ message = null, busy = false, onSignIn }: SignInScreenProps) {
+export function SignInScreen({
+  message = null, busy = false, onSignIn, onPasswordSignIn, needsHostedSignIn = false,
+}: SignInScreenProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (message) heading.current?.focus();
@@ -32,11 +37,20 @@ export function SignInScreen({ message = null, busy = false, onSignIn }: SignInS
           </p>
           {message && <p className="mds-signin-message" role="alert">{message}</p>}
           <p role="status" className="mds-visually-hidden">{busy ? 'Signing you in' : ''}</p>
-          <button type="button" className="mds-signin-button" onClick={onSignIn} disabled={busy}>
-            {busy ? 'Signing you in' : 'Sign in'}
-            <ArrowRight size={20} aria-hidden="true" />
-          </button>
-          <p className="mds-signin-assurance"><LockKeyhole size={16} aria-hidden="true" />Continue to secure sign-in</p>
+          {onPasswordSignIn ? (
+            <CredentialForm busy={busy} onSubmit={onPasswordSignIn} />
+          ) : (
+            <button type="button" className="mds-signin-button" disabled={busy}
+              onClick={onSignIn}>
+              {busy ? 'Signing you in' : 'Sign in'}
+              <ArrowRight size={20} aria-hidden="true" />
+            </button>
+          )}
+          {needsHostedSignIn && <button type="button" className="mds-signin-back"
+            onClick={onSignIn} disabled={busy}>Continue with secure sign-in</button>}
+          <p className="mds-signin-assurance"><LockKeyhole size={16} aria-hidden="true" />
+            {onPasswordSignIn ? 'Secure sign-in with Amazon Cognito' : 'Your next journey starts here'}
+          </p>
           <div className="mds-signin-departure">
             <Plane size={22} aria-hidden="true" />
             <p>Your journey, all in one place.<span>Trips, preferences and saved plans.</span></p>

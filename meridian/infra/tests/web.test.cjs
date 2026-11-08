@@ -73,12 +73,12 @@ test('bin/meridian-web.ts forwards the trimmed hosted UI domain, or nothing when
   assert.match(bin, /cognitoHost: cognitoHostFromEnv\(process\.env\.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN\)/);
 });
 
-test('the Cognito host is the only origin added to connect-src, and nothing else changes', () => {
+test('only the Cognito hosted and regional API origins join connect-src', () => {
   const policy = contentSecurityPolicy(COGNITO_HOST);
-  assert.equal(connectSrc(policy), `connect-src 'self' https://${COGNITO_HOST}`);
+  assert.equal(connectSrc(policy), `connect-src 'self' https://${COGNITO_HOST} https://cognito-idp.us-east-1.amazonaws.com`);
   assert.equal(
     policy,
-    REVIEWED_POLICY.replace("connect-src 'self'", `connect-src 'self' https://${COGNITO_HOST}`),
+    REVIEWED_POLICY.replace("connect-src 'self'", `connect-src 'self' https://${COGNITO_HOST} https://cognito-idp.us-east-1.amazonaws.com`),
   );
   assert.ok(!policy.includes('*'));
 });
@@ -110,7 +110,7 @@ test('the distribution sends the policy that allows the Cognito host on every ro
   }));
   const [[, policy]] = Object.entries(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'));
   const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy;
-  assert.equal(connectSrc(csp.ContentSecurityPolicy), `connect-src 'self' https://${COGNITO_HOST}`);
+  assert.equal(connectSrc(csp.ContentSecurityPolicy), `connect-src 'self' https://${COGNITO_HOST} https://cognito-idp.us-east-1.amazonaws.com`);
   assert.equal(csp.Override, true);
 });
 

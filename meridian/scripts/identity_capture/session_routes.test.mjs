@@ -86,6 +86,31 @@ test('a pinned session leaves another pool\'s requests alone', async () => {
   assert.equal(routes.some((r) => r.match(new URL(`${HOST}/oauth2/token`))), true);
 });
 
+test('inline captures inject only into the pinned site and the sign-in operation', async () => {
+  const routes = [];
+  const page = { route: async (match, handler) => { routes.push({ match, handler }); } };
+  const pin = { host: new URL(HOST).hostname, origin: 'https://site.example.net' };
+  await installSession(page, { access: 'a', id: 'i' }, {}, pin);
+  const route = routes.find(r => r.match(new URL('https://cognito-idp.us-east-1.amazonaws.com/')));
+  assert.ok(route);
+  let result;
+  let aborted = false;
+  const request = (origin, operation) => ({
+    request: () => ({ frame: () => ({ url: () => origin }), headers: () => ({ 'x-amz-target': operation }) }),
+    fulfill: async options => { result = JSON.parse(options.body); },
+    abort: async () => { aborted = true; },
+  });
+  await route.handler(request(pin.origin, 'AWSCognitoIdentityProviderService.InitiateAuth'));
+  assert.equal(result.AuthenticationResult.AccessToken, 'a');
+  result = null;
+  await route.handler(request('https://other.example.net', 'AWSCognitoIdentityProviderService.InitiateAuth'));
+  assert.equal(aborted, true);
+  assert.equal(result, null);
+  aborted = false;
+  await route.handler(request(pin.origin, 'AWSCognitoIdentityProviderService.GetTokensFromRefreshToken'));
+  assert.equal(aborted, true);
+});
+
 test('the hosted origin is read from a release record and must be a plain https site', () => {
   const record = (url) => JSON.stringify({ site: { SiteUrl: url } });
   assert.equal(hostedOrigin(record('https://d111.cloudfront.net/')), 'https://d111.cloudfront.net');

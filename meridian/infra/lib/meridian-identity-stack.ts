@@ -113,7 +113,8 @@ export class MeridianIdentityStack extends Stack {
       generateSecret: false,
       // ADMIN_USER_PASSWORD_AUTH is a server-side flow: only a caller with IAM permission can use it,
       // never a browser. Proof scripts use it to mint real tokens for the seeded users.
-      authFlows: { adminUserPassword: true },
+      // The inline form calls Cognito directly over HTTPS; the backend never receives passwords.
+      authFlows: { adminUserPassword: true, userPassword: true },
       oAuth: {
         flows: { authorizationCodeGrant: true },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],

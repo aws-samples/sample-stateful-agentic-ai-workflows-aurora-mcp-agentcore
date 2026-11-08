@@ -55,9 +55,9 @@ if python scripts/test_aurora_connection.py; then
   python scripts/seed_data.py
   echo ""
   echo "Setup complete. Start backend:"
-  echo "  uvicorn backend.main:app --host 127.0.0.1 --port 8013"
+  echo "  python scripts/run_local.py"
   echo "Start frontend:"
-  echo "  cd frontend && npm ci && npm run dev -- --host 127.0.0.1 --port 5176 --strictPort"
+  echo "  cd frontend && npm ci && npm run dev -- --host localhost --port 5173 --strictPort"
 else
   echo ""
   echo "Aurora connection failed — check .env and cluster status."

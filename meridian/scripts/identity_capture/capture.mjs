@@ -93,6 +93,11 @@ async function signIn(page, extra) {
   await page.goto(`${base}/showcase?${query}`, { waitUntil: 'networkidle', timeout: 60000 });
   const heading = page.getByRole('heading', { name: 'Sign in to Meridian' });
   await heading.waitFor({ timeout: 30000 });
+  if (await page.getByLabel('Email', { exact: true }).count()) {
+    // The pinned route supplies real tokens. These placeholders never reach Cognito.
+    await page.getByLabel('Email', { exact: true }).fill('capture@example.test');
+    await page.getByLabel('Password', { exact: true }).fill('capture-placeholder');
+  }
   await page.getByRole('button', { name: 'Sign in' }).click();
   await heading.waitFor({ state: 'detached', timeout: 60000 });
   await present(page);

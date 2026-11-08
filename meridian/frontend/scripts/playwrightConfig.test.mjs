@@ -23,7 +23,7 @@ describe('playwright.config.ts web servers', () => {
     expect(gated).toBeDefined();
     expect(gated).toContain('--mode gated-e2e');
     expect(gated).toContain('--strictPort');
-    expect(source).toMatch(/VITE_COGNITO_DOMAIN:\s*'[a-z0-9.-]+\.example\.test'/);
+    expect(source).toContain("VITE_COGNITO_DOMAIN: 'gate-test.auth.us-east-1.amazoncognito.com'");
     expect(source).toMatch(/VITE_COGNITO_CLIENT_ID:\s*'[a-z0-9-]+'/);
   });
 });

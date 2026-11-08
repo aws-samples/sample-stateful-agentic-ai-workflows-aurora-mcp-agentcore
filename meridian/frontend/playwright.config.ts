@@ -27,7 +27,7 @@ export default defineConfig({
     {
       // Placeholder sign-in settings, never the real ones. The process environment outranks any .env file.
       command: 'npm run dev -- --mode gated-e2e --host 127.0.0.1 --port 4175 --strictPort', url: gatedURL,
-      env: { VITE_COGNITO_DOMAIN: 'gate.auth.example.test', VITE_COGNITO_CLIENT_ID: 'gate-client' },
+      env: { VITE_COGNITO_DOMAIN: 'gate-test.auth.us-east-1.amazoncognito.com', VITE_COGNITO_CLIENT_ID: 'gate-client' },
       reuseExistingServer: !process.env.CI, timeout: 30_000,
     },
   ],

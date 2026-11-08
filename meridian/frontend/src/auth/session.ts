@@ -2,8 +2,9 @@ import type { AuthConfig } from './config';
 import { travelerFromTokens, type SignedInTraveler } from './claims';
 import { createPkce, randomToken } from './pkce';
 import {
-  exchangeCode, isRefusal, refreshTokens, revokeRefreshToken, type TokenSet,
+  AuthError, exchangeCode, isRefusal, refreshTokens, revokeRefreshToken, type TokenSet,
 } from './tokenClient';
+import { passwordSignIn, refreshPasswordTokens, revokePasswordTokens } from './passwordClient';
 
 export type SessionStatus = 'signed-out' | 'signing-in' | 'signed-in';
 
@@ -43,11 +44,10 @@ export const MESSAGES = {
 const SIGNED_OUT: SessionState = { status: 'signed-out', traveler: null, message: null };
 
 /**
- * The browser side of sign-in: authorization code with PKCE against the Cognito hosted page.
+ * Browser sign-in through Cognito's API, with hosted authorization-code PKCE as a fallback.
  *
- * Tokens live only in this object's memory. A reload signs the page out locally, and the hosted
- * page's own session lets the person back in with one click. The access token is refreshed a
- * minute before it expires.
+ * Tokens live only in this object's memory. Reloading requires sign-in again; a hosted-page
+ * session can reuse its own cookie. The access token is refreshed a minute before it expires.
  */
 export class AuthSession {
   private state: SessionState = SIGNED_OUT;
@@ -69,6 +69,25 @@ export class AuthSession {
   };
 
   getAccessToken = (): string | null => this.tokens?.accessToken ?? null;
+
+  /** Authenticate in place. A challenge never grants a session or bypasses verification. */
+  async passwordSignIn(username: string, password: string): Promise<void> {
+    if (this.state.status === 'signing-in') return;
+    this.invalidate();
+    this.deps.storage.removeItem(PKCE_KEY);
+    const generation = this.generation;
+    this.setState({ status: 'signing-in', traveler: null, message: null });
+    try {
+      const tokens = await passwordSignIn(
+        this.deps.config, username, password, this.deps.fetchFn, this.deps.now,
+      );
+      if (generation === this.generation) this.applyTokens(tokens);
+    } catch (error) {
+      if (generation === this.generation) {
+        this.signedOut(error instanceof AuthError ? error.message : MESSAGES.failed);
+      }
+    }
+  }
 
   /** Send the browser to the hosted sign-in page. */
   async startSignIn(): Promise<void> {
@@ -138,16 +157,19 @@ export class AuthSession {
    */
   signOut(): void {
     const { config } = this.deps;
-    this.revokeQuietly(this.tokens?.refreshToken ?? null);
+    const inline = this.tokens?.source === 'cognito-api';
+    this.revokeQuietly(this.tokens?.refreshToken ?? null, inline);
     this.signedOut(null);
+    if (inline) return;
     const query = new URLSearchParams({ client_id: config.clientId, logout_uri: config.logoutUri });
     this.deps.navigate(`https://${config.domain}/logout?${query}`);
   }
 
-  private revokeQuietly(refreshToken: string | null): void {
+  private revokeQuietly(refreshToken: string | null, inline: boolean): void {
     if (!refreshToken) return;
     try {
-      void Promise.resolve(revokeRefreshToken(this.deps.config, refreshToken, this.deps.fetchFn))
+      const revoke = inline ? revokePasswordTokens : revokeRefreshToken;
+      void Promise.resolve(revoke(this.deps.config, refreshToken, this.deps.fetchFn))
         .catch(() => undefined);
     } catch {
       // Best effort: a failed revoke must not stop the person from signing out.
@@ -162,7 +184,8 @@ export class AuthSession {
       return;
     }
     try {
-      const tokens = await refreshTokens(
+      const refresh = this.tokens?.source === 'cognito-api' ? refreshPasswordTokens : refreshTokens;
+      const tokens = await refresh(
         this.deps.config, refreshToken, this.deps.fetchFn, this.deps.now,
       );
       if (generation === this.generation) this.applyTokens(tokens);

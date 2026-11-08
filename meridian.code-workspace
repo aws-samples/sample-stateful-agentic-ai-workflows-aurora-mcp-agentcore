@@ -49,8 +49,8 @@
         "justMyCode": true,
         "preLaunchTask": "Meridian: frontend",
         "serverReadyAction": {
-          "pattern": "Uvicorn running on http://127\\.0\\.0\\.1:([0-9]+)",
-          "uriFormat": "http://localhost:5173/showcase",
+          "pattern": "Meridian browser: (http://localhost:5173/showcase)",
+          "uriFormat": "%s",
           "action": "openExternally"
         }
       }

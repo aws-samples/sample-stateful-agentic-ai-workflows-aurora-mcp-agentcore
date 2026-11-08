@@ -77,6 +77,43 @@ describe('starting sign-in', () => {
   });
 });
 
+describe('inline sign-in', () => {
+  const inlineConfig = { ...config, domain: 'meridian-example.auth.us-east-1.amazoncognito.com' };
+  const apiResponse = () => ({
+    ok: true, status: 200, json: async () => ({ AuthenticationResult: {
+      AccessToken: jordanTokens().accessToken, IdToken: jordanTokens().idToken,
+      RefreshToken: 'api-refresh', ExpiresIn: 3600,
+    } }),
+  });
+
+  it('keeps tokens in memory, refreshes with Cognito and signs out without navigation', async () => {
+    const session = build({ config: inlineConfig });
+    fetchFn.mockResolvedValue(apiResponse());
+    await session.passwordSignIn('jordan@example.test', 'not-a-real-password');
+    expect(session.getState().status).toBe('signed-in');
+    expect(storage.values.size).toBe(0);
+    expect(navigate).not.toHaveBeenCalled();
+    await session.refreshNow();
+    expect(fetchFn.mock.calls[1][1].headers['X-Amz-Target']).toContain('GetTokensFromRefreshToken');
+    session.signOut();
+    expect(session.getAccessToken()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fetchFn.mock.calls[2][1].headers['X-Amz-Target']).toContain('RevokeToken');
+  });
+
+  it('ignores a late password response after sign-out', async () => {
+    let complete!: (value: ReturnType<typeof apiResponse>) => void;
+    fetchFn.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const session = build({ config: inlineConfig });
+    const pending = session.passwordSignIn('jordan@example.test', 'not-a-real-password');
+    session.signOut();
+    complete(apiResponse());
+    await pending;
+    expect(session.getState().status).toBe('signed-out');
+    expect(session.getAccessToken()).toBeNull();
+  });
+});
+
 describe('returning from the hosted page', () => {
   it('ignores an address with no sign-in result', async () => {
     expect(await build().handleCallback('?view=proof&theme=dark')).toBe(false);

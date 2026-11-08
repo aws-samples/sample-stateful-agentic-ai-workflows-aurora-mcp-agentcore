@@ -1,7 +1,8 @@
 # Meridian sign-in branding
 
-The application welcome screen uses `frontend/src/auth/SignInScreen.tsx`. Credentials
-remain on Amazon Cognito's hosted UI. These assets give that existing classic UI
+The application welcome screen uses `frontend/src/auth/SignInScreen.tsx`. Its inline
+form sends credentials directly to Cognito's regional API. The hosted UI remains a
+fallback for additional verification. These assets give that existing classic UI
 the same Meridian mark, dark palette and blue primary action. They do not change
 authentication, callback URLs, users or token validation.
 

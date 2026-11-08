@@ -1,6 +1,8 @@
 import type { AuthConfig } from './config';
 
 export interface TokenSet {
+  /** API sessions refresh and revoke through the same Cognito API. Tokens remain in memory. */
+  source?: 'cognito-api';
   accessToken: string;
   idToken: string | null;
   refreshToken: string | null;

@@ -24,21 +24,18 @@ function fixtureFor(path: string): object {
 }
 
 async function signIn(page: Page) {
-  await page.route('https://gate.auth.example.test/oauth2/authorize**', route => {
-    const authorize = new URL(route.request().url());
-    const back = new URL(authorize.searchParams.get('redirect_uri')!);
-    back.searchParams.set('code', 'fixture-code');
-    back.searchParams.set('state', authorize.searchParams.get('state')!);
-    return route.fulfill({ status: 302, headers: { location: back.toString() } });
-  });
-  await page.route('https://gate.auth.example.test/oauth2/token', route => route.fulfill({
-    json: TOKENS, headers: { 'access-control-allow-origin': '*' },
+  await page.route('https://cognito-idp.us-east-1.amazonaws.com/', route => route.fulfill({
+    json: { AuthenticationResult: {
+      AccessToken: TOKENS.access_token, IdToken: TOKENS.id_token, ExpiresIn: TOKENS.expires_in,
+    } }, headers: { 'access-control-allow-origin': '*' },
   }));
   await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({
     json: fixtureFor(new URL(route.request().url()).pathname),
   }));
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/showcase');
+  await page.getByLabel('Email', { exact: true }).fill('alex@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('fixture-only-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('group', { name: 'Account' })).toBeVisible();
 }

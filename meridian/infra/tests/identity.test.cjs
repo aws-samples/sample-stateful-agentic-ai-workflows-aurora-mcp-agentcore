@@ -77,11 +77,11 @@ test('the web client is public, uses the authorization code flow and lasts one h
   });
 });
 
-test('the client offers no password flow a browser could use', () => {
+test('the client supports inline Cognito sign-in without implicit OAuth or attribute writes', () => {
   const client = Object.values(synth().findResources('AWS::Cognito::UserPoolClient'))[0];
   assert.deepEqual(
     [...client.Properties.ExplicitAuthFlows].sort(),
-    ['ALLOW_ADMIN_USER_PASSWORD_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+    ['ALLOW_ADMIN_USER_PASSWORD_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH', 'ALLOW_USER_PASSWORD_AUTH'],
   );
   assert.ok(!client.Properties.AllowedOAuthFlows.includes('implicit'));
 });

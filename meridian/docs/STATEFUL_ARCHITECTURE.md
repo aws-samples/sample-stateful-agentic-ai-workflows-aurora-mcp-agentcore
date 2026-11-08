@@ -247,7 +247,7 @@ supported mode, and the Runtimes and the Gateway use IAM authorizers (see
 
 | Hop | What happens | What a refusal looks like |
 | --- | --- | --- |
-| Browser | Authorization code with PKCE against the hosted sign-in page. The tokens live in memory and are refreshed a minute before they expire | The sign-in screen |
+| Browser | Inline Cognito authentication over HTTPS, with hosted authorization code and PKCE for additional verification. Tokens live in memory and refresh a minute before expiry | The sign-in screen |
 | Backend | FastAPI verifies signature, issuer, `token_use`, client and expiry, then takes the traveler from the claim. A request that names another traveler is refused | 401 `sign_in_required` or `token_expired`; 403 for another traveler |
 | Runtimes | Both Runtimes have a JWT authorizer and allowlist `Authorization`. The traveler comes from the claim, and a payload that names someone else is refused | A coded `authorization` event |
 | Gateway | The Gateway verifies the token (`CUSTOM_JWT`; the `jwt` release replaced the `AWS_IAM` Gateway with a new one, because an authorizer type cannot change, see [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md#gateway-authorizer-what-the-first-three-windows-showed)). Which layers pin the traveler depends on the design, recorded in each receipt's `design` field: `both` (an interceptor replaces `travelerId` with the token's traveler; Cedar denies a mismatch if the interceptor is detached), `cedar` or `interceptor`. The shipped design is `both`, the default of `MERIDIAN_GATEWAY_ENFORCEMENT`. The measured behavior is in [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md#gateway-identity-what-the-harness-measured) | A tool error; a deny row in `traveler_access_audit` when the Holds Lambda refused |

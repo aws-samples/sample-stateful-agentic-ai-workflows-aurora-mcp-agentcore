@@ -23,9 +23,9 @@ const COGNITO_HOSTED_UI_DOMAIN =
  * The production bundle serves its scripts and fonts from the same origin.
  * React and Motion set inline styles; catalog photography may use HTTPS URLs.
  *
- * A signed-in build also calls the Cognito hosted UI domain from the browser (the token exchange,
- * the refresh and the revoke), so that one host joins `connect-src`. It must be a bare hosted UI
- * domain: a path, a scheme, a wildcard or anything after the host would widen the policy.
+ * A signed-in build calls Cognito's regional API for inline sign-in and the hosted domain for
+ * the PKCE fallback. Only those two origins join `connect-src`. A path, scheme, wildcard or
+ * anything after the configured host would widen the policy and is refused.
  */
 export function contentSecurityPolicy(cognitoHost?: string): string {
   const connect = ["'self'"];
@@ -37,6 +37,8 @@ export function contentSecurityPolicy(cognitoHost?: string): string {
       );
     }
     connect.push(`https://${cognitoHost}`);
+    const region = cognitoHost.split('.auth.')[1].split('.amazoncognito.com')[0];
+    connect.push(`https://cognito-idp.${region}.amazonaws.com`);
   }
   return [
     "default-src 'self'",

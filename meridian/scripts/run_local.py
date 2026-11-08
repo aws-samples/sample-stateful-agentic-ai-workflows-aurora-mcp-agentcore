@@ -8,8 +8,18 @@ from pathlib import Path
 import sys
 
 from dotenv import dotenv_values
+import uvicorn
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class LocalServer(uvicorn.Server):
+    """Give the editor a browser URL only after the backend starts listening."""
+
+    async def startup(self, sockets=None):
+        await super().startup(sockets=sockets)
+        if self.started:
+            print("Meridian browser: http://localhost:5173/showcase", flush=True)
 
 
 def backend_environment(source: Mapping[str, str | None]) -> dict[str, str]:
@@ -42,9 +52,7 @@ def main() -> int:
     os.environ.update(environment)
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
-    import uvicorn
-
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=args.port)
+    LocalServer(uvicorn.Config("backend.main:app", host="127.0.0.1", port=args.port)).run()
     return 0
 
 
