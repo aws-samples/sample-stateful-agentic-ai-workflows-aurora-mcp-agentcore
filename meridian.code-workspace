@@ -12,7 +12,7 @@
         "label": "Meridian: frontend",
         "type": "process",
         "command": "npm",
-        "args": ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5176", "--strictPort"],
+        "args": ["run", "dev", "--", "--host", "localhost", "--port", "5173", "--strictPort"],
         "options": {
           "cwd": "${workspaceFolder}/meridian/frontend",
           "env": { "VITE_API_ORIGIN": "http://127.0.0.1:8013" }
@@ -21,7 +21,7 @@
         "problemMatcher": {
           "owner": "meridian-vite",
           "pattern": { "regexp": "^(.*):(\\d+):(\\d+): (.*)$", "file": 1, "line": 2, "column": 3, "message": 4 },
-          "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "Local:.*http://127\\.0\\.0\\.1:5176" }
+          "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "Local:.*http://localhost:5173" }
         },
         "presentation": { "reveal": "always", "panel": "dedicated" }
       },
@@ -50,7 +50,7 @@
         "preLaunchTask": "Meridian: frontend",
         "serverReadyAction": {
           "pattern": "Uvicorn running on http://127\\.0\\.0\\.1:([0-9]+)",
-          "uriFormat": "http://127.0.0.1:5176/showcase",
+          "uriFormat": "http://localhost:5173/showcase",
           "action": "openExternally"
         }
       }

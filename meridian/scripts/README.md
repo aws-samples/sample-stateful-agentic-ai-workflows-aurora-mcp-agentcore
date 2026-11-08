@@ -36,3 +36,9 @@ Provision and tear down Aurora with the CDK app in
 [OPERATIONS.md](../docs/OPERATIONS.md#provision-aurora). Local logs,
 release receipts, generated configuration, credentials and build output stay
 outside Git.
+
+To style the existing Cognito classic sign-in page, use
+`publish_signin_branding.py`. It checks the account and identity stack, previews
+the target without writing by default, and requires `--apply` plus
+`--i-understand-this-changes-aws` to publish. See [sign-in branding](../infra/branding/README.md)
+for assets, request limits and read-back behavior. It does not modify authentication.

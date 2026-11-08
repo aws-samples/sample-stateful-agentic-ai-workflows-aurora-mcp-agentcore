@@ -167,9 +167,10 @@ its result, then apply that migration. Existing installations must follow the
 [026-029 release order](meridian/docs/DAT307_RELEASE.md); do not apply all four before upgrading
 the running application.
 
-Before starting the backend, set its `AURORA_SECRET_ARN` to the provisioned **backend service
-login's** secret. The Python client uses that variable directly; merely defining
-`AURORA_BACKEND_SECRET_ARN` does not switch a local process away from the master login.
+The launcher below selects the provisioned **backend service login** through
+`AURORA_BACKEND_SECRET_ARN`. When launching Uvicorn directly instead, set that process's
+`AURORA_SECRET_ARN` to the backend service secret; the database client reads that variable.
+Never launch application traffic with the master secret.
 
 | Mode | Use it for | Setup |
 | --- | --- | --- |
@@ -186,7 +187,7 @@ Runtimes, Gateway or policies are ready.
 Backend, from `meridian/` with the virtual environment active:
 
 ```bash
-uvicorn backend.main:app --host 127.0.0.1 --port 8013
+python scripts/run_local.py
 ```
 
 Frontend, from a second terminal at the repository root:
@@ -194,10 +195,10 @@ Frontend, from a second terminal at the repository root:
 ```bash
 cd meridian/frontend
 npm ci
-VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
+VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host localhost --port 5173 --strictPort
 ```
 
-Open <http://127.0.0.1:5176/showcase>. Check `/api/health` and the UI's configuration indicators.
+Open <http://localhost:5173/showcase>. Check `/api/health` and the UI's configuration indicators.
 `"workflow_runtime_configured"` is `false` until you deploy and synchronize the Workflow
 endpoint. The snapshot store is reported as `"snapshot_store": "Aurora workflow_snapshots"`.
 Keep the local open/shared-token modes on loopback. Use the signed-in release for hosted access.
@@ -206,16 +207,19 @@ Keep the local open/shared-token modes on loopback. Use the signed-in release fo
 
 After completing setup, open [`meridian.code-workspace`](meridian.code-workspace), install its
 recommended Python extensions, and select **Meridian: local app** in Run and Debug. Press **F5**.
-The workspace starts Vite on port 5176 and the backend on port 8013, then opens the showcase.
+The workspace starts Vite at `http://localhost:5173` and the backend on port 8013, then opens the showcase.
 `scripts/run_local.py` selects `AURORA_BACKEND_SECRET_ARN` for that process; it leaves the
 administrator settings in `.env` unchanged and refuses to launch without the service secret.
 It preserves the configured authentication mode. Local sign-in also needs the Cognito frontend
-settings and a registered loopback callback from the operations guide.
+settings and the exact registered callback `http://localhost:5173/showcase`.
+Use `localhost`, not `127.0.0.1`, in the browser: Cognito treats them as different callback
+URLs. A different host or port causes `redirect_mismatch`; return to the registered address
+and start sign-in again.
 
 Use **Tasks: Run Task > Meridian: check local configuration** for an offline settings check.
 Stop the debugger to stop the backend; use **Tasks: Terminate Task > Meridian: frontend** to
 stop Vite. Port conflicts fail explicitly. The workspace assumes the macOS/Linux `venv/bin/python`
-layout shown above; Windows users must select `venv\\Scripts\\python.exe` in the workspace settings
+layout shown above; Windows users must select `venv\Scripts\python.exe` in the workspace settings
 and launch configuration.
 
 ## Try the reference app
