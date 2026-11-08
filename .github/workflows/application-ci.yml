@@ -61,7 +61,8 @@ jobs:
       # Resolve the Runtime's overrides and complete constraints, independently of the backend lock.
       - run: uv pip compile pyproject.toml --generate-hashes --output-file ../../../.local/runtime-requirements.txt
         working-directory: meridian/meridian_agentcore/app/${{ matrix.runtime }}
-      - run: uv pip install --python .local/runtime-contract/bin/python --require-hashes -r .local/runtime-requirements.txt
+      # Install the complete resolution without reapplying Strands' overridden MCP bound.
+      - run: uv pip install --python .local/runtime-contract/bin/python --no-deps --require-hashes -r .local/runtime-requirements.txt
       - run: .local/runtime-contract/bin/python scripts/check_runtime_contract.py ${{ matrix.runtime }}
 
   frontend:
