@@ -76,11 +76,11 @@ flowchart LR
     Concierge --> Bedrock
 ```
 
-This diagram shows the `jwt` release with `MERIDIAN_GATEWAY_ENFORCEMENT=both`. The backend verifies the access token; each Runtime and
-the Gateway also have JWT authorizers. The interceptor binds `travelerId` and `verifiedSubject`
-to token claims. Cedar checks that binding and the action's limits. The holds Lambda then checks
-its workload grant, pins the database transaction to that traveler and invokes bounded SQL
-functions under row-level security (RLS).
+This diagram shows the `jwt` release with `MERIDIAN_GATEWAY_ENFORCEMENT=both`. The backend
+verifies the access token; each Runtime and the Gateway also have JWT authorizers. The
+interceptor binds `travelerId` and `verifiedSubject` to token claims. Cedar checks that binding
+and the action's limits. The holds Lambda then checks its workload grant, pins the database
+transaction to that traveler and invokes bounded SQL functions under row-level security (RLS).
 
 ### State and failure guarantees
 
@@ -105,10 +105,11 @@ result. Missing inventory, unknown packages and tool failures must not become in
 ### Retrieval boundaries
 
 The hybrid pipeline merges vector and full-text candidates, reapplies shared catalog filters,
-then reranks the surviving records. Missing catalog rows are dropped. Explicit minus terms in the retrieval tool query,
-such as `Tokyo -nightlife`, apply to both candidate sources. Natural-language preferences are
-relevance signals unless the code implements a corresponding structured constraint; ranking is
-not a guarantee of dietary, accessibility or other real-world suitability.
+then reranks the surviving records. Missing catalog rows are dropped. Explicit minus terms in the
+retrieval tool query, such as `Tokyo -nightlife`, apply to both candidate sources.
+Natural-language preferences are relevance signals unless the code implements a corresponding
+structured constraint; ranking is not a guarantee of dietary, accessibility or other real-world
+suitability.
 
 ### Database access
 
@@ -120,7 +121,8 @@ The direct psycopg examples are separate from this deployed path.
 Use the master login for schema administration only; it bypasses RLS. Deployed services use
 non-owner, `NOBYPASSRLS`, `NOINHERIT` logins. After migration 029, service roles cannot directly
 insert, update or delete booking tables, and only `meridian_gateway` can execute the bounded
-hold, confirmation and release functions. See [service logins](meridian/docs/OPERATIONS.md#service-logins).
+hold, confirmation and release functions. See
+[service logins](meridian/docs/OPERATIONS.md#service-logins) for how to create each login.
 
 ## Prerequisites
 
@@ -129,11 +131,17 @@ hold, confirmation and release functions. See [service logins](meridian/docs/OPE
   dependencies with `npm ci`.
 - AWS credentials for a sandbox account, and permission to provision the resources in the
   [operations guide](meridian/docs/OPERATIONS.md). The local web app still calls live AWS services.
+  Use `us-east-1`, the default in [`.env.example`](meridian/.env.example); another Region needs
+  the settings in the
+  [runbook prerequisites](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#prerequisites).
 - Amazon Aurora PostgreSQL with the RDS Data API, pgvector and Secrets Manager credentials.
-- Amazon Bedrock access to the model IDs configured in
-  [`.env.example`](meridian/.env.example) and the
+- Amazon Bedrock access, in that Region, to the default models: Claude Sonnet 5.5 through its
+  global inference profile `global.anthropic.claude-sonnet-5-5`, Cohere Embed v4
+  (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`). `BEDROCK_MODEL_ID`,
+  `EMBEDDING_MODEL` and `RERANK_MODEL` in [`.env.example`](meridian/.env.example) change them
+  for the backend; the Concierge Runtime reads its own `BEDROCK_MODEL_ID` from the
   [AgentCore template](meridian/meridian_agentcore/agentcore/agentcore.template.json).
-  Confirm model availability and inference-profile permissions in your target Region.
+  Confirm model availability and inference-profile permissions before you seed the database.
 - Phases 4 and 5 require deployed AgentCore resources. Packaging uses `uv` and the pinned
   `@aws/agentcore` CLI specified in the [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md).
 - The supplied Cognito test-user seeding flow uses macOS Keychain. Other platforms need an
@@ -160,11 +168,22 @@ account-specific configuration out of Git.
 
 ### 2. Prepare AWS resources and choose authentication
 
-Follow [Prepare the database](meridian/docs/OPERATIONS.md#prepare-the-database). Initialize and
-seed only an empty database. List pending migrations, dry-run **one named migration**, inspect
-its result, then apply that migration. Existing installations must follow the
-[026-029 upgrade order](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md); do not apply all four before upgrading
-the running application.
+Follow [Prepare the database](meridian/docs/OPERATIONS.md#prepare-the-database). On an empty
+database, initialize the base schema, list pending migrations, dry-run **one named migration**,
+inspect its result, then apply that migration. Repeat until none are pending, then seed:
+
+```bash
+python scripts/init_aurora_schema.py
+python scripts/apply_migrations.py --pending
+python scripts/apply_migrations.py --dry-run --only <first-pending-migration.sql>
+python scripts/apply_migrations.py --only <first-pending-migration.sql>
+python scripts/seed_data.py
+```
+
+`init_aurora_schema.py` and `seed_data.py` refuse a database that already has Meridian data.
+Existing installations run only named migrations and must follow the
+[026-029 upgrade order](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md); do not apply all four before
+upgrading the running application. Never run `apply_migrations.py` without a flag.
 
 The launcher below selects the provisioned **backend service login** through
 `AURORA_BACKEND_SECRET_ARN`. When launching Uvicorn directly instead, set that process's
@@ -177,9 +196,10 @@ Never launch application traffic with the master secret.
 | `jwt` | The signed-in traveler and cross-traveler isolation walkthrough | Cognito, backend verification, JWT authorizers on both Runtimes and Gateway, request interceptor, Cedar binding policy and service logins |
 
 Deploy AgentCore for Phases 4 and 5 using the
-[runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md), then synchronize the returned endpoint
-configuration using its documented steps. A healthy database alone does not establish that the
-Runtimes, Gateway or policies are ready.
+[runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md), then run
+`python scripts/sync_agentcore_env.py --write` to write the returned `AGENTCORE_*` values to
+`.env`. Without `--write` it prints them masked. A healthy database alone does not establish
+that the Runtimes, Gateway or policies are ready.
 
 ### 3. Start the backend and frontend
 
@@ -246,7 +266,7 @@ test reset: the administrative reset deletes selected bookings and their action 
 | --- | --- | --- |
 | Aurora | [`meridian/infra/bin/meridian-aurora.ts`](meridian/infra/bin/meridian-aurora.ts) | [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora) |
 | Runtime, Gateway, Memory and Policy | [AgentCore project](meridian/meridian_agentcore/) | [Deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) |
-| Optional hosted web app | [`scripts/publish.py`](meridian/scripts/publish.py) | [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app) |
+| Optional hosted web app | [`scripts/publish.py`](meridian/scripts/publish.py); in `jwt` mode publish with `--tighten` | [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app) |
 | Existing installation upgrade | Migrations 026-029 and coordinated application release | [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) |
 
 The hosted path uses CloudFront, S3 and an existing App Runner service. The repository does not
@@ -360,9 +380,12 @@ Remove resources in reverse dependency order using the runbooks:
 2. [Sign-in resources and service-login integrations](meridian/docs/OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
 3. [AgentCore resources](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down), including separately provisioned targets and secrets.
 4. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora), preserving a final snapshot until you no longer need the data.
+5. CDK bootstrap: the `CDKToolkit` stack holds any backend images CDK pushed. Delete it
+   only if nothing else in the account and Region deploys with CDK, and empty its S3 bucket
+   and Amazon ECR repository first if the delete stops on them. Do not remove shared
+   infrastructure as part of this application's cleanup.
 
-Review retained snapshots, log groups, secrets, S3 objects and images afterward. Do not remove a
-shared CDK bootstrap stack or shared infrastructure as part of this application's cleanup.
+Review retained snapshots, log groups, secrets, S3 objects and images afterward.
 
 ## Documentation
 
@@ -374,6 +397,7 @@ shared CDK bootstrap stack or shared infrastructure as part of this application'
 | [Operations](meridian/docs/OPERATIONS.md) | Provisioning, deployment, recovery and teardown |
 | [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) | Migration order, acceptance matrix, rollback and test reset |
 | [Documentation index](meridian/docs/README.md) | All supporting guides |
+| [Second workflow implementation](meridian/examples/langgraph/) | A maintained second implementation of the workflow on another graph framework; the application does not import it, and the test block above installs its requirements |
 
 ## Security and contribution
 

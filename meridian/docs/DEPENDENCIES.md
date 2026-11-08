@@ -19,12 +19,48 @@ hash check rejects `bedrock-agentcore`'s unpinned dependencies, which the main l
 The version match covers the SDK only. The Runtime tests still run on the main lock's `mcp`
 1.30.0 and `botocore` 1.43.72, while the Runtime ships `mcp` 2.3.0 and `botocore` 1.43.107
 (`meridian_agentcore/app/MeridianConcierge/pyproject.toml`, whose `constraint-dependencies` pin the
-rest of its set; there is no lock file with hashes). The backend-integrated Runtime tests need the backend's 1.x MCP server. A separate
-`runtime-contracts` CI job now installs each Runtime's own full constraints in an isolated
+rest of its set). The backend-integrated Runtime tests need the backend's 1.x MCP server. A separate
+`runtime-contracts` CI job installs each Runtime's committed lock (see below) in an isolated
 environment, verifies the installed versions and runs `scripts/check_runtime_contract.py`.
 It exercises MCP stdio listing/calls, trusted argument binding, hold result/uncertainty handling,
 and Strands Graph pause/resume over retained storage. It blocks TCP in both processes.
 This complements the backend suite; live Gateway and Aurora acceptance are still required.
+
+## Runtime locks
+
+Each Runtime has a hashed lock outside its `codeLocation`, so the lock is not packaged into the
+deployed code zip: `meridian_agentcore/runtime-locks/MeridianConcierge.requirements.lock` and
+`MeridianWorkflow.requirements.lock`. They cover every package in the Runtime's resolution (118
+each), with the `mcp==2.3.0` override applied. The `runtime-contracts` job installs the lock for its
+Runtime with `uv pip install --no-deps --require-hashes`, then runs `check_runtime_contract.py`.
+
+A lock is compiled from the Runtime's `pyproject.toml` with uv 0.13.6, the version CI pins:
+
+```sh
+cd meridian_agentcore/app/<Runtime>
+uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.13 \
+  --only-binary :all: --output-file ../../runtime-locks/<Runtime>.requirements.lock
+```
+
+`--universal` makes one lock for every platform: it carries the hashes of the x86_64 wheels CI
+installs and the aarch64 wheels the Runtime runs, and marks the packages that only some platforms
+need (`pywin32`, `httpx2-jsfetch`). `--only-binary :all:` matches the AgentCore CLI, which installs
+wheels only. Because the output file already exists, uv keeps its versions and changes only what the
+`pyproject.toml` requires; use `--upgrade-package <name>` to move one package.
+
+The job has a `Runtime lock is current` step that runs the same command and fails on any diff
+(`git diff --exit-code`), so a `pyproject.toml` change without a lock update fails CI.
+`tests/test_runtime_locks.py` checks offline that every `==` pin, override and constraint in the
+`pyproject.toml` agrees with the lock, that every lock entry has a hash, and that CI installs and
+checks the lock.
+
+Deploy does not read these locks. The AgentCore CLI (0.31.2) runs
+`uv pip install -r pyproject.toml --target <staging> --python-version 3.13 --python-platform
+aarch64-manylinux2014 --only-binary :all:` (retrying `aarch64-manylinux_2_28` and
+`aarch64-manylinux_2_34`), which resolves from `pyproject.toml` with its `[tool.uv]` overrides and
+constraints and ignores `uv.lock`. Those constraints pin every package, so deploy and the lock
+resolve the same versions today (the lock adds the two platform-marked packages above). They agree
+because of the pins, not because deploy reads the lock.
 
 ## Audit status - November 7, 2026
 

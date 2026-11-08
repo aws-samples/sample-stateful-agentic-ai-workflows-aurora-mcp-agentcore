@@ -23,6 +23,7 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import OrderRequest, process_order
 from backend.routers.memory import get_memory_profile
+from scripts.agentcore_caller import caller_scope
 from tests.live_support import delete_booking_rows, delete_journey_rows
 
 pytestmark = pytest.mark.database
@@ -87,6 +88,17 @@ class _Holds:
                 await self.client.execute(
                     "DELETE FROM journeys WHERE journey_id = %s", (row["journey_id"],)
                 )
+
+
+@pytest.fixture(autouse=True)
+def signed_in_as_jordan():
+    """In jwt mode the order route calls AgentCore with the signed-in traveler's token.
+
+    ``caller_scope`` mints Jordan's Cognito access token and binds it for the test; in iam mode
+    it binds nothing.
+    """
+    with caller_scope("jordan"):
+        yield
 
 
 @pytest_asyncio.fixture

@@ -11,8 +11,10 @@ For migrations, list `--pending`, then dry-run and apply the first pending file 
 between migrations 028 and 029 on an existing installation.
 
 `check_runtime_contract.py MeridianConcierge|MeridianWorkflow` is an offline contract check.
-Run it with an isolated environment resolved from the named Runtime's `pyproject.toml`;
-the CI workflow shows the exact commands. It blocks TCP and exercises the real MCP/Strands APIs.
+Run it with an isolated environment installed from the named Runtime's committed lock in
+`meridian_agentcore/runtime-locks/` (`uv pip install --no-deps --require-hashes -r <lock>`); the CI
+workflow shows the exact commands and [Dependencies](../docs/DEPENDENCIES.md#runtime-locks) how to
+regenerate a lock. It blocks TCP and exercises the real MCP/Strands APIs.
 
 | Step | Scripts | Effect |
 | --- | --- | --- |

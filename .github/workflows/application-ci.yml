@@ -58,11 +58,17 @@ jobs:
       - run: python scripts/stage_concierge_runtime.py
       - run: python scripts/stage_workflow_runtime.py
       - run: uv venv .local/runtime-contract
-      # Resolve the Runtime's overrides and complete constraints, independently of the backend lock.
-      - run: uv pip compile pyproject.toml --generate-hashes --output-file ../../../.local/runtime-requirements.txt
+      # Recompile with the committed lock as the preference file. A pyproject change that the
+      # lock does not already satisfy rewrites the lock, and the diff check fails the job.
+      - name: Runtime lock is current
+        run: |
+          uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.13 \
+            --only-binary :all: \
+            --output-file ../../runtime-locks/${{ matrix.runtime }}.requirements.lock
+          git diff --exit-code -- ../../runtime-locks/${{ matrix.runtime }}.requirements.lock
         working-directory: meridian/meridian_agentcore/app/${{ matrix.runtime }}
-      # Install the complete resolution without reapplying Strands' overridden MCP bound.
-      - run: uv pip install --python .local/runtime-contract/bin/python --no-deps --require-hashes -r .local/runtime-requirements.txt
+      # Install the committed lock without reapplying Strands' overridden MCP bound.
+      - run: uv pip install --python .local/runtime-contract/bin/python --no-deps --require-hashes -r meridian_agentcore/runtime-locks/${{ matrix.runtime }}.requirements.lock
       - run: .local/runtime-contract/bin/python scripts/check_runtime_contract.py ${{ matrix.runtime }}
 
   frontend:
