@@ -16,337 +16,297 @@
   <a href="https://aws.amazon.com/cdk/"><img height="20" alt="Infrastructure: AWS CDK" src="https://img.shields.io/badge/Infrastructure-AWS%20CDK-355E8C?style=flat-square&amp;labelColor=24354B"></a>
 </p>
 
-Reference code for an agent application that keeps its state in Amazon Aurora PostgreSQL,
-reaches its tools through the Model Context Protocol (MCP), and runs as governed
-workloads on Amazon Bedrock AgentCore.
+Meridian is the reference application for **DAT307-R1: Build stateful agentic AI workflows
+with Aurora, MCP, and AgentCore**. Follow a travel request from a parameterized SQL query to a
+governed action, then stop a worker and recover its saved progress.
 
 <p align="center">
-  <img src="meridian/docs/meridian-showcase.jpg" width="900" alt="Meridian Concierge signed in as the sample traveler, showing destination photography, sample trip prices and the traveler's saved context">
+  <img src="meridian/docs/meridian-showcase.jpg" width="900" alt="Meridian travel concierge with sample trips, prices and saved traveler context">
 </p>
 
-Meridian is a sample travel concierge for one fictional traveler, Jordan Morgan. Ask it for
-trips, let it remember Jordan's preferences, place a 12-hour hold, then cancel a flight and watch
-it rework the trip without placing a second hold. Every screen shows the SQL, tool calls,
-authorization decisions and stored records behind each answer, so you can see how the pieces fit.
+The catalog and travelers are fictional. Holds and confirmations update Meridian's database.
+The recovery scenario starts with a traveler reporting a canceled flight; the application has
+no airline, supplier, payment or real reservation integration.
 
-The code grows in five phases, and each phase keeps what came before: SQL queries, then MCP
-tools, then hybrid retrieval, then a governed agent on AgentCore, then a Strands Graph workflow
-in its own AgentCore Runtime that resumes after its session stops.
-
-The data is a small catalog of sample travel packages. Holds and confirmations change rows in
-Meridian's own database only. There is no supplier, airline or payment integration.
+**Start here:** [Five phases](#five-phases) | [Architecture](#architecture) |
+[Run locally](#quick-start) | [Deployment](#deploy-to-your-account) |
+[Verification](#tests-and-evidence) | [Costs and cleanup](#costs-and-clean-up)
 
 > [!IMPORTANT]
-> This is sample code for learning and experimentation, not a production-ready system. It creates
-> billable resources in your AWS account: read [Costs and clean up](#costs-and-clean-up) before you
-> start, and delete what you create when you finish.
+> Running the application uses billable AWS services. This is a reference application for
+> learning and evaluation. Deploy the signed-in `jwt` configuration to demonstrate the full
+> traveler identity boundary. The default `iam` configuration authenticates workloads and
+> trusts their traveler arguments; it does not provide the same end-user guarantee.
 
-**Jump to:** [Architecture](#architecture) | [Quick start](#quick-start) | [Try it](#try-the-reference-app) | [Deploy](#deploy-to-your-account) | [Costs and clean up](#costs-and-clean-up) | [Tests](#tests) | [Docs](#documentation)
+## Five phases
 
-## What you will see
+The live capability ladder deliberately starts with deterministic SQL and MCP routing. The
+first model-driven agent appears in Phase 3. Phase 5 uses deterministic Strands Graph steps.
 
-Each phase adds one capability and keeps the earlier ones. Each phase folder has a short guide
-with a sample prompt and the evidence to inspect.
-
-| Phase | Code | Adds |
+| Phase | What changes | Entry point and evidence |
 | --- | --- | --- |
-| 1. SQL | [phase_01_sql](meridian/backend/agents/phase_01_sql/) | Parameterized catalog queries through the RDS Data API |
-| 2. MCP | [phase_02_mcp](meridian/backend/agents/phase_02_mcp/) | Named tools for search, package comparison, currency conversion, price range, region inventory and loyalty |
-| 3. Retrieval | [phase_03_retrieval](meridian/backend/agents/phase_03_retrieval/) | Cohere Embed v4, pgvector and full-text candidates, Cohere Rerank 3.5 |
-| 4. Production | [phase_04_production](meridian/backend/agents/phase_04_production/) | AgentCore Runtime, Gateway, Memory and Cedar policy, with traveler grants and row-level security (RLS) in Aurora |
-| 5. Workflow | [phase_05_workflow](meridian/backend/agents/phase_05_workflow/) | A Strands Graph in its own AgentCore Runtime that searches, holds and releases through the Gateway, with Aurora snapshots, worker leases, idempotent holds and one audit row per run |
+| **1. SQL** | Parameterized catalog filters through the RDS Data API | [`sql_search` in chat.py](meridian/backend/routers/chat.py), SQL and bound values in the activity trace |
+| **2. MCP** | The same business operations become named tools with typed inputs | [`mcp_search`](meridian/backend/routers/chat.py), [MCP server](meridian/backend/mcp/concierge_server.py), tool arguments and returned records |
+| **3. Retrieval** | A Strands agent combines MCP reads with vector and full-text retrieval, then reranks candidates | [Retrieval agent](meridian/backend/agents/phase_03_retrieval/), [hybrid pipeline](meridian/backend/retrieval/hybrid.py), candidate and ranking spans |
+| **4. Governed application** | The Concierge moves to AgentCore Runtime; Gateway, Policy and Lambda govern its tools | [Backend adapter](meridian/backend/agents/phase_04_production/), [Runtime](meridian/meridian_agentcore/app/MeridianConcierge/), Gateway refusals and committed booking receipts |
+| **5. Durable workflow** | A separate Runtime executes a Strands Graph with review pauses, saved steps, leases and recovery | [Workflow](meridian/backend/agents/phase_05_workflow/), `workflow_snapshots`, `journey_executions`, stable hold identities and action audit rows |
 
-Strands is the open-source agent SDK that runs the agents and the workflow graph. Cedar is the
-policy language that AgentCore Policy evaluates before a tool runs.
-
-| State | Where it lives |
-| --- | --- |
-| **Traveler context** | Profile, preferences and conversation history in Aurora. The agent session is in AgentCore Memory. |
-| **Workflow progress** | Strands Graph snapshots in the Aurora table `workflow_snapshots`, appended after every node. |
-| **Business results** | Holds and bookings in Aurora. A SQL function or a guarded update handles each action, so a retried request returns the first result. |
+The Phase 1 and 2 agent definitions are reference examples; the live UI calls the deterministic
+router paths above. See the [phase guides](meridian/backend/agents/README.md) and the
+[session readiness review](meridian/docs/DAT307_READINESS.md) for the complete map.
 
 ## Architecture
 
-Three places do the work: your machine runs the web app and the backend, your AWS account runs
-the agents on Amazon Bedrock AgentCore, and Amazon Aurora PostgreSQL keeps everything that has
-to survive.
-
 ```mermaid
 flowchart LR
-    cognito["Amazon Cognito<br/>sign-in"]
-    subgraph machine["Your machine"]
-        browser["Browser<br/>React app"]
-        backend["FastAPI backend<br/>Phases 1 to 3"]
-    end
-    subgraph agentcore["Amazon Bedrock AgentCore, in your account"]
-        concierge["Concierge agent<br/>Phase 4"]
-        workflow["Recovery workflow<br/>Phase 5"]
-        gateway["Gateway<br/>checks every tool call"]
-        tools["Lambda tools<br/>catalog, holds"]
-    end
-    aurora[("Amazon Aurora PostgreSQL<br/>catalog, traveler data,<br/>holds, snapshots")]
-
-    cognito -.->|token| browser
-    browser --> backend
-    backend --> aurora
-    backend --> concierge
-    backend --> workflow
-    concierge --> gateway
-    workflow --> gateway
-    gateway --> tools
-    tools --> aurora
-    workflow -->|snapshots| aurora
+    User[Browser] -->|Cognito access token| API[FastAPI backend]
+    API -->|SQL and local tools, phases 1-3| DB[(Amazon Aurora PostgreSQL)]
+    API --> Concierge[Concierge Runtime, phase 4]
+    API --> Workflow[Workflow Runtime, phase 5]
+    Concierge --> Gateway[AgentCore Gateway]
+    Workflow --> Gateway
+    Gateway --> Pin[Bind verified caller arguments]
+    Pin --> Policy[AgentCore Policy, Cedar]
+    Policy --> Tools[Catalog and holds Lambda tools]
+    Tools -->|Data API transactions| DB
+    Workflow -->|Saved steps and worker leases| DB
+    Concierge --> Memory[AgentCore Memory]
+    API --> Bedrock[Amazon Bedrock models]
+    Tools --> Bedrock
+    Concierge --> Bedrock
 ```
 
-- **Your machine.** The browser talks to the FastAPI backend. Phases 1 to 3 (SQL, MCP tools,
-  hybrid retrieval) run inside the backend against Aurora.
-- **AgentCore.** The Concierge agent (Phase 4) answers chat; the recovery workflow (Phase 5) runs
-  the multi-step rebooking. Neither writes a hold itself. Every hold, confirmation and release
-  goes through the Gateway, which checks the caller, evaluates the policy and then runs a Lambda
-  tool. The workflow also writes its own snapshots to Aurora, so another worker can pick up a run.
-- **Aurora.** The catalog, Jordan's preferences and conversation, holds and bookings, and the
-  workflow's snapshots all live here. Row-level security limits each request to its own
-  traveler's rows.
+This diagram shows the `jwt` release with `MERIDIAN_GATEWAY_ENFORCEMENT=both`. The backend verifies the access token; each Runtime and
+the Gateway also have JWT authorizers. The interceptor binds `travelerId` and `verifiedSubject`
+to token claims. Cedar checks that binding and the action's limits. The holds Lambda then checks
+its workload grant, pins the database transaction to that traveler and invokes bounded SQL
+functions under row-level security (RLS).
 
-The app draws the same architecture in its **Solution briefing** view, with the numbered path a
-Phase 4 request takes:
+### State and failure guarantees
 
-<p align="center">
-  <img src="meridian/docs/meridian-solution-briefing.jpg" width="900" alt="Solution briefing architecture: FastAPI (1) calls the Phase 4 Strands agent and the Phase 5 Strands Graph workflow, each in its own AgentCore Runtime (2); both call AgentCore Gateway (3), where Cedar policy checks every tool call before the Lambda tools for search, details, loyalty, hold, confirm and release (4) reach Aurora PostgreSQL (5); a dashed line marks direct Data API access for the catalog, preferences, availability, saved steps and leases">
-</p>
+| Concern | Implementation | Boundary |
+| --- | --- | --- |
+| Traveler context | Aurora profiles, preferences and conversations; Concierge session context in AgentCore Memory | Conversation memory does not make business actions durable. |
+| Saved progress | Strands Graph snapshots in `workflow_snapshots` | A failed snapshot write can cause the preceding step to run again. |
+| Worker ownership | Expiring leases and execution checks | A replacement worker acquires ownership; a stale execution cannot commit its governed hold. |
+| Duplicate holds | Stable `(journey_id, hold_request_id)`, unique constraints and committed-result lookup | Retry the same intent with the same ID. Reuse never extends its original expiry. A new intent requires new consent. |
+| Inventory | Allocation and confirmation share a transaction-scoped advisory lock; expiry is checked after waiting | A late confirmation cannot reclaim seats already allocated to another hold. |
+| Commit uncertainty | A lost commit reply returns an unknown outcome; the next attempt reads the saved result | A transport error is not proof that an action failed. |
+| Action evidence | `booking_action_audit` is inserted in the business transaction | The booking and its application audit record commit together. Service logs are needed to corroborate authorization. |
 
-Jordan signs in with Amazon Cognito. The token travels with every request, and the backend, both
-Runtimes and the Gateway each verify it.
+**Resuming a workflow and making an action idempotent solve different problems.** A saved step
+avoids repeating completed computation. A stable request identity prevents a repeated action
+from creating another booking when execution stops between the commit and the saved step.
 
-**One hold, step by step**
+The application's holds are database reservations only. Confirmed Hold and Confirm buttons
+cause the platform to execute the exact approved terms through Gateway; the model narrates the
+result. Missing inventory, unknown packages and tool failures must not become invented success.
 
-1. Jordan asks the Concierge to hold a trip. The browser sends the request with Jordan's token
-   to the backend, which verifies it and forwards the turn to the Concierge Runtime.
-2. The agent, Claude Sonnet 5.5 on Amazon Bedrock run by Strands, decides to call the hold tool.
-3. The Gateway verifies the token again. A request interceptor overwrites the `travelerId`
-   argument with the traveler named in the token, and AgentCore Policy evaluates the Cedar rules:
-   the traveler confirmed, at most 12 hours and 6 travelers, within the saved budget.
-4. The `MeridianHolds` Lambda checks its own grant for that traveler, steps down to a restricted
-   database role, and writes the hold inside one transaction, under row-level security.
-5. Aurora returns the hold with its number and expiry, and the agent tells Jordan. A retry with
-   the same request id returns that hold instead of a second one.
+### Retrieval boundaries
 
-The models are Claude Sonnet 5.5 through its global cross-Region inference profile, Cohere Embed
-v4 and Cohere Rerank 3.5, all on Amazon Bedrock. See
-[STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) for the state design and
-[meridian/README.md](meridian/README.md) for the API, schema and configuration.
+The hybrid pipeline merges vector and full-text candidates, reapplies shared catalog filters,
+then reranks the surviving records. Missing catalog rows are dropped. Explicit minus terms in the retrieval tool query,
+such as `Tokyo -nightlife`, apply to both candidate sources. Natural-language preferences are
+relevance signals unless the code implements a corresponding structured constraint; ranking is
+not a guarantee of dietary, accessibility or other real-world suitability.
+
+### Database access
+
+Application paths use the **RDS Data API**. Each scoped transaction carries the same transaction
+ID, uses `SET LOCAL ROLE` and transaction-local traveler settings, and commits or rolls back as
+one unit. HTTP connection reuse is not an application-managed PostgreSQL connection pool.
+The direct psycopg examples are separate from this deployed path.
+
+Use the master login for schema administration only; it bypasses RLS. Deployed services use
+non-owner, `NOBYPASSRLS`, `NOINHERIT` logins. After migration 029, service roles cannot directly
+insert, update or delete booking tables, and only `meridian_gateway` can execute the bounded
+hold, confirmation and release functions. See [service logins](meridian/docs/OPERATIONS.md#service-logins).
 
 ## Prerequisites
 
-- Python 3.13.18 and Node.js 22.23.4, the versions CI runs. They live in
-  [`meridian/.python-version`](meridian/.python-version) and [`meridian/.nvmrc`](meridian/.nvmrc),
-  so `uv python install` and `nvm install` in `meridian/` pick them up. Deploying the AgentCore
-  resources also needs [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.6 and
-  the [AgentCore CLI](https://github.com/aws/agentcore-cli).
-- An AWS account and credentials (`aws login`, `aws sso login` or `aws configure`). Use
-  `us-east-1`: the defaults assume it, and another Region needs the settings in the
-  [runbook prerequisites](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#prerequisites).
-- Amazon Bedrock access, in that Region, to Claude Sonnet 5.5 (through its global cross-Region
-  inference profile), Cohere Embed v4 and Cohere Rerank 3.5. Confirm it in the Amazon Bedrock
-  console before you seed the database.
-- An Aurora PostgreSQL cluster with the RDS Data API and a Secrets Manager secret for its database
-  user. Creating one with the included CDK app needs a VPC with two subnets in different
-  Availability Zones and a bootstrapped CDK environment
-  ([Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora)).
-- For Phases 4 and 5 and all holds: the AgentCore resources (see the
-  [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md)).
-- For sign-in in `jwt` mode: macOS. The user-seeding script stores passwords in the macOS Keychain
-  and the release tools call `agentcore` at `/opt/homebrew/bin`, the
-  Homebrew path on Apple silicon. The default `iam` mode has no such need.
+- Python and Node.js matching [`meridian/.python-version`](meridian/.python-version) and
+  [`meridian/.nvmrc`](meridian/.nvmrc). Install Python dependencies from the hashed locks and Node
+  dependencies with `npm ci`.
+- AWS credentials for a sandbox account, and permission to provision the resources in the
+  [operations guide](meridian/docs/OPERATIONS.md). The local web app still calls live AWS services.
+- Amazon Aurora PostgreSQL with the RDS Data API, pgvector and Secrets Manager credentials.
+- Amazon Bedrock access to the model IDs configured in
+  [`.env.example`](meridian/.env.example) and the
+  [AgentCore template](meridian/meridian_agentcore/agentcore/agentcore.template.json).
+  Confirm model availability and inference-profile permissions in your target Region.
+- Phases 4 and 5 require deployed AgentCore resources. Packaging uses `uv` and the pinned
+  `@aws/agentcore` CLI specified in the [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md).
+- The supplied Cognito test-user seeding flow uses macOS Keychain. Other platforms need an
+  equivalent credential provisioning flow; the release CLI itself is invoked through pinned `npx`.
 
 ## Quick start
 
-The backend and frontend run on your machine against Aurora in your account. With Aurora and
-Amazon Bedrock you can run the catalog, Phases 1 to 3, System evidence and Solution briefing. The
-Concierge chat, Phase 5 and holds also need the AgentCore resources.
+### 1. Install local dependencies
 
-**0. Create the cluster**, unless you already have one: follow
-[Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora). The cluster bills from the moment
-it exists.
-
-**1. Configure and prepare the database**
+From the repository root:
 
 ```bash
 cd meridian
-python3.13 -m venv venv && source venv/bin/activate
+python3.13 -m venv venv
+source venv/bin/activate
 python -m pip install --require-hashes -r requirements.txt
-cp .env.example .env   # set AWS_DEFAULT_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN, AURORA_DATABASE
-python scripts/init_aurora_schema.py && python scripts/apply_migrations.py && python scripts/seed_data.py
+test -e .env || cp .env.example .env
 ```
 
-`seed_data.py` calls Amazon Bedrock to embed the catalog, so the credentials need Cohere Embed v4
-access. The schema and seed scripts refuse to run on a database that already has Meridian data;
-there, run only `apply_migrations.py`.
+`seed_data.py` calls Amazon Bedrock when preparing catalog embeddings.
 
-> [!NOTE]
-> **The Quick start uses the master login for setup only.** These steps, and a backend you run
-> this way, connect as the cluster's master login, because creating the schema and seeding the
-> data need it. The master login is not subject to row-level security. Anything you deploy should
-> connect as the least-privilege service logins instead: see
-> [Database logins](#database-logins).
+Set the Region, Aurora cluster, database and secret references in `.env`. Keep credentials and
+account-specific configuration out of Git.
 
-**2. Start the backend**, then check it from a second terminal:
+### 2. Prepare AWS resources and choose authentication
+
+Follow [Prepare the database](meridian/docs/OPERATIONS.md#prepare-the-database). Initialize and
+seed only an empty database. List pending migrations, dry-run **one named migration**, inspect
+its result, then apply that migration. Existing installations must follow the
+[026-029 release order](meridian/docs/DAT307_RELEASE.md); do not apply all four before upgrading
+the running application.
+
+Before starting the backend, set its `AURORA_SECRET_ARN` to the provisioned **backend service
+login's** secret. The Python client uses that variable directly; merely defining
+`AURORA_BACKEND_SECRET_ARN` does not switch a local process away from the master login.
+
+| Mode | Use it for | Setup |
+| --- | --- | --- |
+| `iam` | Local exploration with a trusted workload and seeded traveler grants | Loopback backend, AWS credentials, explicit workload-to-traveler binding |
+| `jwt` | The signed-in traveler and cross-traveler isolation walkthrough | Cognito, backend verification, JWT authorizers on both Runtimes and Gateway, request interceptor, Cedar binding policy and service logins |
+
+Deploy AgentCore for Phases 4 and 5 using the
+[runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md), then synchronize the returned endpoint
+configuration using its documented steps. A healthy database alone does not establish that the
+Runtimes, Gateway or policies are ready.
+
+### 3. Start the backend and frontend
+
+Backend, from `meridian/` with the virtual environment active:
 
 ```bash
 uvicorn backend.main:app --host 127.0.0.1 --port 8013
-curl http://127.0.0.1:8013/api/health
 ```
 
-The response has `"status": "healthy"` and `"aurora_reachable": true`. The snapshot store appears as
-`"snapshot_store": "Aurora workflow_snapshots"`.
-`"workflow_runtime_configured"` is `false` until you deploy the AgentCore resources and run
-`sync_agentcore_env.py --write`. Local requests need no API token; read the
-[governance boundary](meridian/README.md#governance-boundary) before you expose the API.
-
-**3. Start the frontend**
+Frontend, from a second terminal at the repository root:
 
 ```bash
-cd meridian/frontend && npm ci
+cd meridian/frontend
+npm ci
 VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 ```
 
-Open <http://127.0.0.1:5176/showcase>. The header shows **Meridian live** when the backend is
-healthy.
+Open <http://127.0.0.1:5176/showcase>. Check `/api/health` and the UI's configuration indicators.
+`"workflow_runtime_configured"` is `false` until you deploy and synchronize the Workflow
+endpoint. The snapshot store is reported as `"snapshot_store": "Aurora workflow_snapshots"`.
+Keep the local open/shared-token modes on loopback. Use the signed-in release for hosted access.
 
 ## Try the reference app
 
-| View | Try | Needs AgentCore |
+| View | Exercise | Inspect |
 | --- | --- | --- |
-| **Concierge** | Ask `Find Tokyo trips that fit my saved preferences.`, open a trip, then **Request 12-hour hold** and **Confirm this trip for Jordan** | Chat and holds |
-| **Capability ladder** | Run each phase's prompts and open the activity trace for the SQL, tool calls, retrieval scores and policy decisions | Phases 4 and 5 |
-| **Recovery desk** | Run `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`, then **Stop runtime session** and **Resume and request hold**: the run continues on a new microVM from the saved step | Yes |
-| **System evidence** | Read what Aurora recorded: snapshots, leases, session stops, authorization decisions and the hold | After a Phase 5 run |
-| **Solution briefing** | The architecture, phases, Gateway tools and Cedar policies | No |
+| **Capability ladder** | Run each phase's suggested prompts | SQL parameters, MCP arguments, retrieved IDs and ranking |
+| **Concierge** | Find a trip, request a hold, then confirm it | Exact terms, Gateway outcome and saved booking receipt |
+| **Recovery desk** | Report a canceled Tokyo flight, review the shortlist, stop the Runtime session, then resume | Saved step, new execution, unchanged hold request ID and one booking |
+| **System evidence** | Open the records for that journey | Snapshots, leases, access decisions and business rows |
+| **Solution briefing** | Trace the application architecture | Where identity, policy, RLS and recovery apply |
 
-Every phase's prompts are in [meridian/README.md](meridian/README.md#prompts), and
-[OPERATIONS.md](meridian/docs/OPERATIONS.md#exercise-recovery-failures) has scripts that stop a
-worker or discard a response on purpose.
+The [prompt guide](meridian/README.md#prompts) gives the precise prompts. The
+[failure exercises](meridian/docs/OPERATIONS.md#exercise-recovery-failures) intentionally stop
+workers or lose replies; run them only in a disposable environment. Capture evidence before a
+rehearsal reset: the administrative reset deletes selected bookings and their action audit rows.
 
 ## Deploy to your account
 
-| Component | How | Guide |
+| Component | Entry point | Instructions |
 | --- | --- | --- |
-| Aurora cluster | CDK app `meridian/infra/bin/meridian-aurora.ts` | [OPERATIONS.md](meridian/docs/OPERATIONS.md#provision-aurora) |
-| AgentCore Runtime, Gateway, Memory, policies | AgentCore CLI, from templates that `scripts/render_agentcore_config.py` fills in for your account | [AGENTCORE_DEPLOY_RUNBOOK.md](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) |
-| Hosted web app (CloudFront, S3, App Runner), optional | `meridian/scripts/publish.py`, into an App Runner service you already have; publish in `jwt` mode with `--tighten` | [OPERATIONS.md](meridian/docs/OPERATIONS.md#publish-the-web-app) |
+| Aurora | [`meridian/infra/bin/meridian-aurora.ts`](meridian/infra/bin/meridian-aurora.ts) | [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora) |
+| Runtime, Gateway, Memory and Policy | [AgentCore project](meridian/meridian_agentcore/) | [Deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) |
+| Optional hosted web app | [`scripts/publish.py`](meridian/scripts/publish.py) | [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app) |
+| Existing installation upgrade | Migrations 026-029 and coordinated application release | [DAT307 release gates](meridian/docs/DAT307_RELEASE.md) |
 
-The hosted web app is optional: the repository does not create the App Runner service, and the
-app runs fully on your machine without it.
+The hosted path uses CloudFront, S3 and an existing App Runner service. The repository does not
+create that App Runner service. Hosting is optional; AWS data and agent services are required
+for the corresponding local application features.
+
+## Tests and evidence
+
+Backend, from `meridian/`:
+
+```bash
+venv/bin/python -m pip install --require-hashes -r requirements-ci.txt
+venv/bin/python -m pip install --require-hashes --no-deps -r requirements-runtime-tests.txt
+venv/bin/python -m pip install --require-hashes -r examples/langgraph/requirements.txt
+PYTHON_DOTENV_DISABLED=1 venv/bin/python -m pytest -m "not database" tests examples/langgraph/tests
+```
+
+The unit-test guard blocks TCP connections and supplies fake AWS credentials. The local SQL tests
+create and remove their own socket-only PostgreSQL cluster and databases. They need PostgreSQL
+server binaries and pgvector; set `MERIDIAN_PG_CONFIG` to that installation's `pg_config`. They
+report a skip when those prerequisites are absent. Tests marked `database` access a configured
+live Aurora cluster and can write data; do not include them in an offline check.
+
+Frontend, from `meridian/frontend/`: run `npm ci`, `npm run lint`, `npm run typecheck`,
+`npm run test:run`, `npm run build` and `npm run test:accessibility`.
+
+The [CI workflow](.github/workflows/application-ci.yml) also checks infrastructure synthesis,
+dependency advisories and each Runtime's exact dependency environment. The isolated
+[`check_runtime_contract.py`](meridian/scripts/check_runtime_contract.py) exercises real MCP
+stdio and Strands saved-step recovery without AWS; the backend lock alone does not test the
+Runtime's MCP override.
+
+**Evidence has different strengths.** UI spans and `agent_audit_log` are application reports;
+a hard-killed process may never write its final turn row. A workflow that finds an existing
+committed result need not call the target again or create another action row.
+`booking_action_audit` commits with the action and carries caller, workload, request and
+service correlation IDs. It does not
+constitute a service-issued Cedar decision. Correlate it with Gateway/interceptor/Lambda logs
+and the stored booking. Administrators remain able to alter database records.
+
+Historical screenshots and recordings illustrate the captured release. They do not certify
+an upgrade. The [readiness review](meridian/docs/DAT307_READINESS.md) identifies the remaining
+live proofs and their expected outcomes.
 
 ## Costs and clean up
 
-The sample creates resources that bill while they exist. The main cost drivers:
+Amazon Aurora compute, storage and backups incur charges while provisioned. Model inference,
+AgentCore, Lambda, logs, Secrets Manager and optional web hosting add usage or retained-resource
+costs. Read each service's current pricing before provisioning; the repository does not enforce
+an account spending limit.
 
-| What | Created by | Billed |
-| --- | --- | --- |
-| Aurora Serverless v2 cluster | [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora) | At least 0.5 ACU for every hour the cluster exists, plus storage, backups and snapshots |
-| Amazon Bedrock models | `seed_data.py` and every chat turn | Per token |
-| AgentCore Runtimes, Gateway, Memory and policy engine | The [AgentCore deploy](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) | By use, plus stored memory |
-| Lambda functions, Secrets Manager secrets, SSM parameters, CloudWatch logs | The AgentCore deploy and the provisioning scripts | By use, per secret each month, and by stored logs |
-| Amazon Cognito user pool | Sign-in in `jwt` mode | By monthly active users |
-| CloudFront, S3 and App Runner | The optional hosted web app | By traffic, and for the running App Runner service |
+Remove resources in reverse dependency order using the runbooks:
 
-To delete everything, work from the last thing you created back to the first:
+1. [Hosted web application](meridian/docs/OPERATIONS.md#publish-the-web-app), if created.
+2. [Sign-in resources and service-login integrations](meridian/docs/OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
+3. [AgentCore resources](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down), including separately provisioned targets and secrets.
+4. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora), preserving a final snapshot until you no longer need the data.
 
-1. **Hosted web app**, if you published it: the end of
-   [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app).
-2. **Sign-in**, in `jwt` mode: the Cognito users, their secrets and the `MeridianIdentity` stack,
-   steps 1 and 2 of
-   [Roll back the service logins and sign-in](meridian/docs/OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
-3. **AgentCore**: the stack, the catalog Lambda and its role, the SSM parameters, the `jwt` mode
-   interceptor, and the service logins' secrets and policies:
-   [Tear down](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down).
-4. **Aurora**: turn off termination and deletion protection, destroy the stack, then delete the
-   final snapshot once you no longer need it: the end of
-   [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora).
-5. **CDK bootstrap**: delete the `CDKToolkit` stack only if nothing else in the account and
-   Region deploys with CDK; empty its S3 bucket and ECR repository first if the delete stops on
-   them.
-
-Log groups can outlive their resources. Delete the Meridian Lambda and AgentCore Runtime log
-groups in CloudWatch Logs when you no longer need them.
-
-## Tests
-
-```bash
-PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"            # from meridian/
-npm ci && npm run lint && npm run typecheck && npm run test:run          # from meridian/frontend/
-```
-
-Unit tests block network access and ignore `meridian/.env`. Tests marked `database` write to a
-live Aurora database; run them only against a disposable one. CI runs the full set on every pull
-request: see [`application-ci.yml`](.github/workflows/application-ci.yml) and the
-[dependency notes](meridian/docs/DEPENDENCIES.md).
+Review retained snapshots, log groups, secrets, S3 objects and images afterward. Do not remove a
+shared CDK bootstrap stack or shared infrastructure as part of this application's cleanup.
 
 ## Documentation
 
-| Read | For |
+| Guide | Purpose |
 | --- | --- |
-| [meridian/README.md](meridian/README.md) | Screens, API, configuration, Aurora schema and governance boundary |
-| [meridian/STRUCTURE.md](meridian/STRUCTURE.md) | A request traced through the code, and what each folder holds |
-| [meridian/backend/agents/README.md](meridian/backend/agents/README.md) | The five capability guides |
-| [meridian/docs/STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) | Snapshots, memory, transactions and recovery |
-| [meridian/docs/OPERATIONS.md](meridian/docs/OPERATIONS.md) | Provision, run locally, publish, recover, troubleshoot |
-| [meridian/docs/README.md](meridian/docs/README.md) | Index of all documents |
+| [Application README](meridian/README.md) | Screens, prompts, API and configuration |
+| [Code structure](meridian/STRUCTURE.md) | Request paths and module responsibilities |
+| [Stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md) | Memory, saved progress and transactions |
+| [Operations](meridian/docs/OPERATIONS.md) | Provisioning, deployment, recovery and teardown |
+| [DAT307 readiness](meridian/docs/DAT307_READINESS.md) | Findings, claim-to-evidence map and failure matrix |
+| [DAT307 release](meridian/docs/DAT307_RELEASE.md) | Migration order, acceptance gates and rehearsal reset |
+| [Documentation index](meridian/docs/README.md) | All supporting guides |
 
-[`meridian/examples/langgraph/`](meridian/examples/langgraph/) holds a maintained second
-implementation of the workflow on another graph framework; the application does not import it.
+## Security and contribution
 
-## Security
+Review the [governance boundary](meridian/README.md#governance-boundary) before exposing the API.
+RLS constrains database roles and transaction scope; it does not cryptographically authenticate
+a JWT. Direct access to privileged Lambda invocation, service credentials or the master login
+is a separate administrative trust boundary.
 
-Callers sign in with Amazon Cognito. In `jwt` mode the backend, both Runtimes and the Gateway each
-verify the access token and take the traveler from its `traveler_id` claim, never from a request
-body or a tool argument, and Aurora row-level security is the last check. `iam` mode (the default)
-signs the AgentCore hops with AWS credentials. Local development keeps an open loopback mode and
-a shared API token path, which a `jwt` release refuses.
-
-### Database logins
-
-Use the master database login for setup only. Anything you deploy connects to Aurora as a
-least-privilege login of its own. Every service login is `NOBYPASSRLS`, owns no tables and holds
-only what its workload queries:
-
-| Login | Used by | Holds directly | Reaches traveler rows |
-| --- | --- | --- | --- |
-| Master (`meridian_admin` in the included CDK app) | The schema, migration and seed scripts; a backend you run from the Quick start | Everything. Row-level security does not apply to it | Directly, with no row-level security. Setup only |
-| `meridian_backend` | The hosted backend in `jwt` mode | SELECT on `traveler_identity_bindings` and `trip_packages`, INSERT on `traveler_access_audit`, EXECUTE on `backend_admin_count` and `package_places_left` | Only through `meridian_app` |
-| `meridian_gateway` | The `MeridianHolds` Lambda (holds, confirmations, releases) | The same three tables, EXECUTE on `package_places_left` | Only through `meridian_app` |
-| `meridian_workflow` | The `MeridianWorkflow` Runtime (Phase 5) | SELECT on the catalog, identity bindings and journey tables; SELECT and INSERT on `workflow_snapshots`; INSERT on `traveler_access_audit`; UPDATE on the lease column; EXECUTE on `package_places_left` | Its journey rows and snapshots under policies pinned to the traveler; everything else only through `meridian_app` |
-| `meridian_catalog` | The `meridian-catalog-tools` Lambda | SELECT on `trip_packages`, EXECUTE on `package_places_left` | Never: it cannot switch to `meridian_app` |
-| `meridian_identity` | The Amazon Cognito pre-token-generation Lambda | SELECT on `traveler_identity_bindings` | Never: it cannot switch to `meridian_app` |
-| `meridian_app` (cannot log in) | Reached only with `SET LOCAL ROLE` from the logins above | The grants on traveler data; the row-level security policies on those tables apply to it | Only the traveler pinned in the current transaction |
-
-A service login reads and writes traveler data (profiles, preferences, conversations, journeys,
-snapshots, holds and bookings) only for the traveler pinned in its transaction. The code pins the
-traveler (`set_config('app.current_traveler_id', ..., true)`) and then runs
-`SET LOCAL ROLE meridian_app`; the workflow login reads its journey rows and writes its snapshots
-as itself, under policies pinned to the same setting. The setting and the role both end at commit
-or rollback, so nothing carries over to the next request on a pooled RDS Data API connection. The
-logins that check a grant also read `traveler_identity_bindings`, the table that says which
-signed-in identity or workload may act for which traveler; that table has no row-level security.
-
-The hosted web stack refuses to deploy a `jwt` backend whose secret is the master's. A hosted
-backend in `iam` mode connects as the master login, so publish the hosted backend in `jwt` mode.
-[Service logins](meridian/docs/OPERATIONS.md#service-logins) shows how to create each login.
-
-This is sample code. Review networking, monitoring, availability and data protection, and harden
-it, before any production use.
-
-To report a security issue, use the
-[vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/), not a
-public GitHub issue. See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Report security issues through the [AWS vulnerability reporting page](https://aws.amazon.com/security/vulnerability-reporting/),
+not a public issue. For contributions, see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-This library is licensed under the MIT-0 License; see the [LICENSE](LICENSE) file. Some images and
-icons under `meridian/frontend/public/` come from third parties under their own terms; see
-[NOTICE](NOTICE).
+MIT-0; see [LICENSE](LICENSE). Third-party images and icons retain their own terms in [NOTICE](NOTICE).

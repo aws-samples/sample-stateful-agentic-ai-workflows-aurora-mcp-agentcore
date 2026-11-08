@@ -73,7 +73,7 @@ def binding_only() -> str:
 def evaluate(tags: object, arguments: dict) -> tuple[object, list]:
     entities = [
         {"uid": {"type": "AgentCore::OAuthUser", "id": "sub-1"}, "attrs": {}, "parents": [],
-         "tags": tags},
+         "tags": {"sub": "sub-1", **tags}},
         {"uid": {"type": "AgentCore::Gateway", "id": GATEWAY}, "attrs": {}, "parents": []},
         {"uid": {"type": "AgentCore::Action", "id": HOLD}, "attrs": {}, "parents": []},
     ]
@@ -81,7 +81,7 @@ def evaluate(tags: object, arguments: dict) -> tuple[object, list]:
         "principal": 'AgentCore::OAuthUser::"sub-1"',
         "action": f'AgentCore::Action::"{HOLD}"',
         "resource": f'AgentCore::Gateway::"{GATEWAY}"',
-        "context": {"input": arguments},
+        "context": {"input": {"verifiedSubject": "sub-1", **arguments}},
     }
     result = cedarpy.is_authorized(request, binding_only(), entities)
     return result.decision, list(result.diagnostics.errors)

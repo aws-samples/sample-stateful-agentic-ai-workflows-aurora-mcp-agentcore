@@ -72,22 +72,28 @@ class _Currency:
 ])
 def test_the_currency_target_matches_whole_words(query, expected):
     cli = _Currency()
-    asyncio.run(chat_mod._currency_call(cli, query, []))
+    asyncio.run(chat_mod._currency_call(cli, query + " 100 USD".lower(), []))
     assert cli.targets == [expected]
 
 
-@pytest.mark.parametrize("query, names, default, expected", [
-    ("what is the price range comparison across trips",
-     chat_mod._PRICE_RANGE_DESTINATIONS, "Tokyo", "Tokyo"),
-    ("price range for paris", chat_mod._PRICE_RANGE_DESTINATIONS, "Tokyo", "Paris"),
-    ("inventory in malaysia", chat_mod._INVENTORY_REGIONS, "Europe", "Europe"),
-    ("inventory in asia", chat_mod._INVENTORY_REGIONS, "Europe", "Asia"),
-    ("how many asian packages", chat_mod._INVENTORY_REGIONS, "Europe", "Asia"),
-    ("inventory for europeans", chat_mod._INVENTORY_REGIONS, "Asia", "Europe"),
-    ("a parisian weekend", chat_mod._PRICE_RANGE_DESTINATIONS, "Tokyo", "Paris"),
+@pytest.mark.parametrize("query, names, expected", [
+    ("price range for paris", chat_mod._PRICE_RANGE_DESTINATIONS, "Paris"),
+    ("inventory in asia", chat_mod._INVENTORY_REGIONS, "Asia"),
 ])
-def test_named_in_matches_word_starts(query, names, default, expected):
-    assert chat_mod._named_in(query, names, default) == expected
+def test_named_in_matches_explicit_location_names(query, names, expected):
+    assert chat_mod._named_in(query, names) == expected
+
+
+@pytest.mark.parametrize("query, names", [
+    ("what is the price range comparison across trips", chat_mod._PRICE_RANGE_DESTINATIONS),
+    ("inventory in malaysia", chat_mod._INVENTORY_REGIONS),
+    ("how many asian packages", chat_mod._INVENTORY_REGIONS),
+    ("inventory for europeans", chat_mod._INVENTORY_REGIONS),
+    ("a parisian weekend", chat_mod._PRICE_RANGE_DESTINATIONS),
+])
+def test_named_in_asks_when_no_supported_location_was_named(query, names):
+    with pytest.raises(chat_mod.DomainInputError, match="Please name"):
+        chat_mod._named_in(query, names)
 
 
 def _frames(response):

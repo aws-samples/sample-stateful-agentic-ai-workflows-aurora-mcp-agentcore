@@ -9,6 +9,9 @@ from botocore.exceptions import ClientError
 from scripts.gateway_harness import probes
 from scripts.gateway_harness import resources as res
 from scripts.gateway_harness.verdicts import DECOY, JORDAN
+from tests.jwt_support import access_token
+
+TOKENS = {"jordan": access_token(JORDAN), "decoy": access_token(DECOY, sub="sub-decoy")}
 
 
 def echo_reply(traveler):
@@ -27,25 +30,26 @@ def test_a_call_posts_the_tool_call_with_the_bearer_and_never_the_token_in_the_b
         seen.append(request)
         return httpx.Response(200, json=echo_reply(JORDAN))
 
-    outcome = mcp(handler).call_tool("tok-123", {"travelerId": JORDAN})
+    outcome = mcp(handler).call_tool(TOKENS["jordan"], {"travelerId": JORDAN})
     request = seen[0]
-    assert request.headers["authorization"] == "Bearer tok-123"
+    assert request.headers["authorization"] == f"Bearer {TOKENS['jordan']}"
     body = json.loads(request.content)
     assert body["method"] == "tools/call"
-    assert body["params"] == {"name": "EchoTarget___echo", "arguments": {"travelerId": JORDAN}}
-    assert "tok-123" not in request.content.decode()
+    assert body["params"] == {"name": "EchoTarget___echo", "arguments": {
+        "travelerId": JORDAN, "verifiedSubject": "sub-test"}}
+    assert TOKENS["jordan"] not in request.content.decode()
     assert outcome.kind == "ok"
 
 
 def test_an_event_stream_reply_is_read():
     text = "event: message\ndata: " + json.dumps(echo_reply(DECOY)) + "\n\n"
     reply = httpx.Response(200, text=text, headers={"content-type": "text/event-stream"})
-    assert mcp(lambda request: reply).call_tool("t", {}).kind == "ok"
+    assert mcp(lambda request: reply).call_tool(TOKENS["jordan"], {}).kind == "ok"
 
 
 def test_a_non_json_error_page_is_an_http_error():
     reply = httpx.Response(502, text="<html>bad gateway</html>")
-    outcome = mcp(lambda request: reply).call_tool("t", {})
+    outcome = mcp(lambda request: reply).call_tool(TOKENS["jordan"], {})
     assert (outcome.kind, outcome.status) == ("http_error", 502)
 
 
@@ -53,7 +57,7 @@ def test_a_transport_failure_is_an_http_error_that_names_no_url_or_token():
     def handler(request):
         raise httpx.ConnectError("could not reach https://gw.example/mcp with Bearer tok-9")
 
-    outcome = mcp(handler).call_tool("tok-9", {})
+    outcome = mcp(handler).call_tool(TOKENS["jordan"], {})
     assert (outcome.kind, outcome.status) == ("http_error", 0)
     assert "tok-9" not in outcome.message and "gw.example" not in outcome.message
     assert "ConnectError" in outcome.message
@@ -107,10 +111,11 @@ def test_probes_run_in_mode_groups_with_each_users_token():
         return httpx.Response(200, json=echo_reply(arguments.get("travelerId", DECOY)))
 
     gateway = FakeGateway()
-    obs = probes.run_probes(gateway, mcp(handler), {"jordan": "J", "decoy": "D"},
+    obs = probes.run_probes(gateway, mcp(handler), TOKENS,
                             sleep=lambda s: None)
     assert gateway.modes == ["bad_type", "drop_required", "refuse", "off"]
-    assert [auth for auth, _ in calls] == ["Bearer J"] + ["Bearer D"] * 5 + ["Bearer J", "Bearer D"]
+    assert [auth for auth, _ in calls] == [f"Bearer {TOKENS[who]}" for who in
+                                         ["jordan"] + ["decoy"] * 5 + ["jordan", "decoy"]]
     assert calls[-1][1]["travelerId"] == JORDAN, "the Cedar-alone probe names Jordan"
     assert obs.listed_tools == ["EchoTarget___echo"]
     assert set(obs.outcomes) == {p.name for p in probes.PROBES}
@@ -122,14 +127,14 @@ def test_the_detach_check_runs_last_and_records_what_the_gateway_still_has():
     gateway = FakeGateway(remaining=2)
     obs = probes.run_probes(
         gateway, mcp(lambda request: httpx.Response(200, json=echo_reply(DECOY))),
-        {"jordan": "J", "decoy": "D"}, sleep=lambda s: None)
+        TOKENS, sleep=lambda s: None)
     assert gateway.modes[-1] == "off" and gateway.detached == 1
     assert obs.interceptors_after_detach == 2
 
 
 def run_with(gateway, handler=None):
     handler = handler or (lambda request: httpx.Response(200, json=echo_reply(DECOY)))
-    return probes.run_probes(gateway, mcp(handler), {"jordan": "J", "decoy": "D"},
+    return probes.run_probes(gateway, mcp(handler), TOKENS,
                              sleep=lambda s: None)
 
 
@@ -183,7 +188,7 @@ def test_the_control_probe_is_retried_while_the_gateway_settles():
         except StopIteration:
             return httpx.Response(200, json=echo_reply(DECOY))
 
-    obs = probes.run_probes(FakeGateway(), mcp(handler), {"jordan": "J", "decoy": "D"},
+    obs = probes.run_probes(FakeGateway(), mcp(handler), TOKENS,
                             sleep=sleeps.append)
     assert obs.outcomes["jordan_names_jordan"].kind == "ok"
     assert sleeps == [probes.CONTROL_INTERVAL] * 2
@@ -193,7 +198,7 @@ def test_the_control_probe_gives_up_after_its_attempts_and_reports_the_last_outc
     sleeps = []
     obs = probes.run_probes(
         FakeGateway(), mcp(lambda request: httpx.Response(401, json={"message": "no"})),
-        {"jordan": "J", "decoy": "D"}, sleep=sleeps.append)
+        TOKENS, sleep=sleeps.append)
     assert obs.outcomes["jordan_names_jordan"].kind == "http_error"
     assert len(sleeps) == probes.CONTROL_ATTEMPTS - 1
 
@@ -277,7 +282,7 @@ def test_a_url_httpx_rejects_is_a_transport_error_not_a_crash():
         raise httpx.InvalidURL("Invalid URL")
 
     http = mcp(invalid)
-    outcome = http.call_tool("t", {})
+    outcome = http.call_tool(TOKENS["jordan"], {})
     assert (outcome.kind, outcome.status) == ("http_error", 0)
     assert outcome.message == "transport failure: InvalidURL"
     assert http.list_tools("t") == []

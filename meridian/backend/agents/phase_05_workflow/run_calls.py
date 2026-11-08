@@ -69,7 +69,10 @@ def _envelope_call(bare: str, message: str, layer: Optional[str]) -> ToolCall:
 def _payload_call(bare: str, payload: Dict[str, Any]) -> ToolCall:
     code = payload.get("error")
     if code is None:
-        return ToolCall(bare, ALLOWED)
+        governance = payload.get("governance") or {}
+        references = {key: governance[key] for key in ("action_audit_id", "gateway_request_id")
+                      if isinstance(governance.get(key), str) and governance[key]}
+        return ToolCall(bare, ALLOWED, **references)
     if code == WORKLOAD_GRANT_REFUSAL:
         governance = payload.get("governance")
         audit_id = governance.get("access_audit_id") if isinstance(governance, dict) else None

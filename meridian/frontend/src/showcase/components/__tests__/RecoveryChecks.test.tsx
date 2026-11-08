@@ -79,7 +79,7 @@ describe('RecoveryChecks evidence boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
     expect(screen.getByText('Already placed')).toBeVisible();
     expect(screen.queryByText('Decision unavailable')).not.toBeInTheDocument();
-    expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Target returned a result')).not.toBeInTheDocument();
     expect(screen.getByText(/did not call the Gateway again/)).toBeVisible();
     expect(screen.getByText('Aurora hold_requests')).toBeVisible();
     expect(within(document.getElementById('recovery-check-policy')!).getByText('booking-1')).toBeVisible();
@@ -88,11 +88,11 @@ describe('RecoveryChecks evidence boundaries', () => {
   it('does not reuse a prior allow when the latest attempt has no decision', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok'), span('', 'error')] })} onOpenProof={vi.fn()} />);
     expect(screen.getByText('Decision unavailable')).toBeVisible();
-    expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Target returned a result')).not.toBeInTheDocument();
   });
   it('keeps policy permission separate from a persisted hold', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok')] })} onOpenProof={vi.fn()} />);
-    expect(screen.getByText('Cedar allowed')).toBeVisible();
+    expect(screen.getByText('Target returned a result')).toBeVisible();
     expect(screen.getByText('Receipt unavailable')).toBeVisible();
   });
   it('names the package the recorded hold is for', () => {
@@ -123,7 +123,7 @@ describe('RecoveryChecks evidence boundaries', () => {
   it('keeps an observed decision visible while the workflow is paused', () => {
     render(<RecoveryChecks state={state({ workflowStatus: 'paused', traceSpans: [span('allow', 'ok')] })}
       onOpenProof={vi.fn()} />);
-    expect(screen.getByText('Cedar allowed')).toBeVisible();
+    expect(screen.getByText('Target returned a result')).toBeVisible();
     expect(screen.getAllByText('Runs after you resume')).toHaveLength(2);
   });
   it('lists the five recovery steps in the order the talk names them', () => {

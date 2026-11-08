@@ -219,6 +219,14 @@
                   "program": {
                     "type": "string",
                     "description": "Loyalty program name, for example Marriott Bonvoy."
+                  },
+                  "verifiedSubject": {
+                    "type": "string",
+                    "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+                  },
+                  "authorizationRef": {
+                    "type": "string",
+                    "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
                   }
                 },
                 "required": [
@@ -291,6 +299,14 @@
                   "executionId": {
                     "type": "string",
                     "description": "Optional. A workflow worker's execution id; the hold is written only while that worker still holds its lease."
+                  },
+                  "verifiedSubject": {
+                    "type": "string",
+                    "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+                  },
+                  "authorizationRef": {
+                    "type": "string",
+                    "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
                   }
                 },
                 "required": [
@@ -337,6 +353,14 @@
                   "journeyRef": {
                     "type": "string",
                     "description": "Stable journey reference for the audit trail, set by the platform."
+                  },
+                  "verifiedSubject": {
+                    "type": "string",
+                    "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+                  },
+                  "authorizationRef": {
+                    "type": "string",
+                    "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
                   }
                 },
                 "required": [
@@ -371,6 +395,14 @@
                   "executionId": {
                     "type": "string",
                     "description": "Optional. A workflow worker's execution id; the hold is released only while that worker still holds its lease."
+                  },
+                  "verifiedSubject": {
+                    "type": "string",
+                    "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+                  },
+                  "authorizationRef": {
+                    "type": "string",
+                    "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
                   }
                 },
                 "required": [
@@ -476,7 +508,7 @@
           "name": "meridian_traveler_binding",
           "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold, a booking, a release or a loyalty read runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___loyalty_balance\", AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\", AgentCore::Action::\"MeridianHolds___release_hold\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
+          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___loyalty_balance\", AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\", AgentCore::Action::\"MeridianHolds___release_hold\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-jwt-abcde12345\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId && principal.hasTag(\"sub\") && context.input has verifiedSubject && principal.getTag(\"sub\") != \"\" && principal.getTag(\"sub\") == context.input.verifiedSubject };"
         }
       ]
     }

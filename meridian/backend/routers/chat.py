@@ -522,7 +522,7 @@ async def _flagship_package_ids() -> List[str]:
 async def _currency_call(
     cli: Any, q: str, compared_packages: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Convert the compared packages' prices, or a sample amount when none were compared.
+    """Convert compared prices, or the USD amount the traveler supplied.
 
     Timed around every currency_convert call it makes.
     """
@@ -560,11 +560,12 @@ async def _currency_call(
             "to": target,
         }
     else:
+        amount = _currency_amount(q)
         result = await cli.call(
             "currency_convert",
-            {"amount": 2500.0, "from_currency": "USD", "to_currency": target},
+            {"amount": amount, "from_currency": "USD", "to_currency": target},
         )
-        args = {"amount": 2500.0, "to": target}
+        args = {"amount": amount, "to": target}
     return {
         "tool": "currency_convert",
         "args": args,
@@ -585,12 +586,49 @@ def _loyalty_program(q: str) -> str:
     )
 
 
-def _named_in(q: str, names: tuple, default: str) -> str:
-    """The first of ``names`` the query mentions at the start of a word, or ``default``."""
+class DomainInputError(ValueError):
+    """A deterministic tool route needs explicit arguments from the traveler."""
+
+
+def _currency_amount(q: str) -> float:
+    match = re.search(r"(?:\$\s*([\d,]+(?:\.\d{1,2})?)|"
+                      r"([\d,]+(?:\.\d{1,2})?)\s*(?:usd|us dollars)\b)", q)
+    if not match:
+        raise DomainInputError("Please supply a USD amount, or compare specific package IDs.")
+    return float(next(value for value in match.groups() if value).replace(",", ""))
+
+
+def _named_in(q: str, names: tuple) -> str:
+    """Resolve a supported whole name without substituting an unrelated location."""
     for name in names:
-        if re.search(rf"\b{re.escape(name.lower())}", q):
+        if re.search(rf"\b{re.escape(name.lower())}\b", q):
             return name
-    return default
+    raise DomainInputError("Please name one supported location: " + ", ".join(names) + ".")
+
+
+async def _comparison_ids(q: str) -> list[str]:
+    ids = list(dict.fromkeys(value.upper() for value in re.findall(r"\b[a-z]{2,8}-\d{3}\b", q)))
+    if 2 <= len(ids) <= 4:
+        return ids
+    if not ids and "trip types" in q:
+        return await _flagship_package_ids()
+    raise DomainInputError("Please name two to four package IDs, or ask to compare trip types.")
+
+
+async def _domain_arguments(q: str) -> tuple:
+    """Validate every requested domain input before opening the tool session."""
+    compare = any(k in q for k in ("compare", "comparison", "side by side"))
+    ids = await _comparison_ids(q) if compare else []
+    destination = _named_in(q, _PRICE_RANGE_DESTINATIONS + _INVENTORY_REGIONS) if (
+        "price range" in q
+    ) else None
+    region = _named_in(q, _INVENTORY_REGIONS) if any(
+        k in q for k in ("how many", "inventory")
+    ) else None
+    if not compare and any(k in q for k in _CURRENCY_KEYWORDS):
+        _currency_amount(q)
+
+    return compare, ids, destination, region
 
 
 async def _call_domain_tool(
@@ -607,17 +645,17 @@ async def _call_domain_tool(
     q = query.lower()
     calls: List[Dict[str, Any]] = []
     compared_packages: List[Dict[str, Any]] = []
+    compare, ids, destination, region = await _domain_arguments(q)
 
     async with concierge_mcp_session() as cli:
-        if any(k in q for k in ("compare", "comparison", "side by side")):
-            ids = await _flagship_package_ids()
+        if compare:
             if ids:
                 call = await _timed_tool_call(cli, "compare_packages", {"package_ids": ids})
                 if isinstance(call["result"], list):
                     compared_packages = call["result"]
                 calls.append(call)
 
-        if any(k in q for k in _CURRENCY_KEYWORDS):
+        if any(k in q for k in _CURRENCY_KEYWORDS) and (not compare or compared_packages):
             calls.append(await _currency_call(cli, q, compared_packages))
 
         if any(k in q for k in _LOYALTY_KEYWORDS):
@@ -626,14 +664,12 @@ async def _call_domain_tool(
                 {"travelerId": traveler_id, "program": _loyalty_program(q)},
             ))
 
-        if "price range" in q:
-            destination = _named_in(q, _PRICE_RANGE_DESTINATIONS, "Europe")
+        if destination:
             calls.append(await _timed_tool_call(
                 cli, "price_range", {"destination": destination},
             ))
 
-        if any(k in q for k in ("how many", "inventory")):
-            region = _named_in(q, _INVENTORY_REGIONS, "Europe")
+        if region:
             calls.append(await _timed_tool_call(cli, "region_inventory", {"region": region}))
 
     if not calls:
@@ -818,6 +854,8 @@ async def _concierge_mcp_turn(
                 "matching meridian-concierge tool. Try keywords like 'compare', "
                 "'in EUR', 'price range', 'inventory', or 'loyalty'."
             )
+    except DomainInputError as exc:
+        domain_text = str(exc)
     except Exception:
         error_ref = log_exception("concierge_mcp_turn")
         activities.append(create_activity(

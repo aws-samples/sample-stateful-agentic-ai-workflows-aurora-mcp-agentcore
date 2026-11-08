@@ -590,7 +590,7 @@ def test_booking_arguments_are_pinned_to_the_turn_not_the_model():
     assert args["budgetCeilingCents"] == 350000
     assert args["journeyRef"] == "concierge:conv-1"
     labels = {f["label"]: f["value"] for f in _drain(hooks.queue)[0][1]["telemetry"]["fields"]}
-    assert labels["cedar_policy"] == "meridian_booking_governance"
+    assert labels["configured_policy"] == "meridian_booking_governance"
 
 
 def test_successful_confirmation_emits_booking_and_result_span():
@@ -614,7 +614,7 @@ def test_successful_confirmation_emits_booking_and_result_span():
     result = [span for kind, span in items if kind == "activity"][-1]
     labels = {field["label"]: field["value"] for field in result["telemetry"]["fields"]}
     assert labels["cedar_decision"] == "allow"
-    assert labels["cedar_policy"] == "meridian_booking_governance"
+    assert labels["configured_policy"] == "meridian_booking_governance"
 
 
 def test_default_deny_names_the_booking_conditions_the_arguments_failed():

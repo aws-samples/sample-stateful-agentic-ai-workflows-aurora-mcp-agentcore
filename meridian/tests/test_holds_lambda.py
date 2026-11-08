@@ -311,7 +311,7 @@ def _leaking(marker):
      {**CATALOG_PRICE, **SAVED_BUDGET, "FROM journey_threads": [{"journey_id": "jrn_1"}]}),
     ("confirm_booking", "FROM confirm_booking", lambda: _booking_args(), "booking_failed",
      {**BOOKED_PARTY, **SAVED_BUDGET}),
-    ("release_hold", "FOR UPDATE OF b", lambda: _release_args(), "release_failed", {}),
+    ("release_hold", "FROM hold_requests hr", lambda: _release_args(), "release_failed", {}),
 ])
 def test_a_failed_write_returns_a_fixed_code_and_none_of_the_exception_text(
     config, monkeypatch, capsys, tool, marker, args, code, extra
@@ -392,6 +392,32 @@ BOOKING_RECEIPT = [{
     "travelers_count": 2,
     "observed_at": "2026-09-10 13:00:01+00",
 }]
+
+
+@pytest.mark.parametrize(("tool", "args", "code"), [
+    ("create_courtesy_hold", _hold_args, "hold_outcome_unknown"),
+    ("confirm_booking", _booking_args, "booking_outcome_unknown"),
+])
+def test_a_lost_commit_acknowledgement_does_not_claim_a_rollback(
+    config, monkeypatch, tool, args, code
+):
+    class LostCommitReply(FakeDataApi):
+        def commit_transaction(self, **kwargs):
+            super().commit_transaction(**kwargs)
+            raise TimeoutError("The server committed before the reply was lost")
+
+    api = LostCommitReply({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        **CATALOG_PRICE, **BOOKED_PARTY, **SAVED_BUDGET,
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        "FROM create_courtesy_hold": [{"booking_id": "HLD-1", "replayed": False}],
+        "FROM confirm_booking": [{"booking_id": "HLD-1", "replayed": False}],
+        "FROM bookings": BOOKING_RECEIPT if tool == "confirm_booking" else RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(args(), _context(f"MeridianHolds___{tool}"))
+    assert "commit" in api.tx
+    assert result == {"error": code}
 
 
 def test_confirm_booking_sets_scope_steps_down_and_returns_the_confirmed_row(config, monkeypatch):
@@ -526,6 +552,34 @@ def _hold(api, monkeypatch, args=None):
     )
 
 
+def test_action_audit_is_written_before_commit_and_linked_to_the_receipt(config, monkeypatch):
+    class CheckingCommit(FakeDataApi):
+        def commit_transaction(self, **kwargs):
+            assert any("INSERT INTO booking_action_audit" in sql for sql in self.statements)
+            return super().commit_transaction(**kwargs)
+
+    api = CheckingCommit(_ledger_api({}).rows_by_marker)
+    result = _hold(api, monkeypatch)
+    assert result["governance"]["action_audit_id"]
+    index = next(i for i, sql in enumerate(api.statements)
+                 if "INSERT INTO booking_action_audit" in sql)
+    assert api.parameters[index]["booking_id"] == result["hold"]["bookingId"]
+    assert api.parameters[index]["access_audit_id"] == result["governance"]["access_audit_id"]
+
+
+def test_a_failed_action_audit_rolls_back_the_booking(config, monkeypatch):
+    class BrokenAudit(FakeDataApi):
+        def execute_statement(self, **kwargs):
+            if "INSERT INTO booking_action_audit" in kwargs["sql"]:
+                raise RuntimeError("audit unavailable")
+            return super().execute_statement(**kwargs)
+
+    api = BrokenAudit(_ledger_api({}).rows_by_marker)
+    result = _hold(api, monkeypatch)
+    assert result == {"error": "hold_failed"}
+    assert api.tx == ["begin", "rollback"]
+
+
 @pytest.mark.parametrize(
     "stale",
     [
@@ -534,30 +588,29 @@ def _hold(api, monkeypatch, args=None):
         {"status": "expired", "lapsed": True},
     ],
 )
-def test_holding_again_after_the_old_hold_lapsed_takes_a_new_request(
+def test_retry_after_expiry_or_release_keeps_the_original_request(
     config, monkeypatch, stale
 ):
     first = _default_request_id()
     api = _ledger_api({first: [{"booking_id": "HLD-OLD", **stale}]})
     result = _hold(api, monkeypatch)
-    assert _requested_id(api) == _next_id(first, "HLD-OLD")
-    assert result["hold"]["holdRequestId"] == _next_id(first, "HLD-OLD")
+    assert _requested_id(api) == first
+    assert result["hold"]["holdRequestId"] == first
     lookup_params = api.parameters[api.statements.index(next(
         s for s in api.statements if "FROM hold_requests" in s
     ))]
     assert lookup_params["journey"] == "jrn_1"
 
 
-def test_the_next_request_follows_every_dead_request_in_the_chain(config, monkeypatch):
+def test_retry_never_walks_forward_to_a_replacement_request(config, monkeypatch):
     first = _default_request_id()
     second = _next_id(first, "HLD-1")
-    third = _next_id(second, "HLD-2")
     api = _ledger_api({
         first: [{"booking_id": "HLD-1", "status": "held", "lapsed": True}],
         second: [{"booking_id": "HLD-2", "status": "released", "lapsed": False}],
     })
     _hold(api, monkeypatch)
-    assert _requested_id(api) == third
+    assert _requested_id(api) == first
 
 
 def test_a_live_default_request_still_replays(config, monkeypatch):
@@ -579,7 +632,7 @@ def test_an_explicit_request_id_is_never_advanced(config, monkeypatch):
     args = {**_hold_args(), "holdRequestId": "hrq_mine", "bookingId": "HLD-1"}
     _hold(api, monkeypatch, args)
     assert _requested_id(api) == "hrq_mine"
-    assert not any(s == holds.HOLD_REQUEST_SQL for s in api.statements), "no chain walk"
+    assert not any("JOIN bookings b" in s for s in api.statements), "no chain walk"
 
 
 def test_the_request_lookup_runs_under_the_journey_lock_and_the_traveler_scope(
@@ -903,8 +956,9 @@ def _release_args(**overrides):
 def _release_api(status="held", owned=True, updated=True):
     return FakeDataApi({
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
-        "FOR UPDATE OF b": [{"booking_id": "HLD-1", "status": status}] if owned else [],
-        "SET status = 'released'": [{"booking_id": "HLD-1"}] if updated else [],
+        "FROM hold_requests hr": [{"booking_id": "HLD-1", "status": status}] if owned else [],
+        "FROM release_courtesy_hold": (
+            [{"booking_id": "HLD-1", "replayed": False}] if updated else []),
     })
 
 
@@ -934,18 +988,20 @@ def test_release_hold_gives_back_the_travelers_own_held_booking(config, monkeypa
         next(i for i, sql in enumerate(api.statements) if marker in sql)
         for marker in (
             "traveler_identity_bindings", "SET LOCAL ROLE meridian_app",
-            "FOR UPDATE OF b", "SET status = 'released'",
+            "FROM hold_requests hr", "FROM release_courtesy_hold",
         )
     ]
     assert order == sorted(order), "grant check, step-down, ownership read, then the update"
-    [(owned_sql, owned_params)] = _executed(api, "FOR UPDATE OF b")
+    [(owned_sql, owned_params)] = _executed(api, "FROM hold_requests hr")
     assert "b.traveler_id = :traveler" in owned_sql
     assert owned_params == {
         "journey": "jrn_1", "request_id": "hrq_abc", "traveler": "trv_meridian_demo"
     }
-    [(update_sql, update_params)] = _executed(api, "SET status = 'released'")
-    assert "traveler_id = :traveler" in update_sql and "status = 'held'" in update_sql
-    assert update_params == {"booking_id": "HLD-1", "traveler": "trv_meridian_demo"}
+    [(update_sql, update_params)] = _executed(api, "FROM release_courtesy_hold")
+    assert "release_courtesy_hold" in update_sql
+    assert update_params == owned_params
+    assert "UPDATE bookings" not in "\n".join(api.statements)
+    assert "SET LOCAL ROLE meridian_gateway" in api.statements
 
 
 def test_release_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
@@ -963,14 +1019,14 @@ def test_release_hold_reports_a_hold_the_traveler_does_not_have(config, monkeypa
     api = _release_api(owned=False)
     assert _release(api, monkeypatch) == {"error": "hold_not_found"}
     assert api.tx == ["begin", "rollback"]
-    assert _executed(api, "SET status = 'released'") == []
+    assert _executed(api, "FROM release_courtesy_hold") == []
 
 
 def test_release_hold_replays_an_already_released_booking_without_writing(config, monkeypatch):
     api = _release_api(status="released")
     result = _release(api, monkeypatch)
     assert result["release"]["replayed"] is True
-    assert _executed(api, "SET status = 'released'") == []
+    assert _executed(api, "FROM release_courtesy_hold") == []
 
 
 @pytest.mark.parametrize("status", ["confirmed", "expired", "pending"])
@@ -978,7 +1034,7 @@ def test_release_hold_never_releases_a_booking_that_is_not_held(config, monkeypa
     api = _release_api(status=status)
     assert _release(api, monkeypatch) == {"error": "booking_not_held"}
     assert api.tx == ["begin", "rollback"]
-    assert _executed(api, "SET status = 'released'") == []
+    assert _executed(api, "FROM release_courtesy_hold") == []
 
 
 def test_release_hold_reports_a_booking_that_stopped_being_held_before_the_update(
@@ -993,7 +1049,8 @@ def test_the_release_tool_takes_exactly_the_traveler_and_the_hold_identity():
     tools = json.loads((TARGET / "tool-schema.json").read_text(encoding="utf-8"))
     schema = next(t for t in tools if t["name"] == "release_hold")["inputSchema"]
     assert set(schema["properties"]) == {
-        "travelerId", "holdRequestId", "journeyId", "executionId"}
+        "travelerId", "holdRequestId", "journeyId", "executionId",
+        "verifiedSubject", "authorizationRef"}
     assert schema["required"] == ["travelerId", "holdRequestId", "journeyId"]
     assert schema["additionalProperties"] is False
 
@@ -1005,13 +1062,13 @@ def test_release_hold_reads_and_writes_only_after_the_travelers_scope_is_set(con
     position = {
         marker: next(i for i, (sql, _) in enumerate(statements) if marker in sql)
         for marker in ("set_config('app.current_traveler_id'", "set_config('app.agent_type'",
-                       "SET LOCAL ROLE", "FOR UPDATE OF b", "SET status = 'released'")
+                       "SET LOCAL ROLE", "FROM hold_requests hr", "FROM release_courtesy_hold")
     }
     scoped = position["set_config('app.current_traveler_id'"]
     assert statements[scoped][1] == {"traveler": "trv_meridian_demo"}
-    assert scoped < position["SET LOCAL ROLE"] < position["FOR UPDATE OF b"]
-    assert position["set_config('app.agent_type'"] < position["FOR UPDATE OF b"]
-    assert position["FOR UPDATE OF b"] < position["SET status = 'released'"]
+    assert scoped < position["SET LOCAL ROLE"] < position["FROM hold_requests hr"]
+    assert position["set_config('app.agent_type'"] < position["FROM hold_requests hr"]
+    assert position["FROM hold_requests hr"] < position["FROM release_courtesy_hold"]
 
 
 def _fenced_release_api(lease=True, journey="jrn_1", **kwargs):
@@ -1029,7 +1086,7 @@ def test_release_hold_with_a_valid_lease_claims_it_before_reading_or_writing(con
     [(claim_sql, claim_params)] = _executed(api, "FROM journey_executions")
     assert "lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE" in claim_sql
     assert claim_params == {"e": "exe_1"}
-    order = ("FROM journey_executions", "FOR UPDATE OF b", "SET status = 'released'")
+    order = ("FROM journey_executions", "FROM hold_requests hr", "FROM release_courtesy_hold")
     marks = [next(i for i, sql in enumerate(api.statements) if marker in sql) for marker in order]
     assert marks == sorted(marks), "the lease is claimed before the ownership read and the update"
     assert any(p == {"e": "exe_1"} and "app.execution_id" in s
@@ -1043,8 +1100,8 @@ def test_release_hold_refuses_a_lapsed_or_foreign_lease_and_updates_nothing(
     result = _release(api, monkeypatch, _release_args(executionId="exe_gone"))
     assert result == {"error": "execution_lease_lost"}
     assert api.tx == ["begin", "rollback"]
-    assert _executed(api, "FOR UPDATE OF b") == []
-    assert _executed(api, "SET status = 'released'") == []
+    assert _executed(api, "FROM hold_requests hr") == []
+    assert _executed(api, "FROM release_courtesy_hold") == []
     assert not any("error_type" in line for line in capsys.readouterr().out.splitlines())
 
 
@@ -1070,8 +1127,8 @@ def test_release_hold_refuses_a_live_lease_on_another_journey_and_updates_nothin
     result = _release(api, monkeypatch, _release_args(executionId="exe_1"))
     assert result == {"error": "journey_not_owned"}
     assert api.tx == ["begin", "rollback"]
-    assert _executed(api, "FOR UPDATE OF b") == []
-    assert _executed(api, "SET status = 'released'") == []
+    assert _executed(api, "FROM hold_requests hr") == []
+    assert _executed(api, "FROM release_courtesy_hold") == []
 
 
 class _TransactionGone(FakeDataApi):
@@ -1200,8 +1257,8 @@ def _success_cases():
         },
     )
     release_rows = _granted(**{
-        "FOR UPDATE OF b": [{"booking_id": "HLD-1", "status": "held"}],
-        "SET status = 'released'": [{"booking_id": "HLD-1"}],
+        "FROM hold_requests hr": [{"booking_id": "HLD-1", "status": "held"}],
+        "FROM release_courtesy_hold": [{"booking_id": "HLD-1", "replayed": False}],
     })
     return [
         ("create_courtesy_hold", hold_rows, _hold_args()),

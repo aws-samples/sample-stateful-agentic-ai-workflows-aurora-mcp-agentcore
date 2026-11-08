@@ -249,7 +249,7 @@ class WorkflowNodes:
             for package in (state.get("packages", []) or [])
         ]
 
-        if is_plan and prior:
+        if is_plan:
             targets = [
                 package
                 for package in prior[:3]
@@ -334,22 +334,12 @@ class WorkflowNodes:
                 or package.get("package_id")
                 or ""
             )
-            availability = availability_by_id.get(package_id)
+            availability = availability_by_id.get(package_id) or {}
             packages.append(
                 {
                     **package,
-                    **(
-                        {
-                            "available_sizes": availability.get(
-                                "available_sizes"
-                            ),
-                            "availability": availability.get(
-                                "availability"
-                            ),
-                        }
-                        if availability
-                        else {}
-                    ),
+                    "available_sizes": availability.get("available_sizes") or [],
+                    "availability": availability.get("availability") or {},
                 }
             )
         return packages
@@ -656,7 +646,14 @@ class WorkflowNodes:
                 "fields": [
                     {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
                     {"label": "cedar_decision", "value": "allow"},
-                    {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
+                    {"label": "policy_evidence",
+                     "value": "Application inference from target response"},
+                    {"label": "action_audit_id",
+                     "value": str(governance.get("action_audit_id") or "")},
+                    {"label": "gateway_request_id",
+                     "value": str(governance.get("gateway_request_id") or "")},
+                    {"label": "configured_policy",
+                     "value": "meridian_hold_governance", "mono": True},
                     {"label": "policy_mode", "value": "ENFORCE"},
                     {
                         "label": "workload",
@@ -741,10 +738,7 @@ class WorkflowNodes:
             # replacement worker owns the hold; saving a snapshot past it here
             # would make that worker skip the hold.
             raise ExecutionLeaseLostError(f"Hold refused: {outcome.error}")
-        if not outcome.placed and outcome.refused_by is None and (
-            outcome.policy_decision is None
-            or (outcome.policy_decision == "allow" and not outcome.error)
-        ):
+        if not outcome.placed and not outcome.definitive_refusal:
             raise HoldOutcomeUnknown(
                 "The hold outcome is unknown. The Gateway returned no reliable "
                 "receipt or refusal; resume the same saved hold request."
@@ -845,7 +839,9 @@ class WorkflowNodes:
         if refused_by == REFUSED_BY_POLICY:
             fields += [
                 {"label": "cedar_decision", "value": "deny"},
-                {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
+                {"label": "policy_evidence", "value": "Gateway policy refusal response"},
+                {"label": "configured_policy",
+                     "value": "meridian_hold_governance", "mono": True},
                 {"label": "policy_mode", "value": "ENFORCE"},
             ]
         elif refused_by == REFUSED_BY_IDENTITY:

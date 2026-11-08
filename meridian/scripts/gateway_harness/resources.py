@@ -56,6 +56,8 @@ ECHO_SCHEMA = [{
         "type": "object",
         "properties": {
             "travelerId": {"type": "string", "description": "Pinned by the interceptor."},
+            "verifiedSubject": {"type": "string", "description": "Subject bound to the token."},
+            "authorizationRef": {"type": "string", "description": "Binding log reference."},
             "note": {"type": "string", "description": "Free text."},
         },
         "required": ["travelerId"],

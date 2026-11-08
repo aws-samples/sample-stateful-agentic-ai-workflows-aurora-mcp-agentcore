@@ -25,6 +25,10 @@ def test_no_duration_when_every_counted_duration_is_sold_out():
     assert duration_for_party(sold_out, 1) is None
 
 
-def test_hold_falls_back_to_the_first_listed_size_when_nothing_is_counted():
+def test_an_explicit_empty_inventory_does_not_fall_back_to_a_listed_size():
     package = {"availability": {}, "available_sizes": ["6 nights"]}
-    assert duration_for_party(package, 3) == "6 nights"
+    assert duration_for_party(package, 3) is None
+
+
+def test_legacy_size_fallback_only_applies_when_counts_are_absent():
+    assert duration_for_party({"available_sizes": ["6 nights"]}, 3) == "6 nights"

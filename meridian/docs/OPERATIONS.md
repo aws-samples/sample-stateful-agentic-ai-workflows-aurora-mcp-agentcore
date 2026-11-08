@@ -70,32 +70,42 @@ the `rds!cluster-` master secret and delete it if it remains.
 
 ## Prepare the database
 
-For a new, empty database:
+For a new, empty database, initialize the base schema once:
 
 ```bash
-python scripts/init_aurora_schema.py   # base schema and the meridian_app RLS role
-python scripts/apply_migrations.py     # journeys, snapshots, hold identity, booking functions
-python scripts/seed_data.py            # catalog with embeddings, the sample traveler, and a grant for your identity
+python scripts/init_aurora_schema.py
+python scripts/apply_migrations.py --pending
 ```
 
-`init_aurora_schema.py` and a full `seed_data.py` refuse to run when Meridian
-tables or data already exist. For an existing database, keep its journeys and
-bookings and run only `python scripts/apply_migrations.py`. A database created
-before traveler grants existed may also need
-`python scripts/bind_current_identity.py`, which grants your current IAM identity
-access to the sample traveler.
+For each pending file, in order, dry-run that named file, inspect the result, then apply it:
 
-Migration `021_audit_outcome.sql` adds `tool_calls` and `turn_error` to
-`agent_audit_log`, with the checks that tie `authorization_decision` to them, and
-recreates the `agent_iam_audit` view to show both. List the pending migrations first
-with `python scripts/apply_migrations.py --pending` and expect exactly that name, then
-run `python scripts/apply_migrations.py --dry-run`, which runs each pending migration in
-a transaction and rolls it back. Apply it before deploying the backend that writes those
-columns.
+```bash
+python scripts/apply_migrations.py --dry-run --only <first-pending-migration.sql>
+python scripts/apply_migrations.py --only <first-pending-migration.sql>
+python scripts/apply_migrations.py --pending
+```
+
+Do not run the migration script bare. `--only` refuses any file other than the first pending
+migration. Dry runs acquire database locks and execute DDL before rolling back; they require
+the same operational review as other AWS access. Apply prerequisites before dry-running the
+next migration, because a rolled-back prerequisite does not exist for the next check.
+
+After all migrations on a new installation, run `python scripts/seed_data.py` once. It calls
+Bedrock for embeddings. The schema and full seed commands refuse existing Meridian tables or
+data. For an existing installation, preserve its records and upgrade with named migrations.
+An older installation may also need `bind_current_identity.py` to establish its workload grant.
+
+Migration `021_audit_outcome.sql` adds `tool_calls` and `turn_error` to `agent_audit_log`.
+Those final-turn annotations are distinct from the atomic business-action audit added in 028.
+
+**Current release:** migrations 026-028 precede the new Lambda; migration 029 follows a verified
+application cutover. Follow [DAT307 release gates](DAT307_RELEASE.md) before applying them. The
+new action audit commits with each business action; final turn audit persistence remains
+best effort if a process is killed.
 
 Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
 steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025
-drops the old column and the trigger. A new database applies both in one run. An existing
+drops the old column and the trigger. A new database applies both in sequence before deployment. An existing
 deployment from before commit `95eff0c5` applies 024, deploys `95eff0c5` (the catalog Lambda
 first, then the AgentCore stack, then the web app), verifies, and only then applies 025 and
 deploys this commit: 025 breaks any writer still running code from before `95eff0c5`. The same
@@ -118,7 +128,7 @@ Aurora table `workflow_snapshots`. The quick start in the
 [repository README](../../README.md#quick-start) starts the backend. Before Phase 5
 works you need three things:
 
-1. Migrations 014 to 017 applied (`python scripts/apply_migrations.py`). They
+1. Migrations 014 to 017 applied individually with `apply_migrations.py --only`. They
    create `workflow_snapshots`, the `meridian_workflow` role and
    `workflow_session_stops`.
 2. The Runtime's own database login. `meridian_workflow` is NOBYPASSRLS, owns
@@ -492,43 +502,21 @@ read the identity bindings, append to the access audit and `SET ROLE meridian_ap
 that, so it does not get that login. Migration 023 drops the legacy product search function, a leftover that
 read a table the repository no longer has and that `PUBLIC` could still execute.
 
-1. L0a: apply migrations 022 and 023, each alone and in that order. `apply_migrations.py` has no flag that
-   names one file; without a flag it applies every pending file, so never run it bare. List what is pending
-   first. The list says which migration to apply next:
+1. L0a: apply migrations 022 and 023 individually, in that order. List pending migrations,
+   then dry-run and apply only the first one:
 
    ```bash
    python scripts/apply_migrations.py --pending
-   python scripts/apply_migrations.py --dry-run
+   python scripts/apply_migrations.py --dry-run --only 022_catalog_login.sql
+   python scripts/apply_migrations.py --only 022_catalog_login.sql
+   python scripts/apply_migrations.py --pending
    ```
 
-   On a cluster that has Release 1's migrations and nothing newer, the list is `022_catalog_login.sql` and
-   `023_drop_legacy_product_search.sql`, and the rolled-back dry run reports 3 statements for 022 and 1 for
-   023. On a cluster where 022 is already applied, the list is 023 alone. On a database created with the
-   current `init_aurora_schema.py` and the apply-all step of the README, nothing is pending and L0a is done.
-   Any other name in the list: stop and ask. Then apply the one migration that is next, with the runner's
-   single-file function, which refuses unless that file is the first pending one. Edit `NEXT` to
-   `023_drop_legacy_product_search.sql` for the second run:
-
-   ```bash
-   python - <<'PY'
-   import boto3
-
-   from scripts import apply_migrations as runner
-
-   NEXT = "022_catalog_login.sql"
-   client = boto3.client("rds-data", region_name=runner.REGION)
-   pending = [p.name for p in runner._pending_paths(runner._applied_migrations_read_only(client))]
-   assert pending[:1] == [NEXT], f"pending is {pending}; stop and ask"
-   runner._apply_migration(client, runner.MIGRATIONS_DIR / NEXT)
-   print(f"applied {NEXT}")
-   PY
-   ```
-
-   `_apply_migration` runs the file and the `schema_migrations` insert in one transaction and rolls back on
-   any error. Read back with `--pending` after each. After 022 the role has `rolcanlogin` false, no
-   `BYPASSRLS` and no `INHERIT`, reads `trip_packages` and can execute `package_places_left`; after 023 the
-   legacy function is gone from `pg_proc`. A dry run that fails (for example `meridian_catalog exists with
-   attributes 022 does not allow`) is a finding: stop and report it, and never alter the role into shape.
+   Repeat with `023_drop_legacy_product_search.sql`. If 022 is already applied, start with 023;
+   if both are applied, skip this step. Do not run the script bare or edit an applied migration.
+   The runner commits each file and its `schema_migrations` record together and rolls back on
+   error. A failed role-attribute check is a finding to investigate, not permission to alter
+   the role into shape. Current installations must also follow the 026-029 release sequence.
 
 2. L0b: report the plan, then provision. Name the login: without `--login`, an `--apply` rotates every
    login's password, so the script refuses to run without it.

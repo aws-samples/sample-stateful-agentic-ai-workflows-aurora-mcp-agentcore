@@ -79,6 +79,13 @@ class GovernedHold:
     def placed(self) -> bool:
         return self.hold is not None
 
+    @property
+    def definitive_refusal(self) -> bool:
+        """Whether a known guard proves that this attempt made no business write."""
+        return self.refused_by is not None or self.error in {
+            *CODE_CLASSES, WORKLOAD_GRANT_REFUSAL,
+        }
+
 
 def hold_arguments(
     intent: Dict[str, Any], *, traveler_id: str, journey_ref: str,

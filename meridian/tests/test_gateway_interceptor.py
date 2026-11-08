@@ -53,6 +53,28 @@ def rewritten_body(output: dict) -> dict:
     return output["mcp"]["transformedGatewayRequest"]["body"]
 
 
+def test_subject_is_bound_and_attempted_traveler_is_kept_in_the_binding_log(caplog):
+    event = load("documented_tools_call_hold")
+    args = event["mcp"]["gatewayRequest"]["body"]["params"]["arguments"]
+    args["verifiedSubject"] = "forged-subject"
+    args["authorizationRef"] = "forged-reference"
+    output = interceptor.lambda_handler(event, None)
+    bound = rewritten_body(output)["params"]["arguments"]
+    assert bound["verifiedSubject"] == "sub-1"
+    assert bound["authorizationRef"] != "forged-reference"
+    record = next(json.loads(r.message) for r in caplog.records if r.message.startswith('{'))
+    assert record["requested_traveler"] == args["travelerId"]
+    assert record["bound_traveler"] == DECOY
+    assert record["authorization_ref"] == bound["authorizationRef"]
+
+
+def test_missing_subject_is_refused_before_the_target():
+    output = interceptor.lambda_handler(
+        load("documented_tools_call_hold", token_for(traveler_id=DECOY, sub=None)), None
+    )
+    assert "subject" in refusal_text(output)
+
+
 def refusal_text(output: dict) -> str:
     assert set(output["mcp"]) == {"transformedGatewayResponse"}
     response = output["mcp"]["transformedGatewayResponse"]
@@ -67,7 +89,8 @@ def test_the_models_traveler_is_replaced_by_the_tokens_claim():
     body = rewritten_body(interceptor.lambda_handler(event, None))
     arguments = body["params"]["arguments"]
     assert arguments["travelerId"] == DECOY
-    assert {k: v for k, v in arguments.items() if k != "travelerId"} == {
+    assert {k: v for k, v in arguments.items()
+            if k not in {"travelerId", "verifiedSubject", "authorizationRef"}} == {
         k: v for k, v in event["mcp"]["gatewayRequest"]["body"]["params"]["arguments"].items()
         if k != "travelerId"
     }
@@ -88,9 +111,12 @@ def test_a_call_with_no_traveler_argument_gets_the_claim():
     assert body["params"]["arguments"]["travelerId"] == DECOY
 
 
-def test_a_matching_traveler_passes_through_unchanged():
+def test_a_matching_traveler_keeps_its_terms_and_gains_audit_binding():
     event = load("documented_tools_call_hold", token_for(traveler_id=JORDAN))
     body = rewritten_body(interceptor.lambda_handler(event, None))
+    args = body["params"]["arguments"]
+    assert args.pop("verifiedSubject") == "sub-1"
+    assert args.pop("authorizationRef")
     assert body == event["mcp"]["gatewayRequest"]["body"]
 
 
@@ -255,13 +281,14 @@ def test_an_unexpected_error_fails_closed(monkeypatch):
     assert "secret" not in json.dumps(output)
 
 
-def test_nothing_sensitive_is_logged(caplog):
+def test_binding_logs_identifiers_but_never_token_material(caplog):
     token = token_for(traveler_id=DECOY)
     with caplog.at_level(logging.INFO):
         interceptor.lambda_handler(load("documented_tools_call_hold", token), None)
         interceptor.lambda_handler(load("documented_tools_call_hold", token_for()), None)
     assert token not in caplog.text and token.split(".")[1] not in caplog.text
-    assert DECOY not in caplog.text
+    assert DECOY in caplog.text
+    assert "client-web" not in caplog.text and "issuer.example" not in caplog.text
 
 
 def test_an_unexpected_error_logs_only_the_exception_class(monkeypatch, caplog):
@@ -334,7 +361,10 @@ def test_loyalty_balance_is_pinned_to_the_token_traveler_for_every_input_shape(n
 
     pinned = rewritten_body(interceptor.lambda_handler(event, None))
 
-    assert pinned["params"]["arguments"] == {"travelerId": DECOY, "program": "Marriott Bonvoy"}
+    args = pinned["params"]["arguments"]
+    assert args.pop("verifiedSubject") == "sub-1"
+    assert args.pop("authorizationRef")
+    assert args == {"travelerId": DECOY, "program": "Marriott Bonvoy"}
 
 
 def test_a_token_without_a_usable_expiry_is_refused():
@@ -397,4 +427,6 @@ def test_a_release_names_the_tokens_traveler_whatever_the_caller_sent():
     params["arguments"] = {"travelerId": JORDAN, "holdRequestId": "hrq_1", "journeyId": "jrn_1"}
     body = rewritten_body(interceptor.lambda_handler(event, None))
     assert body["params"]["arguments"] == {
-        "travelerId": DECOY, "holdRequestId": "hrq_1", "journeyId": "jrn_1"}
+        "travelerId": DECOY, "holdRequestId": "hrq_1", "journeyId": "jrn_1",
+        "verifiedSubject": "sub-1",
+        "authorizationRef": body["params"]["arguments"]["authorizationRef"]}

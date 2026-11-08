@@ -83,6 +83,16 @@ def _result_text(event) -> str:
     ).strip()
 
 
+def _unreported_write(event, kind: str) -> str:
+    text = _result_text(event)
+    if not text or text in {f"{kind}_failed", f"{kind}_outcome_unknown"}:
+        return (
+            f"The {kind} outcome is unknown. Read the saved receipt before retrying "
+            "with the same request identity. Do not claim the action failed or create a new intent."
+        )
+    return text
+
+
 def execute_confirmed_hold(hooks, call_tool, hold_target: dict, tool_name: str = HOLD_TOOL) -> str:
     """Call the governed hold tool once with pinned arguments and return the explained outcome.
 
@@ -110,7 +120,7 @@ def execute_confirmed_hold(hooks, call_tool, hold_target: dict, tool_name: str =
             f"${hold.get('totalAmount')}, expires {hold.get('expiresAt')}, "
             f"{hold.get('seatsRemaining')} places remaining."
         )
-    return _result_text(event) or "The gateway did not place the hold and gave no reason."
+    return _unreported_write(event, "hold")
 
 
 def execute_confirmed_booking(
@@ -142,4 +152,4 @@ def execute_confirmed_booking(
             f"confirmed {booking.get('confirmedAt')}. Catalog inventory is booked in Meridian's "
             "database; no supplier was contacted and no payment was taken."
         )
-    return _result_text(event) or "The gateway did not confirm the booking and gave no reason."
+    return _unreported_write(event, "booking")

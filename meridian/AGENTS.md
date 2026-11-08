@@ -160,9 +160,12 @@ values, Cognito pool or client ids, the hosted-UI host, or 12-digit AWS account 
   the run. The workflow's availability, memory and read-back reads are scoped Aurora reads
   under the workflow login. `tests/test_no_direct_booking_writes.py` fails when application
   code writes booking rows itself.
-- Each workflow run that starts writes one `agent_audit_log` row (`operation =
+- Each workflow run that starts attempts one final `agent_audit_log` row (`operation =
   'workflow_run'`) naming the verified Cognito subject (in `jwt` mode), the Gateway calls in `tool_calls` and
-  the ending error in `turn_error`. Gateway failures reach spans, snapshots, logs and the
+  the ending error in `turn_error`. A hard kill or audit-write failure can omit that row.
+  The Gateway commits `booking_action_audit` with each successful booking action or target
+  replay. It records application attribution and service correlation IDs, not a native Cedar
+  decision. Gateway failures reach spans, snapshots, logs and the
   Runtime's error event as a code or a fixed phrase, never as the Gateway's own text.
 
 ## 5. Copy and style

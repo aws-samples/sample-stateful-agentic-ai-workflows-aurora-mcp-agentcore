@@ -39,6 +39,31 @@ jobs:
       - run: python -m pip_audit -r requirements-ci.txt
       - run: python scripts/audit_runtime_dependencies.py
 
+  runtime-contracts:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        runtime: [MeridianConcierge, MeridianWorkflow]
+    defaults:
+      run:
+        working-directory: meridian
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version-file: meridian/.python-version
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          version: '0.13.6'
+      - run: python scripts/stage_concierge_runtime.py
+      - run: python scripts/stage_workflow_runtime.py
+      - run: uv venv .local/runtime-contract
+      # Resolve the Runtime's overrides and complete constraints, independently of the backend lock.
+      - run: uv pip compile pyproject.toml --generate-hashes --output-file ../../../.local/runtime-requirements.txt
+        working-directory: meridian/meridian_agentcore/app/${{ matrix.runtime }}
+      - run: uv pip install --python .local/runtime-contract/bin/python --require-hashes -r .local/runtime-requirements.txt
+      - run: .local/runtime-contract/bin/python scripts/check_runtime_contract.py ${{ matrix.runtime }}
+
   frontend:
     runs-on: ubuntu-24.04
     defaults:

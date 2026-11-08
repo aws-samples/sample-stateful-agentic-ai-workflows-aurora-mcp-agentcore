@@ -43,7 +43,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
 from backend.agentcore.auth_mode import jwt_mode
-from backend.agentcore.caller_claims import ensure_unexpired
+from backend.agentcore.caller_claims import ensure_unexpired, subject_from_token
 from backend.agentcore.caller_credential import require_caller_token
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
@@ -170,6 +170,10 @@ class AgentCoreGatewayAdapter:
         AgentCore Runtime discovers and calls them, and the gateway's Cedar
         policies decide on every call.
         """
+        if tool_name.startswith("MeridianHolds___") and "travelerId" in arguments:
+            arguments = {k: v for k, v in arguments.items() if k != "verifiedSubject"}
+            if jwt_mode():
+                arguments["verifiedSubject"] = subject_from_token(require_caller_token())
         return self._mcp_request(
             "tools/call",
             params={"name": tool_name, "arguments": arguments},

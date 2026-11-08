@@ -6,6 +6,25 @@ import pytest
 from scripts import init_aurora_schema, release_demo_bookings, seed_data
 
 
+async def test_reset_deletes_only_selected_action_audit_before_its_booking(monkeypatch):
+    client = Mock()
+    client.execute = AsyncMock(return_value=[{
+        "booking_id": "owned", "status": "held", "total_amount": "100", "created_at": "now",
+    }])
+    client.execute_one = AsyncMock(return_value={"booking_id": "owned"})
+    client.begin_transaction.return_value = "reset-tx"
+    monkeypatch.setattr(release_demo_bookings, "get_rds_data_client", lambda: client)
+    await release_demo_bookings.release("traveler", False, False, "owned")
+    deletes = [call for call in client.execute.call_args_list
+               if call.args[0].startswith("DELETE")]
+    assert deletes[0].args == (
+        "DELETE FROM booking_action_audit WHERE booking_id = %s", ("owned",),
+    )
+    assert all(call.kwargs["transaction_id"] == "reset-tx" for call in deletes)
+    assert deletes[-1].args[0] == "DELETE FROM bookings WHERE booking_id = %s"
+    client.commit_transaction.assert_called_once_with("reset-tx")
+
+
 def test_schema_initialization_refuses_existing_tables_before_ddl(monkeypatch):
     client = Mock()
     client.execute_statement.return_value = {"records": [[{"booleanValue": True}]]}

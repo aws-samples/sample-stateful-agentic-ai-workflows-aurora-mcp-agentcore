@@ -132,7 +132,18 @@ async def test_availability_on_the_plan_path_merges_the_top_three_packages():
     assert [p["name"] for p in merged] == ["Trip 0", "Trip 1", "Trip 2", "Trip 3"]
     assert merged[0]["available_sizes"] == ["5 nights"]
     assert merged[2]["availability"] == {"5 nights": 4}
-    assert "available_sizes" not in merged[3]
+    assert merged[3]["available_sizes"] == []
+
+
+async def test_a_missing_reviewed_row_loses_stale_availability(nodes, gateway):
+    nodes.availability_fn = AsyncMock(return_value=([], [], ""))
+    out = await nodes.availability({
+        "query": PLAN, "intent": "plan", "packages": [dict(PACKAGE)], "activities": [],
+    })
+    assert out["packages"][0]["availability"] == {}
+    assert out["packages"][0]["available_sizes"] == []
+    await nodes.hold({**_hold_state(), **out}, HOLD_CONFIG)
+    assert gateway.calls == []
     assert out["activities"][0]["title"] == "Workflow node: availability fan-out"
 
 
@@ -266,6 +277,28 @@ async def test_hold_ambiguous_outcome_raises_outcome_unknown(nodes, reply):
         await nodes.hold(_hold_state(), HOLD_CONFIG)
 
 
+@pytest.mark.parametrize("code", ["hold_failed", "hold_outcome_unknown", "unrecognized_error"])
+async def test_a_target_error_cannot_prove_that_no_hold_committed(nodes, code):
+    nodes._gateway_call = lambda *_: _envelope({"error": code})
+    with pytest.raises(HoldOutcomeUnknown):
+        await nodes.hold(_hold_state(), HOLD_CONFIG)
+
+
+async def test_an_empty_reviewed_plan_cannot_acquire_a_new_candidate(nodes, gateway):
+    nodes.availability_fn = AsyncMock(return_value=([PACKAGE], [], "Found Tokyo"))
+    state = {
+        "query": "Rework my Tokyo trip under $100", "intent": "plan", "packages": [],
+        "traveler_id": "trv_x", "conversation_id": "t1", "activities": [],
+    }
+    available = await nodes.availability(state)
+    assert available["packages"] == []
+    nodes.availability_fn.assert_not_awaited()
+    prepared = await nodes.prepare_hold({**state, **available})
+    assert "hold_intent" not in prepared
+    await nodes.hold({**state, **available, **prepared}, HOLD_CONFIG)
+    assert gateway.calls == []
+
+
 async def test_hold_lease_lost_raises_the_lease_error(nodes):
     nodes._gateway_call = lambda *_: _envelope({"error": "execution_lease_lost"})
     with pytest.raises(ExecutionLeaseLostError):
@@ -364,7 +397,6 @@ REFUSALS = [
     ("cedar", _envelope(text=f"AuthorizeActionException - Tool Execution Denied: {HOLD_LEAK}",
                         is_error=True)),
     ("identity", _envelope(text=f"Identity Check Failed: {HOLD_LEAK}", is_error=True)),
-    ("unknown_code", _envelope({"error": f"boom {HOLD_LEAK}"})),
 ]
 
 
@@ -383,8 +415,12 @@ async def test_a_refused_hold_puts_no_gateway_text_in_the_span_or_the_log(
     assert _fields(span)["gateway_error"]
 
 
-async def test_an_rpc_error_leaves_an_unknown_outcome_with_no_gateway_text(nodes, caplog):
-    nodes._gateway_call = lambda *_: {"error": {"code": -32000, "message": HOLD_LEAK}}
+@pytest.mark.parametrize("reply", [
+    {"error": {"code": -32000, "message": HOLD_LEAK}},
+    _envelope({"error": f"boom {HOLD_LEAK}"}),
+])
+async def test_an_unknown_outcome_has_no_gateway_text(nodes, caplog, reply):
+    nodes._gateway_call = lambda *_: reply
     with caplog.at_level("DEBUG"), pytest.raises(HoldOutcomeUnknown) as raised:
         await nodes.hold(_hold_state(), HOLD_CONFIG)
     logged = "\n".join(record.getMessage() for record in caplog.records)

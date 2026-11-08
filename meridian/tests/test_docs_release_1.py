@@ -120,8 +120,10 @@ def test_the_readme_describes_the_audit_row_as_it_is_written():
     assert "(identity, RLS scope and rows returned)" not in readme
     assert "completed turns link" not in readme
     for words in ("`tool_calls`", "`refused_by`", "`refusal_code`", "`access_audit_id`",
-                  "`turn_error`", "Every Phase 4 turn that reaches the agent Runtime has one "
-                  "row written for it, failed turns included", "If the row's own write fails, "
+                  "`turn_error`", "Phase 4 attempts a final audit row for each turn that reaches "
+                  "the agent Runtime",
+                  "A hard kill before finalization can leave no row.",
+                  "If the row's own write fails, "
                   "there is no row", "write no row"):
         assert words in readme, words
 

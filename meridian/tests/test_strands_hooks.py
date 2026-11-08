@@ -341,7 +341,7 @@ def framed(yielded):
     return b"".join(f"data: {json.dumps(item)}\n\n".encode() for item in yielded)
 
 
-def stored_after(monkeypatch, yielded, operation):
+def stored_after(monkeypatch, yielded, operation, error_type=RuntimeError):
     """Stream the Runtime's output to the backend's real adapter and Phase 4 path.
 
     Returns:
@@ -357,7 +357,7 @@ def stored_after(monkeypatch, yielded, operation):
     agent = build_agent([], decision_with(), [])
     agent.store.write_audit = write_audit
     runtime_streams(agent, framed(yielded))
-    with pytest.raises(RuntimeError) as raised:
+    with pytest.raises(error_type) as raised:
         asyncio.run(RUNTIME_PATHS[operation](agent))
     (row,) = committed(agent, rows)
     return row, raised.value

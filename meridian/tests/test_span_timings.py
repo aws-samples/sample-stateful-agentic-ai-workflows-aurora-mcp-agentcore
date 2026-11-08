@@ -71,6 +71,10 @@ class FakeConcierge:
 
     async def call(self, name, args):
         self.clock.spend(self.COST_MS.get(name, 180))
+        if name == "compare_packages":
+            return [dict(ROW)]
+        if name == "currency_convert":
+            return {"amount": args["amount"], "converted": 1200, "to": "EUR"}
         if name == "search_trips":
             return {"packages": [], "sql": "SELECT 1 WHERE a = $1", "parameters": ["x"]}
         return {"destination": args.get("destination"), "low": 1599.0, "average": 2607.0,

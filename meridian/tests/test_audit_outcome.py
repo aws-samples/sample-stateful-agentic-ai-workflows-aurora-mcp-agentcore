@@ -512,6 +512,12 @@ def test_the_booking_outcome_says_refused_and_names_the_layer_its_row_records(
     target = BookingTarget(booking_id="HLD-1", total_cents=500000, package_id="CTY-002",
                            duration="7 nights", travelers=2)
 
+    if text == "Unknown booking":
+        with pytest.raises(WriteOutcomeUnknown):
+            asyncio.run(agent.process_booking("trv_meridian_demo", None, target,
+                                              authorization_subject=SUB))
+        assert recorded.rows[0]["authorization_decision"] == "error"
+        return
     outcome = asyncio.run(agent.process_booking("trv_meridian_demo", None, target,
                                                 authorization_subject=SUB))
 

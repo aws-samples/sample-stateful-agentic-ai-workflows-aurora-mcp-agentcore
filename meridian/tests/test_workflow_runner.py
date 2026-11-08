@@ -220,6 +220,25 @@ async def test_a_lost_hold_reply_resumes_the_same_request_on_a_new_worker():
     assert [e["status"] for e in world.lease.executions] == ["paused", "failed", "succeeded"]
 
 
+@pytest.mark.parametrize("code", ["hold_failed", "hold_outcome_unknown"])
+async def test_a_commit_error_response_preserves_the_pending_action_for_reconciliation(code):
+    world = World()
+    await world.runner().run(command(RECOVERY))
+
+    def lose_commit_ack(name, arguments):
+        world.gateway(name, arguments)
+        return {"result": {"content": [{"text": json.dumps({"error": code})}]}}
+
+    with pytest.raises(HoldOutcomeUnknown):
+        await world.runner(gateway=lose_commit_ack).run(command(RECOVERY, resume=True))
+    [committed] = world.gateway.receipts.values()
+    result = await world.runner("replacement").run(command(RECOVERY, resume=True))
+    assert result["hold_id"] == committed["bookingId"]
+    assert result["hold_expires_at"] == committed["expiresAt"]
+    assert len(world.gateway.receipts) == 1
+    assert len(world.gateway.calls) == 1
+
+
 async def test_a_lost_hold_reply_is_reconciled_after_the_budget_was_lowered():
     """A refusal of the retry is no proof that the first attempt did not commit.
 

@@ -124,6 +124,24 @@ def test_pending_lists_unapplied_names_and_writes_nothing(monkeypatch, tmp_path,
     assert client.commits == [] and client.executed[0].get("transactionId") is None
 
 
+def test_only_one_migration_can_be_applied_without_crossing_a_deployment_gate(
+    monkeypatch, tmp_path, capsys
+):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    _pending_run(monkeypatch, tmp_path, client, capsys)
+    assert migrations.main(["--only", "002_b.sql"]) == 0
+    names = [call["parameters"][0]["value"]["stringValue"] for call in client.executed
+             if "INSERT INTO schema_migrations" in call["sql"]]
+    assert names == ["002_b.sql"]
+
+
+def test_only_refuses_to_skip_an_earlier_pending_migration(monkeypatch, tmp_path, capsys):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    _pending_run(monkeypatch, tmp_path, client, capsys)
+    assert migrations.main(["--dry-run", "--only", "003_c.sql"]) == 2
+    assert client.commits == [] and client.rollbacks == []
+
+
 def test_pending_with_no_tracking_table_lists_everything_without_creating_it(
     monkeypatch, tmp_path, capsys
 ):

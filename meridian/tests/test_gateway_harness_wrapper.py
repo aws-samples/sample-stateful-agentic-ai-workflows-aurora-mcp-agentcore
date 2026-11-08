@@ -15,7 +15,9 @@ from tests.test_gateway_interceptor import DECOY, JORDAN, load, token_for
 @pytest.fixture
 def wrapper(monkeypatch):
     """The wrapper module, importing the production file the way the harness package does."""
-    monkeypatch.setitem(sys.modules, "lambda_function", load_interceptor())
+    interceptor = load_interceptor()
+    monkeypatch.setattr(interceptor.uuid, "uuid4", lambda: type("Id", (), {"hex": "fixed"})())
+    monkeypatch.setitem(sys.modules, "lambda_function", interceptor)
     monkeypatch.setenv("PINNED_TOOLS", "MeridianHolds___create_courtesy_hold")
     path = sources.HARNESS_LAMBDAS / "interceptor_wrapper.py"
     spec = importlib.util.spec_from_file_location("harness_interceptor_wrapper", path)

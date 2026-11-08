@@ -327,7 +327,8 @@ def test_release_deletes_each_booking_by_id_pinned_and_commits():
     released = AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
 
     assert released == 1 and rds.bookings == {"HLD-2": "trv_meridian_demo"}
-    assert rds.deleted == [("hold_requests", "HLD-1"), ("booking_lines", "HLD-1"),
+    assert rds.deleted == [("booking_action_audit", "HLD-1"), ("hold_requests", "HLD-1"),
+                           ("booking_lines", "HLD-1"),
                            ("bookings", "HLD-1")]
     assert rds.committed == ["tx-1"]
     pins = [p for q, p, _ in rds.sql if "set_config" in q]
@@ -399,7 +400,8 @@ class Remnant(FakeRds):
         return await super().execute(query, params, transaction_id)
 
 
-@pytest.mark.parametrize("table", ["bookings", "booking_lines", "hold_requests"])
+@pytest.mark.parametrize("table", [
+    "bookings", "booking_lines", "hold_requests", "booking_action_audit"])
 def test_release_raises_and_does_not_commit_when_a_row_of_the_booking_remains(table):
     rds = Remnant(table)
 

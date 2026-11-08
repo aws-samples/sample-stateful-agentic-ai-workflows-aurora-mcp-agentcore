@@ -19,6 +19,7 @@ AWS docs:
 
 import asyncio
 import json
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from backend.activity import ActivityEntry, Product, create_activity
@@ -94,6 +95,19 @@ HYDRATE_SQL = """
     FROM trip_packages
     WHERE package_id IN ({placeholders})
 """
+
+EXCLUSION_SQL = " AND NOT (search_vector @@ websearch_to_tsquery('english', %s))"
+EXCLUSION = re.compile(r'(?<!\S)-(?:"([^"]+)"|(\w+(?:-\w+)*))')
+
+
+def exclusion_query(query: str) -> str:
+    """Minus-prefixed words and quoted phrases, matched by PostgreSQL text search.
+
+    These are hard exclusions for both candidate arms. Other prose remains ranking
+    guidance. The result is a bound value, never SQL text.
+    """
+    terms = [phrase or word for phrase, word in EXCLUSION.findall(query)]
+    return " OR ".join(f'"{term}"' for term in terms)
 
 
 def candidate_limit(limit: int) -> int:
@@ -290,27 +304,35 @@ def _arms_span(
 
 
 async def _hydrate(
-    db: Any, merged: List[Dict[str, Any]]
+    db: Any, merged: List[Dict[str, Any]], query: str = ""
 ) -> Tuple[List[Dict[str, Any]], Optional[ActivityEntry]]:
     """Join every candidate to the live catalog, keeping the arms' scores."""
     if not merged:
         return merged, None
     ids = tuple(str(row["package_id"]) for row in merged)
     sql = HYDRATE_SQL.format(placeholders=", ".join(["%s"] * len(ids)))
+    excluded = exclusion_query(query)
+    parameters = ids
+    if excluded:
+        sql += EXCLUSION_SQL
+        parameters = (*ids, excluded)
     started = clock()
-    detail_rows = await db.execute(sql, ids)
+    detail_rows = await db.execute(sql, parameters)
     ms = elapsed_ms(started)
     by_id = {str(row["package_id"]): dict(row) for row in detail_rows}
     hydrated = []
     for candidate in merged:
+        details = by_id.get(str(candidate["package_id"]))
+        if details is None:
+            continue
         scores = {
             key: candidate[key] for key in ("similarity", "lexical_score") if key in candidate
         }
-        hydrated.append({**candidate, **by_id.get(str(candidate["package_id"]), {}), **scores})
+        hydrated.append({**details, **scores})
     span = _span(
         "search", "Catalog card details hydrated",
         details=f"{len(detail_rows)} candidates joined to durations, places left and highlights",
-        sql=display_sql(sql, ids), ms=ms,
+        sql=display_sql(sql, parameters), ms=ms,
     )
     return hydrated, span
 
@@ -438,7 +460,7 @@ async def retrieval_rows(
     }
     spans.append(_arms_span(query, vector, pool, counts, arms_ms))
 
-    hydrated, hydrate_span = await _hydrate(db, merged)
+    hydrated, hydrate_span = await _hydrate(db, merged, query)
     eligible, gate_span = _gate(hydrated, query)
     spans.extend(span for span in (hydrate_span, gate_span) if span)
     counts["eligible"] = len(eligible)

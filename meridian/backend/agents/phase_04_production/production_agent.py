@@ -350,10 +350,28 @@ def _outcome_unknown(
     error: Exception, reported: Optional[RuntimeDecision], write: str, progress: TurnProgress
 ) -> bool:
     """Whether the Runtime may have run the write without reporting it or its refusal."""
-    refused = reported is not None and bool(getattr(reported, f"{write}_refused"))
+    refused = reported is not None and _definitive_refusal(reported, write)
     if refused or isinstance(error, CallerCredentialError):
         return False
     return progress.may_have_run
+
+
+def _definitive_refusal(decision: RuntimeDecision, write: str) -> bool:
+    """Only evidence of a refusing layer establishes that an action did not run."""
+    tool = "create_courtesy_hold" if write == "hold" else "confirm_booking"
+    from backend.audit_vocabulary import CODE_CLASSES
+
+    audit = read_turn(decision).audit
+    named_guard = any(call.tool == tool and call.refusal_code in CODE_CLASSES
+                      for call in audit.tool_calls or [])
+    return decision.policy_decision == "deny" or bool(write_refusal(audit, tool)) or named_guard
+
+
+def _reported_attempt(decision: RuntimeDecision, write: str) -> bool:
+    tool = "create_courtesy_hold" if write == "hold" else "confirm_booking"
+    return bool(getattr(decision, f"{write}_refused")) or any(
+        call.tool == tool for call in read_turn(decision).audit.tool_calls or []
+    )
 
 
 # What the log says when a turn's audit row is lost; each line ends with the turn's ids.
@@ -756,6 +774,12 @@ class ProductionAgent:
             raise
         turn = read_turn(decision)
         read.audit = turn.audit
+        write = GOVERNED_WRITES.get(operation)
+        if (write and _reported_attempt(decision, write) and not getattr(decision, write)
+                and not _definitive_refusal(decision, write)):
+            error = RuntimeTurnError(f"{write}_outcome_unknown", decision)
+            await self._audit_failed_turn(read, traveler_id, operation, error)
+            raise WriteOutcomeUnknown(write) from error
         return decision, turn.spans
 
     def _forward_turn(self, decision: RuntimeDecision, spans: List[Dict[str, Any]]) -> None:

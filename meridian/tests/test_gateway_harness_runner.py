@@ -13,6 +13,7 @@ import pytest
 from scripts.gateway_harness import guards, runner
 from scripts.gateway_harness import resources as res
 from scripts.gateway_harness.verdicts import DECOY, JORDAN
+from tests.jwt_support import access_token
 from tests.gateway_harness_fakes import (
     ACCOUNT,
     REGION,
@@ -34,7 +35,7 @@ ENV = {
 }
 NAME = "meridian-throwaway-00000000"
 RUN_ID = "00000000"
-TOKENS = {"jordan": "tok-jordan-SECRET", "decoy": "tok-decoy-SECRET"}
+TOKENS = {"jordan": access_token(JORDAN), "decoy": access_token(DECOY, sub="sub-decoy")}
 
 
 def logged_event(method, tool=None):

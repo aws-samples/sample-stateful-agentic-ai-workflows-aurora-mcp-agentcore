@@ -4,7 +4,9 @@ A courtesy hold releases itself when it expires, but a confirmed booking never
 does: it counts against the package's capacity for good, which is the point of
 confirming it. After a few rehearsals of the "bring it home" beat the Tokyo
 package would refuse new holds with ``insufficient_inventory``. This removes
-the demo traveler's bookings, their lines and their hold-request identities.
+the demo traveler's bookings, their lines, hold-request identities and associated
+action audit records.
+Capture receipts before resetting; this administrative deletion removes commit evidence.
 Journeys and snapshots stay, so System evidence keeps its history.
 
 Usage:
@@ -57,7 +59,8 @@ async def release(
             f"  {row['booking_id']}  {row['status']:<10} ${row['total_amount']}  {row['created_at']}"
         )
     if dry_run:
-        console.print(f"Dry run: {len(rows)} booking(s) would be released.")
+        console.print(
+            f"Dry run: {len(rows)} booking(s) and their action audit records would be deleted.")
         return len(rows)
     tx = client.begin_transaction()
     try:
@@ -71,7 +74,7 @@ async def release(
             )
             if not current:
                 raise RuntimeError("A selected booking changed; retry the dry run before release.")
-            for table in ("hold_requests", "booking_lines", "bookings"):
+            for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
                 await client.execute(
                     f"DELETE FROM {table} WHERE booking_id = %s",
                     (selected,), transaction_id=tx,
@@ -80,7 +83,8 @@ async def release(
     except BaseException:
         client.rollback_transaction(tx)
         raise
-    console.print(f"Released {len(rows)} booking(s) for {traveler_id}.")
+    console.print(
+        f"Deleted {len(rows)} booking(s) and their action audit records for {traveler_id}.")
     return len(rows)
 
 

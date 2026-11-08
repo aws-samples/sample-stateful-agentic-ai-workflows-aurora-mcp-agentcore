@@ -134,3 +134,12 @@ def caller_from_request(
             "authorization", "The request names a different traveler than the signed-in caller."
         )
     return traveler_id, token
+
+
+def subject_from_token(token: str) -> str:
+    """Subject from the same access token the Runtime authorizer verified."""
+    traveler_from_token(token)
+    subject = _claims(token).get("sub")
+    if not isinstance(subject, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", subject):
+        raise CallerRefused("authorization", "The forwarded access token was refused: subject.")
+    return subject

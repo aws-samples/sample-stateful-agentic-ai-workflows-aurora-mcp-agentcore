@@ -104,7 +104,8 @@ def test_the_tool_schema_requires_the_pinned_traveler_and_the_program():
     tools = {t["name"]: t for t in json.loads((TARGET / "tool-schema.json").read_text())}
     schema = tools["loyalty_balance"]["inputSchema"]
     assert schema["required"] == ["travelerId", "program"]
-    assert list(schema["properties"]) == ["travelerId", "program"]
+    assert list(schema["properties"]) == [
+        "travelerId", "program", "verifiedSubject", "authorizationRef"]
     assert schema["additionalProperties"] is False
 
 

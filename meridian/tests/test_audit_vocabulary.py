@@ -142,6 +142,7 @@ def test_other_texts_are_not_identity_refusals(text):
 
 # Each code classified from the code that raises it, as the Task 13 fix report's table records.
 EXPECTED_CLASSES = {
+    "caller_identity_missing": "identity_check",
     "execution_lease_lost": "error",
     "insufficient_inventory": "business_rule",
     "invalid_package_inventory": "error",

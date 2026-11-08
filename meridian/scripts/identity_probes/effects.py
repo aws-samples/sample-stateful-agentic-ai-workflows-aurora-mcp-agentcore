@@ -47,7 +47,7 @@ BOOKING_PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
                    "set_config('app.current_traveler_id', %s, true), "
                    "set_config('app.agent_type', %s, true)")
 COUNT_BOOKING_SQL = "SELECT COUNT(*) AS n FROM {table} WHERE booking_id = %s"
-RELEASE_TABLES = ("hold_requests", "booking_lines", "bookings")
+RELEASE_TABLES = ("booking_action_audit", "hold_requests", "booking_lines", "bookings")
 UNSCOPED_TABLES = ("traveler_access_audit", "journey_threads", "hold_requests",
                    "workflow_snapshots", "journey_executions")
 VISIBILITY_SQL = (

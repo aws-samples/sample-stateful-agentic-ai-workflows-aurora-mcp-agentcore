@@ -30,6 +30,15 @@ The resources are declared in
 The AgentCore CLI deploys them as one CloudFormation stack,
 `AgentCore-meridianv2-default`.
 
+## Current booking and caller-audit release
+
+Follow [DAT307 release gates](DAT307_RELEASE.md) for migrations 026-029. Prepare 026-028 before
+deploying this code. Deploy tool schemas before the revised JWT binding policy, and verify
+that both Runtimes, the holds Lambda and the interceptor agree on authentication mode. The
+interceptor binds traveler and subject; the policy checks both principal tags. Apply 029 only
+after the new Lambda is serving all booking traffic. Old Lambda code cannot use the tightened
+booking grants.
+
 ## Prerequisites
 
 - The Aurora database is prepared (schema, migrations and seed data) as in the

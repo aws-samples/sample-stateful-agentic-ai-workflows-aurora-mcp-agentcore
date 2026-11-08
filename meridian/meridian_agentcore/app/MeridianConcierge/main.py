@@ -37,7 +37,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from opentelemetry import trace
 from strands.tools.mcp import MCPClient
 
-from caller_identity import CallerRefused, auth_mode, caller_from_request
+from caller_identity import CallerRefused, auth_mode, caller_from_request, subject_from_token
 from concierge_definition import (
     WORKFLOW_ONLY_TOOLS,
     TravelerPinHook,
@@ -260,7 +260,8 @@ def restore_failed_span(span: dict) -> dict:
 
 
 def turn_context(
-    payload: dict, traveler_id: str | None = None, gateway_auth: str = "SigV4"
+    payload: dict, traveler_id: str | None = None, gateway_auth: str = "SigV4",
+    verified_subject: str | None = None,
 ) -> tuple[TurnContext, dict | None, dict | None]:
     """The authorized turn plus the hold or booking terms the traveler confirmed, if any.
 
@@ -278,6 +279,7 @@ def turn_context(
         policy_mode=POLICY_MODE,
         booking_confirmed=bool(payload.get("booking_confirmed")) and booking_target is not None,
         gateway_auth=gateway_auth,
+        verified_subject=verified_subject,
     )
     return turn, hold_target, booking_target
 
@@ -677,7 +679,8 @@ async def run(payload: dict, headers: dict | None = None):
     proven_traveler, token = caller_from_request(payload, headers, mode)
     watchdog = TurnWatchdog(IDLE_LIMIT_SECONDS, MAX_TURN_SECONDS, KEEPALIVE_SECONDS)
     context, hold_target, booking_target = turn_context(
-        payload, proven_traveler, GATEWAY_AUTH_LABELS[mode]
+        payload, proven_traveler, GATEWAY_AUTH_LABELS[mode],
+        subject_from_token(token) if token else None,
     )
     queue: asyncio.Queue = asyncio.Queue()
     hooks = TraceHooks(queue, context)

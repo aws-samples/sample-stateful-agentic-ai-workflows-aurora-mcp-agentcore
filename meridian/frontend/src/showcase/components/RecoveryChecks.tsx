@@ -26,9 +26,9 @@ function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Chec
     return {
       ...check, status: 'Already placed', tone: 'observed',
       description: 'The resumed step found the hold its saved request had already placed in '
-        + 'Amazon Aurora, so it did not call the Gateway again. Only a call Cedar allowed can '
-        + 'place a hold, but that earlier attempt never reported back, so its decision is not '
-        + 'in this trace.',
+        + 'Amazon Aurora, so it did not call the Gateway again. The saved booking proves the '
+        + 'hold committed. This recovery trace does not independently prove the earlier '
+        + 'policy decision; correlate the action audit with the service logs.',
       facts: [['Found in', foundIn], ['Booking', field(span, 'hold_id') || 'Not returned'],
         ['Source', 'Current recovery workflow trace']],
     };
@@ -38,15 +38,15 @@ function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Chec
   const reason = field(span, 'gateway_error');
   const facts: [string, string][] = span ? [
     ...(identityRefused ? [['Refused by', 'Gateway identity check'] as [string, string]] : [
-      ['Policy', field(span, 'cedar_policy') || 'Not returned'],
+      ['Configured policy', field(span, 'configured_policy') || field(span, 'cedar_policy') || 'Not returned'],
       ['Mode', field(span, 'policy_mode') || 'Not returned'],
     ] as [string, string][]),
-    ['Source', 'Current recovery gateway trace'],
+    ['Source', field(span, 'policy_evidence') || 'Application recovery trace'],
     ...(reason ? [['Returned reason', reason] as [string, string]] : []),
   ] : [];
   if (decision === 'allow' && span?.status === 'ok') {
-    return { ...check, status: 'Cedar allowed', tone: 'observed', facts,
-      description: 'The gateway permitted this hold call. Inspect the booking record separately to verify the write.' };
+    return { ...check, status: 'Target returned a result', tone: 'observed', facts,
+      description: 'The application infers permission from the target response. This is not a service policy receipt. Inspect the action audit and native service logs to verify the decision and commit.' };
   }
   if (decision === 'deny' && span?.status === 'denied') {
     return { ...check, status: 'Cedar denied', tone: 'denied', facts,

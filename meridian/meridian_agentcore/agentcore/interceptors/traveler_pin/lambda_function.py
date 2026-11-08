@@ -8,15 +8,17 @@ pre-token-generation trigger copied from Aurora's ``traveler_identity_bindings``
 replaced by that claim. A call that carries no usable claim is refused with a tool error the MCP
 client understands; nothing reaches the target.
 
-Cheap checks run anyway, so a request that bypassed validation still cannot get a forged traveler
-through when the optional environment is configured: the token must be well-formed base64url JWT
+Shape and claim checks supplement the Gateway authorizer: the token must be well-formed JWT
 text, carry exactly one ``Authorization: Bearer`` header (any case of the name; two are refused as
 ``ambiguous``), have ``token_use`` equal to ``access`` and a numeric ``exp`` in the future
 (``expired``), and, when ``EXPECTED_CLIENT_ID`` or ``EXPECTED_ISSUER`` is set to a non-empty value,
-a matching ``client_id`` or ``iss``. None of these replaces signature verification.
+a matching ``client_id`` or ``iss``. These checks do not verify signatures. The Gateway authorizer
+and restricted interceptor invocation permissions are required. Direct privileged invocation is
+a trusted boundary.
 
-The function fails closed: any unexpected input or error becomes a refusal. It logs reason codes
-and exception class names only, never a token and never a claim value.
+The function fails closed: unexpected input or errors become refusals. It logs reason codes,
+exception classes and bounded binding identifiers (subject, requested traveler, bound traveler
+and a correlation reference). It never logs tokens or other claims.
 
 Configuration: ``PINNED_TOOLS`` (comma-separated tool names) replaces the default Meridian set; the
 throwaway-Gateway harness uses it for its echo tool. The interceptor must be configured with
@@ -35,6 +37,7 @@ import math
 import os
 import re
 import time
+import uuid
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger()
@@ -45,6 +48,7 @@ TOOL_CALL_METHOD = "tools/call"
 TRAVELER_ARGUMENT = "travelerId"
 TRAVELER_CLAIM = "traveler_id"
 TRAVELER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
+SUBJECT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 MAX_TOKEN_CHARS = 8192
 TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 BEARER_VALUE = re.compile(r"bearer +(\S+)", re.IGNORECASE)
@@ -63,6 +67,7 @@ REFUSALS = {
     "ambiguous": "the request carries more than one Authorization header.",
     "expired": "the access token has expired or carries no expiry.",
     "claim": "the access token carries no single traveler for this system.",
+    "subject": "the access token carries no usable subject.",
     "internal": "the identity check could not be completed.",
 }
 
@@ -211,7 +216,26 @@ def pin_traveler(event: Any) -> Dict[str, Any]:
         return _output(body)
     traveler_id = traveler_from_headers(request.get("headers"))
     pinned_arguments = {**arguments, TRAVELER_ARGUMENT: traveler_id}
+    pinned_arguments.update(_audit_binding(request, name, arguments, traveler_id))
     return _output({**body, "params": {**params, "arguments": pinned_arguments}})
+
+
+def _audit_binding(request: dict, name: str, arguments: dict, traveler_id: str) -> dict:
+    subject = _claims(_bearer(request.get("headers"))).get("sub")
+    if not isinstance(subject, str) or not SUBJECT_PATTERN.fullmatch(subject):
+        raise Refusal("subject")
+    reference = uuid.uuid4().hex
+    attempted = arguments.get(TRAVELER_ARGUMENT)
+    # Keep identifiers needed to investigate a rewritten call, never arbitrary input or tokens.
+    attempted = attempted if isinstance(attempted, str) and (
+        TRAVELER_ID_PATTERN.fullmatch(attempted)
+    ) else None
+    logger.info(json.dumps({
+        "event": "traveler_binding", "tool": name, "verified_subject": subject,
+        "requested_traveler": attempted, "bound_traveler": traveler_id,
+        "authorization_ref": reference,
+    }))
+    return {"verifiedSubject": subject, "authorizationRef": reference}
 
 
 def _request_id(event: Any) -> Optional[Any]:

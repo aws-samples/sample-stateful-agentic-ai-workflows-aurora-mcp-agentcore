@@ -135,15 +135,17 @@ def test_a_tool_that_takes_a_traveler_is_pinned_or_has_no_cedar_permit():
 
 
 def decide(statements, *, tool=HOLD, tag="trv_demo_decoy", arg="trv_demo_decoy", **overrides):
-    entity_tags = {"traveler_id": tag} if tag is not None else {}
+    entity_tags = {"sub": "sub-1", **({"traveler_id": tag} if tag is not None else {})}
     entities = [
         {"uid": {"type": "AgentCore::OAuthUser", "id": "sub-1"}, "attrs": {}, "parents": [],
          "tags": entity_tags},
         {"uid": {"type": "AgentCore::Gateway", "id": GATEWAY}, "attrs": {}, "parents": []},
         {"uid": {"type": "AgentCore::Action", "id": tool}, "attrs": {}, "parents": []},
     ]
-    arguments = {"travelerConfirmed": True, "holdMinutes": 60, "travelers": 2,
+    arguments = {"verifiedSubject": "sub-1", "travelerConfirmed": True,
+                 "holdMinutes": 60, "travelers": 2,
                  "totalCents": 10, "budgetCeilingCents": 100, **overrides}
+    arguments = {key: value for key, value in arguments.items() if value is not None}
     if arg is not None:
         arguments["travelerId"] = arg
     request = {
@@ -274,3 +276,8 @@ def test_the_release_permit_permits_nothing_else():
     only_release = {RELEASE_POLICY: policies("iam")[RELEASE_POLICY]}
     assert decide(only_release, tool=HOLD, tag="trv_a", arg="trv_a", **IDS) == DENY
     assert decide(only_release, tool=BOOKING, tag="trv_a", arg="trv_a", **IDS) == DENY
+
+
+@pytest.mark.parametrize("subject", ["forged-subject", "", None])
+def test_valid_traveler_cannot_forge_or_omit_the_audited_subject(subject):
+    assert decide(policies("jwt"), tool=HOLD, verifiedSubject=subject) == DENY

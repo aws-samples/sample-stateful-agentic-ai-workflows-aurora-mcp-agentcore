@@ -355,19 +355,37 @@ def rerank_results(payload: dict) -> list[dict]:
     ]
 
 
-def _hydrate(merged: list[dict]) -> list[dict]:
+EXCLUSION_SQL = " AND NOT (search_vector @@ websearch_to_tsquery('english', %s))"
+EXCLUSION = re.compile(r'(?<!\S)-(?:"([^"]+)"|(\w+(?:-\w+)*))')
+
+
+def exclusion_query(query: str) -> str:
+    """Hard exclusions for both arms, matching backend.retrieval.hybrid."""
+    terms = [phrase or word for phrase, word in EXCLUSION.findall(query)]
+    return " OR ".join(f'"{term}"' for term in terms)
+
+
+def _hydrate(merged: list[dict], query: str = "") -> list[dict]:
     """Join every candidate to the live catalog, keeping the arms' scores (hybrid._hydrate)."""
     if not merged:
         return merged
     ids = tuple(str(found["package_id"]) for found in merged)
     sql = HYDRATE_SQL.format(placeholders=", ".join(["%s"] * len(ids)))
-    by_id = {str(found["package_id"]): dict(found) for found in execute(sql, ids)}
+    excluded = exclusion_query(query)
+    parameters = ids
+    if excluded:
+        sql += EXCLUSION_SQL
+        parameters = (*ids, excluded)
+    by_id = {str(found["package_id"]): dict(found) for found in execute(sql, parameters)}
     hydrated = []
     for candidate in merged:
+        details = by_id.get(str(candidate["package_id"]))
+        if details is None:
+            continue
         scores = {
             key: candidate[key] for key in ("similarity", "lexical_score") if key in candidate
         }
-        hydrated.append({**candidate, **by_id.get(str(candidate["package_id"]), {}), **scores})
+        hydrated.append({**details, **scores})
     return hydrated
 
 
@@ -454,7 +472,7 @@ def hybrid_trip_search(args: dict) -> dict:
     semantic = execute(SEMANTIC_SQL, (vector, pool)) if vector is not None else []
     lexical = execute(LEXICAL_SQL, (query, pool))
     merged = merge_by_package(semantic, lexical)
-    hydrated = _hydrate(merged)
+    hydrated = _hydrate(merged, query)
     eligible = keep_eligible(hydrated, parse_price_ceiling(query), places_by_package(hydrated))
     for position, found in enumerate(eligible):
         found["pre_rerank_position"] = position

@@ -191,7 +191,29 @@ BRANCHING_FILES = {
     "meridian_agentcore/app/MeridianConcierge/main.py",
     "scripts/agentcore_caller.py",
     "scripts/render_agentcore_config.py",
+    "meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py",
 }
+
+
+def test_holds_target_accepts_bound_subject_only_in_jwt_mode(mode, monkeypatch):
+    from tests.test_holds_lambda import holds, _context, _hold_args, _ledger_api
+
+    api = _ledger_api({})
+    monkeypatch.setattr(holds, "RDS", api)
+    monkeypatch.setattr(holds, "CONFIG", holds.AuroraConfig("local", "local", "local"))
+    monkeypatch.setattr(holds, "SUBJECT", ("aws_iam", "workload", "local-role"))
+    args = {**_hold_args(), "verifiedSubject": "sub-test"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]
+    assert holds.INVOCATION.get() is None
+    index = next(i for i, sql in enumerate(api.statements)
+                 if "INSERT INTO booking_action_audit" in sql)
+    assert api.parameters[index]["provider"] == ("cognito" if mode == "jwt" else "aws_iam")
+    if mode == "jwt":
+        assert api.parameters[index]["verified_subject"] == "sub-test"
+        result = holds.lambda_handler(
+            _hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+        assert result == {"error": "caller_identity_missing"}
 
 
 def test_only_the_files_with_a_row_above_branch_on_the_mode():
@@ -199,11 +221,15 @@ def test_only_the_files_with_a_row_above_branch_on_the_mode():
     defining = {"backend/agentcore/auth_mode.py",
                 "meridian_agentcore/app/MeridianConcierge/caller_identity.py"}
     found = set()
-    for folder in ("backend", "scripts", "meridian_agentcore/app"):
+    for folder in ("backend", "scripts", "meridian_agentcore/app",
+                   "meridian_agentcore/agentcore/gateway_targets"):
         for path in (ROOT / folder).rglob("*.py"):
             relative = path.relative_to(ROOT).as_posix()
             if "/MeridianWorkflow/backend/" in relative or relative in defining:
                 continue
             if pattern.search(path.read_text()):
+                found.add(relative)
+            has_mode = 'os.getenv("MERIDIAN_AGENTCORE_AUTH"' in path.read_text()
+            if has_mode and relative not in defining:
                 found.add(relative)
     assert found == BRANCHING_FILES, json.dumps(sorted(found ^ BRANCHING_FILES))

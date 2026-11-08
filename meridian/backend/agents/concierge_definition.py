@@ -35,6 +35,7 @@ PHASES = (3, 4)
 # The argument names every surface offers: the stdio server (Phases 2 and 3), the in-process
 # tools (Phase 3) and the Gateway targets (Phase 4). tests/test_concierge_contract.py checks
 # each surface against this table.
+GATEWAY_AUDIT_ARGUMENTS = ("verifiedSubject", "authorizationRef")
 TOOL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "search_trips": ("trip_type", "max_price_per_person", "limit", "text"),
     "compare_packages": ("package_ids",),
@@ -51,7 +52,9 @@ TOOL_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "confirm_booking": (
         "travelerId", "bookingId", "totalCents", "travelerConfirmed", "budgetCeilingCents",
         "journeyRef"),
-    "release_hold": ("travelerId", "holdRequestId", "journeyId", "executionId"),
+    "release_hold": (
+        "travelerId", "holdRequestId", "journeyId", "executionId",
+    ),
 }
 
 PROMPT_CORE = (

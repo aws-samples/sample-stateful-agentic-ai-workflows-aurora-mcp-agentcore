@@ -5,6 +5,15 @@ Run from `meridian/` with the virtual environment active. Follow
 The numbered capability source lives in [backend/agents](../backend/agents/README.md);
 these shared scripts keep one stable command path for operators and CI.
 
+For migrations, list `--pending`, then dry-run and apply the first pending file with
+`--only MIGRATION.sql`. Do not run `apply_migrations.py` bare. The coordinated
+[DAT307 release](../docs/DAT307_RELEASE.md) requires deploying the updated Gateway target
+between migrations 028 and 029 on an existing installation.
+
+`check_runtime_contract.py MeridianConcierge|MeridianWorkflow` is an offline contract check.
+Run it with an isolated environment resolved from the named Runtime's `pyproject.toml`;
+the CI workflow shows the exact commands. It blocks TCP and exercises the real MCP/Strands APIs.
+
 | Step | Scripts | Effect |
 | --- | --- | --- |
 | **01 - Prepare** | `setup.sh`, `verify_installation.py`, `provision_preflight.py` | Local setup and read-only provisioning checks. Aurora provisioning and teardown use the CDK app in `infra/`. |

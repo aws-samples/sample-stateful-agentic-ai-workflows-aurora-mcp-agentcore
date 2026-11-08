@@ -63,8 +63,8 @@ you open them.
 | 1. SQL | Query | Rows from Aurora through one parameterized `search_trips` statement over the RDS Data API; code, not a model, picks the filter |
 | 2. MCP | Tools | Typed tools on the custom `meridian-concierge` MCP server: `search_trips`, package comparison, currency conversion, destination price range, region inventory and loyalty. Every value a tool sends to Aurora is a bound parameter, and the `search_trips` trace shows the statement with its values |
 | 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, chosen by one Claude Sonnet 5.5 Strands agent that holds the earlier tools. A turn stops after 45 seconds with a fixed message |
-| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) offered ten of the Gateway's eleven tools (the eleventh, `release_hold`, is for the Phase 5 workflow), a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
-| 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry. The workflow searches, holds and releases through the Gateway as the signed-in caller, and each run writes one audit row |
+| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) offered ten of the Gateway's eleven tools (the eleventh, `release_hold`, is for the Phase 5 workflow), a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and a final audit row when turn finalization completes, naming the signed-in person and reported tool outcomes |
+| 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry. The workflow searches, holds and releases through the Gateway as the signed-in caller, and completed run finalization writes its audit row |
 
 ### Prompts
 
@@ -271,11 +271,12 @@ workload), the RLS scope, the workload's IAM identity and the rows returned, and
   With the calls unknown it is `deny` when the Runtime reported a Cedar denial and otherwise
   `error`.
 
-Every Phase 4 turn that reaches the agent Runtime has one row written for it, failed turns
-included. If the row's own write fails, there is no row: the request fails with that error,
+Phase 4 attempts a final audit row for each turn that reaches the agent Runtime, including
+failed turns. A hard kill before finalization can leave no row.
+If the row's own write fails, there is no row: the request fails with that error,
 or, when the turn had already failed or was cancelled, the backend logs the lost row with the
-turn's ids. A hold or booking that was placed still says so in its reply. Phase 5 writes its
-own row for each workflow run, described below. Three Phase 4 replies do not reach the
+turn's ids. A hold or booking that was placed still says so in its reply. Phase 5 attempts its
+own final run row, described below. Three Phase 4 replies do not reach the
 Runtime and write no row: the offer to
 review a recovery, a turn with traveler context off, and the handoff to the workflow. A
 request for another traveler is refused with 403 before any agent runs, and the backend
@@ -318,6 +319,20 @@ python scripts/install_catalog_images.py ~/Downloads/meridian-art --backup ~/art
 
 The script crops and resizes each image and reports packages without artwork.
 
+## Action durability and current release
+
+[The DAT307 release guide](docs/DAT307_RELEASE.md) coordinates migrations 026-029 with the new
+Lambda, Runtime, interceptor and policy code. Booking mutations now use bounded SQL functions;
+service roles lose direct booking DML after cutover. An action audit row commits with each
+hold, confirmation or release, including a replay. It binds the booking and request identity
+to the caller subject, workload grant and service correlation IDs.
+
+Final turn audit rows and UI spans are application reports and can be absent after a hard kill.
+They are not service-issued Cedar receipts. An ambiguous commit returns an unknown outcome;
+retry the same intent and read the saved booking before deciding whether a new action is needed.
+Snapshot recovery and idempotency are separate guarantees. A repeated request never refreshes
+its original hold expiry.
+
 ## Governance boundary
 
 The HTTP layer binds each request to a traveler before workload authorization
@@ -333,7 +348,7 @@ mode. Set `CORS_ORIGINS` before exposing the API to a network.
 
 Traveler-scoped operations and gateway actions pass these controls:
 
-1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). The workload grant is checked for that IAM principal. AgentCore Identity is used only inbound: in `jwt` mode its JWT authorizer verifies the signed-in person's token at both Runtimes and the Gateway (see [Who the traveler is](#who-the-traveler-is)).
+1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). The workload grant is checked for that IAM principal. In `jwt` mode the configured JWT authorizers verify the signed-in person's token at both Runtimes and the Gateway (see [Who the traveler is](#who-the-traveler-is)).
 2. `traveler_identity_bindings` in Aurora authorizes that workload for the requested traveler. A missing grant fails before any RLS scope is set.
 3. Aurora row-level security filters rows to that traveler under the restricted `meridian_app` role.
 4. AgentCore Gateway serves the tools over MCP (signed with AWS credentials in `iam` mode, with the caller's Amazon Cognito access token in `jwt` mode), and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. A release is permitted only when the call names a hold request and a journey. Any other call is denied by default.
@@ -341,7 +356,7 @@ Traveler-scoped operations and gateway actions pass these controls:
 
    - **Create and confirm.** Cedar judged the ceiling the caller sent, so before a new hold or a first confirmation the Lambda derives the ceiling again from the traveler's saved preferences, under that traveler's RLS scope, and refuses a larger total with `budget_ceiling_exceeded`. A retry of a request that already committed replays without new price or budget checks. The Phase 4 concierge and the Phase 5 workflow both place holds through this tool; the workflow also passes its request ID, booking ID and execution ID so the Lambda can check the worker's lease.
    - **Release.** `release_hold` finds the hold by its request and journey inside the traveler's scope and releases it only while it is held, so another traveler's hold reads as not found; when the workflow gives a hold back it also passes its execution ID, and the Lambda refuses the release if the lease is lost.
-   - **Workflow.** The workflow also searches the catalog through the Gateway, and each run writes one audit row that names the signed-in person.
+   - **Workflow.** The workflow also searches the catalog through the Gateway, and completed run finalization writes its audit row that names the signed-in person.
 
 The runtime pins the traveler ID, the confirmation flag, the budget ceiling and
 the journey reference on every hold and confirmation call from the request the

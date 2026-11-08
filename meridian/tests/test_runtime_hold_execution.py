@@ -155,6 +155,7 @@ def test_platform_confirmation_is_pinned_and_a_confirmed_result_is_narrated():
     assert args == {
         "bookingId": "HLD-9", "totalCents": 499800, "travelerId": "trv_meridian_demo",
         "travelerConfirmed": True, "budgetCeilingCents": 640000, "journeyRef": "concierge:conv-1",
+        "authorizationRef": tool_use_id,
     }
     assert hooks.booking["bookingId"] == "HLD-9"
     assert "HLD-9 is confirmed" in outcome and "no payment was taken" in outcome
@@ -271,13 +272,15 @@ def test_a_confirmed_write_whose_call_raises_is_an_error_in_the_audit_row(monkey
                "conversation_id": "conv-hook", "budget_ceiling_cents": 640000, **confirmed}
     yielded, _seen = run_concierge(monkeypatch, ScriptedModel(), Gateway(call=call), payload)
 
-    row, raised = stored_after(monkeypatch, yielded, operation)
+    from backend.agents.phase_04_production.write_outcome import WriteOutcomeUnknown
+
+    row, raised = stored_after(monkeypatch, yielded, operation, error_type=WriteOutcomeUnknown)
 
     message = f"Tool {tool} could not run (MCPClientInitializationError): {FAILED_TO_START}"
     assert row["tool_calls"] == [ToolCall(tool.split("___")[1], "error")]
     assert row["authorization_decision"] == "error"
     assert row["turn_error"] == f"ToolSetupError: {message}"
-    assert str(raised) == f"AgentCore Runtime error: {message}"
+    assert str(raised.__cause__) == f"AgentCore Runtime error: {message}"
 
 
 class _ResultSpy:

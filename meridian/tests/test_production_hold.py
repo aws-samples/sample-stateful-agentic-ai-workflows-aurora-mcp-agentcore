@@ -393,6 +393,23 @@ async def test_a_failure_after_sending_with_no_report_says_the_outcome_is_unknow
     assert answered.detail == UNKNOWN_REPLY[route]
 
 
+@pytest.mark.parametrize("route", ["hold", "booking"])
+@pytest.mark.parametrize("suffix", ["outcome_unknown", "failed"])
+@pytest.mark.parametrize("reply_completes", [False, True])
+async def test_a_target_error_is_not_proof_that_the_write_did_not_commit(
+    monkeypatch, route, suffix, reply_completes
+):
+    def failed_target(agent, _route):
+        event = {"type": route, route: None, "refused": f"{route}_{suffix}",
+                 "error": f"{route}_{suffix}", "policyDecision": None}
+        ending = {"type": "result", "message": "The call failed."} if reply_completes else THROTTLED
+        stream(agent, sse(STARTED, event, ending))
+
+    route_failing(monkeypatch, route, placed(route), failed_target)
+    answered = await answer(route)
+    assert answered.detail == UNKNOWN_REPLY[route]
+
+
 @pytest.mark.parametrize("case", list(NEVER_RAN))
 @pytest.mark.parametrize("route", ["hold", "booking"])
 async def test_a_failure_before_the_runtime_ran_says_it_could_not_be_completed(

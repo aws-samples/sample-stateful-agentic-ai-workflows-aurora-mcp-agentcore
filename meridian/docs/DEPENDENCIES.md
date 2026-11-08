@@ -19,9 +19,25 @@ hash check rejects `bedrock-agentcore`'s unpinned dependencies, which the main l
 The version match covers the SDK only. The Runtime tests still run on the main lock's `mcp`
 1.30.0 and `botocore` 1.43.72, while the Runtime ships `mcp` 2.3.0 and `botocore` 1.43.107
 (`meridian_agentcore/app/MeridianConcierge/pyproject.toml`, whose `constraint-dependencies` pin the
-rest of its set; there is no lock file with hashes). They cannot run on the Runtime's own set yet:
-the Runtime test modules import the backend (`fastapi`, and `backend.mcp`, which uses the `mcp` 1.x
-`FastMCP` that `mcp` 2.x removed).
+rest of its set; there is no lock file with hashes). The backend-integrated Runtime tests need the backend's 1.x MCP server. A separate
+`runtime-contracts` CI job now installs each Runtime's own full constraints in an isolated
+environment, verifies the installed versions and runs `scripts/check_runtime_contract.py`.
+It exercises MCP stdio listing/calls, trusted argument binding, hold result/uncertainty handling,
+and Strands Graph pause/resume over retained storage. It blocks TCP in both processes.
+This complements the backend suite; live Gateway and Aurora acceptance are still required.
+
+## Audit status - November 7, 2026
+
+- Backend plus Runtime-test lock: no known vulnerabilities reported by `pip_audit`.
+- Both complete Runtime manifests: no known vulnerabilities reported by the separate auditor.
+- Frontend: six moderate transitive development-tool findings, rooted in `minimatch`.
+- AgentCore CDK: four low and eighteen moderate findings across `deepmerge`, `glob`, `minimatch`
+  and their dependents. These are synthesis/test tooling, not packages in the Python Runtime.
+- Both Node projects pass the repository's high/critical severity gate. The findings above
+  remain visible; a passing gate does not mean an empty advisory report. Do not use
+  `npm audit fix --force`, which proposes breaking Jest/parser downgrades. Resolve them through
+  a compatible parent-package/CLI update and revalidate synthesis, preserving schema 54 until
+  the AgentCore CLI is upgraded.
 
 ## CDK projects - November 3, 2026
 

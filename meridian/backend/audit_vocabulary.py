@@ -25,7 +25,7 @@ trace entries that follow it).
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional
 
 from backend.security.redaction import mask_secrets
@@ -69,6 +69,7 @@ WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
 # fault, not the caller's argument. tests/test_holds_lambda.py keeps the keys equal to the
 # Lambda's BUSINESS_ERRORS.
 CODE_CLASSES = {
+    "caller_identity_missing": IDENTITY_CHECK,
     "execution_lease_lost": ERROR,
     "insufficient_inventory": BUSINESS_RULE,
     "invalid_package_inventory": ERROR,
@@ -101,6 +102,7 @@ IDENTITY_REFUSAL_REASONS = {
     "the request carries more than one Authorization header.": "ambiguous",
     "the access token has expired or carries no expiry.": "expired",
     "the access token carries no single traveler for this system.": "claim",
+    "the access token carries no usable subject.": "subject",
     "the identity check could not be completed.": "internal",
 }
 
@@ -122,6 +124,10 @@ class ToolCall:
     refused_by: Optional[str] = None
     refusal_code: Optional[str] = None
     access_audit_id: Optional[str] = None
+    # Correlation supplements the verdict; older callers compare verdicts without these IDs.
+    call_id: Optional[str] = field(default=None, compare=False)
+    action_audit_id: Optional[str] = field(default=None, compare=False)
+    gateway_request_id: Optional[str] = field(default=None, compare=False)
 
     def as_json(self) -> Dict[str, Any]:
         """The element stored in ``agent_audit_log.tool_calls``."""
@@ -131,11 +137,15 @@ class ToolCall:
             "refused_by": self.refused_by,
             "refusal_code": self.refusal_code,
             "access_audit_id": self.access_audit_id,
+            **{key: getattr(self, key) for key in CALL_REFERENCES if getattr(self, key)},
         }
 
 
 def _optional_text(value: Any) -> bool:
     return value is None or (isinstance(value, str) and bool(value))
+
+
+CALL_REFERENCES = ("call_id", "action_audit_id", "gateway_request_id")
 
 
 def tool_call_problem(call: Any) -> Optional[str]:
@@ -154,6 +164,12 @@ def tool_call_problem(call: Any) -> Optional[str]:
         return "refusal_code and access_audit_id must be None or a non-empty text"
     if (call.refused_by == WORKLOAD_GRANT) != (call.access_audit_id is not None):
         return "access_audit_id is required for, and only for, a workload_grant refusal"
+    return _call_reference_problem(call)
+
+
+def _call_reference_problem(call: ToolCall) -> Optional[str]:
+    if any(not _optional_text(getattr(call, key)) for key in CALL_REFERENCES):
+        return "call references must be None or non-empty text"
     return None
 
 

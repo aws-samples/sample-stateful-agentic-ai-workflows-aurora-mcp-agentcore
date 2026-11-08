@@ -95,7 +95,10 @@ def test_the_gateway_offers_the_argument_names_the_contract_lists():
     for name, schema in gateway_schemas().items():
         short = name.split("___")[-1]
         offered = set(schema["inputSchema"]["properties"])
-        assert offered == set(definition.TOOL_ARGUMENTS[short]), name
+        expected = set(definition.TOOL_ARGUMENTS[short])
+        if short in definition.TRAVELER_TOOLS:
+            expected.update(definition.GATEWAY_AUDIT_ARGUMENTS)
+        assert offered == expected, name
 
 
 def test_every_deployed_traveler_tool_requires_the_pinned_argument_because_cedar_names_it():

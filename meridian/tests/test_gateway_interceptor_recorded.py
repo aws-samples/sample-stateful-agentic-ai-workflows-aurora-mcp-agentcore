@@ -33,7 +33,7 @@ def segment(value: dict) -> str:
 
 
 def token_for(**claims) -> str:
-    payload = {"token_use": "access", "exp": int(time.time()) + 3600, **claims}
+    payload = {"sub": "sub-test", "token_use": "access", "exp": int(time.time()) + 3600, **claims}
     return f"{segment({'alg': 'RS256'})}.{segment(payload)}.signature"
 
 
@@ -70,14 +70,21 @@ def test_a_decoy_token_gets_the_rewrite_shape_the_gateway_accepted():
     assert set(output["mcp"]) == {"transformedGatewayRequest"}
     assert set(output["mcp"]["transformedGatewayRequest"]) == {"body"}
     body = output["mcp"]["transformedGatewayRequest"]["body"]
-    assert body["params"]["arguments"] == {"note": "control", "travelerId": DECOY}
+    assert body["params"]["arguments"] == {
+        "note": "control", "travelerId": DECOY, "verifiedSubject": "sub-test",
+        "authorizationRef": body["params"]["arguments"]["authorizationRef"],
+    }
+    assert len(body["params"]["arguments"]["authorizationRef"]) == 32
     assert (body["jsonrpc"], body["id"], body["method"]) == ("2.0", 1, "tools/call")
     assert body["params"]["name"] == ECHO
 
 
-def test_the_travelers_own_token_leaves_the_recorded_call_unchanged():
+def test_the_travelers_own_token_preserves_the_call_and_adds_audit_binding():
     event = load("recorded_1", token_for(traveler_id=JORDAN))
     body = interceptor.lambda_handler(event, None)["mcp"]["transformedGatewayRequest"]["body"]
+    args = body["params"]["arguments"]
+    assert args.pop("verifiedSubject") == "sub-test"
+    assert len(args.pop("authorizationRef")) == 32
     assert body == event["mcp"]["gatewayRequest"]["body"]
 
 

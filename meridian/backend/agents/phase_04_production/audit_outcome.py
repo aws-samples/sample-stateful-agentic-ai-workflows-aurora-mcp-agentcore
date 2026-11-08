@@ -35,6 +35,7 @@ from backend.audit_vocabulary import (
     ALLOWED,
     BUSINESS_RULE,
     CLASS_NAME_LIMIT,
+    CALL_REFERENCES,
     CODE_CLASSES,
     DATABASE_GUARD,
     ERROR,
@@ -59,7 +60,7 @@ from backend.tools.tool_names import bare_tool_name
 CALL_LABELS = ("call_id", "tool", "cedar_decision")
 # The labels whose text a row stores in ``tool_calls``. Text jsonb cannot store in one of them
 # makes the calls unknown, because replacing a character would invent a tool name or an id.
-STORED_LABELS = ("tool", "refusal_code", "access_audit_id")
+STORED_LABELS = ("tool", "refusal_code", "access_audit_id") + CALL_REFERENCES
 # The trace's status for a call a layer other than Cedar refused. A Cedar denial keeps the
 # Runtime's own ``denied``.
 REFUSED_STATUS = "refused"
@@ -188,7 +189,9 @@ def _call(spans: List[Span]) -> Optional[Settled]:
         found = _verdict(status, fields)
         if found is not None:
             verdict, settled_by = found, position
-    return ToolCall(bare_tool_name(tool), *verdict), settled_by
+    references = {key: fields[key] for _, _, fields in spans
+                  for key in CALL_REFERENCES if fields.get(key)}
+    return ToolCall(bare_tool_name(tool), *verdict, **references), settled_by
 
 
 def _stores_as_json(fields: Dict[str, str]) -> bool:

@@ -28,6 +28,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -39,8 +40,23 @@ PARAMETERS = (
     "/meridian/aurora/database",
 )
 APP_ROLE = "meridian_app"
+WRITE_ROLE = "meridian_gateway"
 AGENT_TYPE = "concierge_agent"
 HOLD_BACKEND = "gateway"
+INVOCATION = ContextVar("meridian_hold_invocation", default=None)
+ACTION_AUDIT_SQL = """
+INSERT INTO booking_action_audit (
+    action_audit_id, traveler_id, booking_id, journey_id, hold_request_id,
+    execution_id, operation, replayed, identity_provider, verified_subject,
+    workload_subject, access_audit_id, authorization_ref, gateway_request_id, lambda_request_id
+) VALUES (
+    :action_id, :traveler, :booking_id::TEXT,
+    (SELECT journey_id FROM hold_requests WHERE booking_id = :booking_id::TEXT),
+    (SELECT hold_request_id FROM hold_requests WHERE booking_id = :booking_id::TEXT),
+    :execution_id, :operation, :replayed, :provider, :verified_subject,
+    :workload, :access_audit_id, :authorization_ref, :gateway_request_id, :lambda_request_id
+)
+"""
 PACKAGE_SQL = (
     "SELECT package_id, name, operator, destination, region, price_per_person, "
     "durations, package_places_left(package_id) AS availability, highlights FROM trip_packages "
@@ -49,11 +65,6 @@ PACKAGE_SQL = (
 PRICE_SQL = (
     "SELECT ROUND(price_per_person * 100)::BIGINT AS unit_price_cents "
     "FROM trip_packages WHERE package_id = :package_id"
-)
-HOLD_REQUEST_SQL = (
-    "SELECT hr.booking_id, b.status, (b.hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed "
-    "FROM hold_requests hr JOIN bookings b ON b.booking_id = hr.booking_id "
-    "WHERE hr.journey_id = :journey AND hr.hold_request_id = :request_id"
 )
 REQUEST_FINGERPRINT_SQL = (
     "SELECT fingerprint FROM hold_requests "
@@ -69,7 +80,6 @@ BOOKED_PARTY_SQL = (
     "JOIN bookings b ON b.booking_id = bl.booking_id "
     "WHERE bl.booking_id = :b AND b.traveler_id = :t"
 )
-MAX_REQUEST_CHAIN = 50
 # The ceiling derivation in backend/agents/budget.py, repeated here because this
 # function deploys alone. tests/test_holds_lambda.py keeps the two in step.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
@@ -109,14 +119,14 @@ OWNED_HOLD_SQL = (
     "SELECT hr.booking_id, b.status FROM hold_requests hr "
     "JOIN bookings b ON b.booking_id = hr.booking_id "
     "WHERE hr.journey_id = :journey AND hr.hold_request_id = :request_id "
-    "AND b.traveler_id = :traveler FOR UPDATE OF b"
+    "AND b.traveler_id = :traveler"
 )
 RELEASE_SQL = (
-    "UPDATE bookings SET status = 'released' "
-    "WHERE booking_id = :booking_id AND traveler_id = :traveler AND status = 'held' "
-    "RETURNING booking_id"
+    "SELECT booking_id, replayed FROM release_courtesy_hold("
+    ":journey::TEXT, :request_id::TEXT, :traveler::TEXT)"
 )
 BUSINESS_ERRORS = (
+    "caller_identity_missing",
     "execution_lease_lost",
     "insufficient_inventory",
     "invalid_package_inventory",
@@ -177,7 +187,9 @@ def _boot() -> None:
 def _parameters(values: dict) -> list[dict]:
     params = []
     for key, value in values.items():
-        if isinstance(value, bool):
+        if value is None:
+            field = {"isNull": True}
+        elif isinstance(value, bool):
             field = {"booleanValue": value}
         elif isinstance(value, int):
             field = {"longValue": value}
@@ -210,6 +222,31 @@ def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[d
 def _transaction(operation: str, tx: str) -> None:
     method = getattr(RDS, f"{operation}_transaction")
     method(resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, transactionId=tx)
+
+
+def _business_query(statement: str, values: dict, tx: str) -> list[dict]:
+    """Use the Gateway's EXECUTE grant, then return to the scoped read role.
+
+    The common app role cannot mutate business tables or call these functions.
+    Only this service login can assume WRITE_ROLE; scope stays transaction-local.
+    A SQL error aborts the transaction and its caller rolls back the role change.
+    """
+    query(f"SET LOCAL ROLE {WRITE_ROLE}", None, tx)
+    rows = query(statement, values, tx)
+    query(f"SET LOCAL ROLE {APP_ROLE}", None, tx)
+    return rows
+
+
+class ActionOutcomeUnknown(RuntimeError):
+    """The commit was sent, but its acknowledgement did not establish the result."""
+
+
+def _commit_action(tx: str, kind: str) -> None:
+    try:
+        _transaction("commit", tx)
+    except Exception as error:
+        # A later rollback cannot undo a commit the server has already accepted.
+        raise ActionOutcomeUnknown(f"{kind}_outcome_unknown") from error
 
 
 def _rollback_quietly(tx: str) -> None:
@@ -260,8 +297,9 @@ def _check_traveler_grant(traveler_id: str, tx: str) -> dict:
     )
     allowed = bool(binding)
     decision = "allow" if allowed else "deny"
+    audit_id = f"authz_{uuid.uuid4().hex[:12]}"
     query(AUDIT_SQL, {
-        "audit_id": f"authz_{uuid.uuid4().hex[:12]}",
+        "audit_id": audit_id,
         "provider": provider,
         "subject": subject_id,
         "principal": principal,
@@ -274,7 +312,27 @@ def _check_traveler_grant(traveler_id: str, tx: str) -> dict:
         "decision": decision,
         "subject": subject_id,
         "principal": ACCOUNT.sub("<acct>", principal),
+        "access_audit_id": audit_id,
     }
+
+
+def _record_action(args: dict, operation: str, row: dict, governance: dict, tx: str) -> None:
+    """Commit attribution with the action, including when the worker loses its reply."""
+    context = INVOCATION.get() or {}
+    action_id = f"act_{uuid.uuid4().hex}"
+    _business_query(ACTION_AUDIT_SQL, {
+        "action_id": action_id, "traveler": str(args["travelerId"]),
+        "booking_id": str(row["booking_id"]), "execution_id": args.get("executionId"),
+        "operation": operation, "replayed": bool(row["replayed"]),
+        "provider": "cognito" if context.get("verified_subject") else "aws_iam",
+        "verified_subject": context.get("verified_subject"), "workload": SUBJECT[1],
+        "access_audit_id": governance["access_audit_id"],
+        "authorization_ref": args.get("authorizationRef"),
+        "gateway_request_id": context.get("gateway_request_id"),
+        "lambda_request_id": context.get("lambda_request_id"),
+    }, tx)
+    governance.update(action_audit_id=action_id,
+                      gateway_request_id=context.get("gateway_request_id"))
 
 
 def _pin_traveler_scope(traveler_id: str, tx: str) -> None:
@@ -440,37 +498,8 @@ def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
     return rows[0]
 
 
-def _next_request_id(previous: str, booking_id: str) -> str:
-    digest = hashlib.sha256(f"{previous}|{booking_id}".encode()).hexdigest()[:12]
-    return f"hrq_{digest}"
-
-
-def _is_dead_request(row: dict) -> bool:
-    """A request whose booking can no longer be held: lapsed, released or expired."""
-    if row["status"] == "held":
-        return bool(row.get("lapsed"))
-    return row["status"] != "confirmed"
-
-
-def _live_request_id(request_id: str, journey_id: str, tx: str) -> str:
-    """Advance a derived request id past requests whose booking is dead.
-
-    The default id is a hash of the journey and the terms, so without this a
-    second attempt after the first hold lapsed would replay the dead booking
-    forever. Each step hashes the previous id with the dead booking id, so
-    concurrent retries (serialized by the journey advisory lock) converge on
-    the same new request and later retries replay it.
-    """
-    for _ in range(MAX_REQUEST_CHAIN):
-        rows = query(HOLD_REQUEST_SQL, {"journey": journey_id, "request_id": request_id}, tx)
-        if not rows or not _is_dead_request(rows[0]):
-            return request_id
-        request_id = _next_request_id(request_id, str(rows[0]["booking_id"]))
-    raise RuntimeError(f"hold request chain exceeds {MAX_REQUEST_CHAIN} dead requests")
-
-
 def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx: str) -> dict:
-    rows = query(HOLD_SQL, {
+    rows = _business_query(HOLD_SQL, {
         "booking_id": hold["booking_id"],
         "traveler": str(args["travelerId"]),
         "journey": journey_id,
@@ -499,8 +528,6 @@ def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[st
     if args.get("executionId"):
         _claim_execution(str(args["executionId"]), tx)
     journey_id = _journey(traveler_id, journey_ref, tx)
-    if not args.get("holdRequestId"):
-        hold["request_id"] = _live_request_id(hold["request_id"], journey_id, tx)
     if not _is_replay(journey_id, hold, tx):
         _verify_catalog_terms(args, catalog_cents)
         _within_saved_budget(traveler_id, int(args["totalCents"]), int(args["travelers"]), tx)
@@ -521,7 +548,8 @@ def create_courtesy_hold(args: dict) -> dict:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
         journey_id, row, receipt = _held_row(args, hold, expires_at, tx)
-        _transaction("commit", tx)
+        _record_action(args, "hold", row, governance, tx)
+        _commit_action(tx, "hold")
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _rollback_quietly(tx)
         return _failure("create_courtesy_hold", error, "hold_failed")
@@ -595,11 +623,12 @@ def confirm_booking(args: dict) -> dict:
             "SELECT set_config('app.thread_id', :t, true)", {"t": str(args["journeyRef"])}, tx
         )
         _confirmation_within_saved_budget(args, traveler_id, booking_id, tx)
-        row = query(
+        row = _business_query(
             CONFIRM_SQL, {"booking_id": booking_id, "traveler": traveler_id, "total": total}, tx
         )[0]
         receipt = _booking_receipt(booking_id, traveler_id, tx)
-        _transaction("commit", tx)
+        _record_action(args, "confirm", row, governance, tx)
+        _commit_action(tx, "booking")
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _rollback_quietly(tx)
         return _failure("confirm_booking", error, "booking_failed")
@@ -654,9 +683,13 @@ def _release_row(args: dict, tx: str) -> dict:
         return {"booking_id": booking_id, "replayed": True}
     if status != "held":
         raise RuntimeError("booking_not_held")
-    if not query(RELEASE_SQL, {"booking_id": booking_id, "traveler": traveler_id}, tx):
+    rows = _business_query(RELEASE_SQL, {
+        "journey": str(args["journeyId"]), "request_id": str(args["holdRequestId"]),
+        "traveler": traveler_id,
+    }, tx)
+    if not rows:
         raise RuntimeError("booking_not_held")
-    return {"booking_id": booking_id, "replayed": False}
+    return {"booking_id": booking_id, "replayed": bool(rows[0]["replayed"])}
 
 
 def release_hold(args: dict) -> dict:
@@ -671,7 +704,8 @@ def release_hold(args: dict) -> dict:
             _transaction("rollback", tx)
             return _grant_refusal(governance, traveler_id)
         released = _release_row(args, tx)
-        _transaction("commit", tx)
+        _record_action(args, "release", released, governance, tx)
+        _commit_action(tx, "release")
     except Exception as error:  # noqa: BLE001 - the SQL and the checks raise named errors
         _rollback_quietly(tx)
         return _failure("release_hold", error, "release_failed")
@@ -746,7 +780,8 @@ def _failure(tool: str, error: Exception, fixed_code: str) -> dict:
             "meridian_tool": tool, "ok": False,
             "error_type": type(error).__name__, "detail": _masked_detail(error),
         }), flush=True)
-    return {"error": business or fixed_code}
+    code = str(error) if isinstance(error, ActionOutcomeUnknown) else business or fixed_code
+    return {"error": code}
 
 
 ARN = re.compile(r"arn:[a-z0-9-]+:[^\s\"',)]*")
@@ -864,7 +899,22 @@ def lambda_handler(event, context):
     name = tool.split("___")[-1]
     if name not in TOOLS:
         raise ValueError(f"Unknown Meridian tool: {tool or '(none)'}")
-    result = TOOLS[name](event or {})
+    args = event or {}
+    mode = os.getenv("MERIDIAN_AGENTCORE_AUTH", "iam")
+    subject = args.get("verifiedSubject") if mode == "jwt" else None
+    if mode not in {"iam", "jwt"} or (mode == "jwt" and name != "get_package_details" and (
+        not isinstance(subject, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", subject)
+    )):
+        return {"error": "caller_identity_missing"}
+    token = INVOCATION.set({
+        "verified_subject": subject,
+        "gateway_request_id": custom.get("bedrockAgentCoreAwsRequestId"),
+        "lambda_request_id": getattr(context, "aws_request_id", None),
+    })
+    try:
+        result = TOOLS[name](args)
+    finally:
+        INVOCATION.reset(token)
     print(json.dumps({
         "meridian_tool": name,
         "ok": "error" not in result,

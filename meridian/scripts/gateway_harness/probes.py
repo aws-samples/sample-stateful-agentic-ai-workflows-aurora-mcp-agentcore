@@ -88,6 +88,9 @@ class McpHttp:
         so no URL or header text reaches the verdict table.
         """
         try:
+            from backend.agentcore.caller_claims import subject_from_token
+
+            arguments = {**arguments, "verifiedSubject": subject_from_token(token)}
             response = self._post(token, "tools/call", {"name": ACTION, "arguments": arguments})
         except TRANSPORT_FAILURES as exc:
             return Outcome("http_error", 0, f"transport failure: {type(exc).__name__}")

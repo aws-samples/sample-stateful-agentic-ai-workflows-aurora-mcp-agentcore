@@ -148,8 +148,16 @@ def _dry_run_migration(client, path: Path) -> int:
     return len(statements)
 
 
-def _dry_run_pending(client) -> int:
+def _select_pending(client, only: str | None = None) -> list[Path]:
     pending = _pending_paths(_applied_migrations_read_only(client))
+    if only and (not pending or pending[0].name != only):
+        first = pending[0].name if pending else "none"
+        raise ValueError(f"--only must name the first pending migration ({first})")
+    return pending[:1] if only else pending
+
+
+def _dry_run_pending(client, only: str | None = None) -> int:
+    pending = _select_pending(client, only)
     if not pending:
         print("No pending migrations.")
         return 0
@@ -170,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         "--dry-run", action="store_true",
         help="run each pending migration in a transaction and roll it back; changes nothing",
     )
+    parser.add_argument("--only", metavar="MIGRATION.sql",
+                        help="run only the first pending migration, named explicitly")
     args = parser.parse_args(argv)
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN[/red]")
@@ -179,16 +189,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     client = boto3.client("rds-data", region_name=REGION)
+    try:
+        pending = _select_pending(client, args.only)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
     if args.pending:
-        pending_names = [
-            path.name for path in _pending_paths(_applied_migrations_read_only(client))
-        ]
+        pending_names = [path.name for path in pending]
         print("\n".join(pending_names) or "No pending migrations.")
         return 0
     if args.dry_run:
-        return _dry_run_pending(client)
+        return _dry_run_pending(client, args.only)
     _ensure_migration_table(client)
-    pending = _pending_paths(_applied_migrations(client))
 
     if not pending:
         console.print("[green]No pending migrations.[/green]")

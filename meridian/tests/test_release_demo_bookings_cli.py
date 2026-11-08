@@ -38,7 +38,7 @@ def test_apply_without_the_confirm_flag_exits_3_and_deletes_nothing(client):
 
 def test_both_flags_delete(client):
     rdb.main(["--apply", "--i-understand-this-changes-aws"])
-    assert len(deletes(client)) == 3
+    assert len(deletes(client)) == 4
     client.commit_transaction.assert_called_once()
 
 

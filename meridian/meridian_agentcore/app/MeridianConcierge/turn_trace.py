@@ -144,6 +144,7 @@ class TurnContext:
     policy_mode: str = "ENFORCE"
     booking_confirmed: bool = False
     gateway_auth: str = "SigV4"
+    verified_subject: str | None = None
 
     def confirmed(self, kind: str) -> bool:
         """Whether the traveler confirmed this kind of governed write on this turn."""
@@ -290,6 +291,10 @@ class TraceHooks(HookProvider):
             # TravelerPinHook pins it too; pinned here as well so this span always shows
             # the traveler the call carries, whatever order a caller gives the hooks.
             pin_traveler_argument(args, self.turn.traveler_id)
+            args.pop("verifiedSubject", None)
+            if self.turn.verified_subject:
+                args["verifiedSubject"] = self.turn.verified_subject
+            args["authorizationRef"] = str(event.tool_use["toolUseId"])
         kind = GOVERNED.get(name)
         if kind:
             if self._is_settled(kind):
@@ -316,7 +321,7 @@ class TraceHooks(HookProvider):
                 {"label": "gateway", "value": self.turn.gateway_id, "mono": True},
                 {"label": "policy_engine", "value": self.turn.policy_engine_id, "mono": True},
                 {"label": "policy_mode", "value": self.turn.policy_mode},
-                {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
+                {"label": "configured_policy", "value": POLICY_FOR[name], "mono": True},
             ],
         }))
         self.started[event.tool_use["toolUseId"]] = time.monotonic()
@@ -390,11 +395,15 @@ class TraceHooks(HookProvider):
             _call_id(tool_use),
             {"label": "result", "value": summary},
             {"label": "cedar_decision", "value": "allow"},
-            {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
+            {"label": "policy_evidence", "value": "Application inference from target response"},
+            {"label": "configured_policy", "value": POLICY_FOR[name], "mono": True},
             {"label": "policy_mode", "value": self.turn.policy_mode},
         ]
         governance = payload.get("governance")
         if governance:
+            fields.extend({"label": key, "value": str(governance[key]), "mono": True}
+                          for key in ("action_audit_id", "gateway_request_id")
+                          if governance.get(key))
             fields.append(
                 {"label": "workload", "value": governance.get("subject", ""), "mono": True}
             )
@@ -445,7 +454,8 @@ class TraceHooks(HookProvider):
                 {"label": "gateway_error", "value": text, "mono": True},
             ] + ([
                 {"label": "cedar_decision", "value": "deny"},
-                {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
+                {"label": "policy_evidence", "value": "Gateway policy refusal response"},
+                {"label": "configured_policy", "value": POLICY_FOR[name], "mono": True},
                 {"label": "policy_mode", "value": self.turn.policy_mode},
             ] if denied else []) + _grant_fields(governance),
         }, elapsed))

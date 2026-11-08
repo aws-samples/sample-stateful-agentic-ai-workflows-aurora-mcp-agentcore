@@ -29,6 +29,14 @@
         "program": {
           "type": "string",
           "description": "Loyalty program name, for example Marriott Bonvoy."
+        },
+        "verifiedSubject": {
+          "type": "string",
+          "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+        },
+        "authorizationRef": {
+          "type": "string",
+          "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
         }
       },
       "required": [
@@ -101,6 +109,14 @@
         "executionId": {
           "type": "string",
           "description": "Optional. A workflow worker's execution id; the hold is written only while that worker still holds its lease."
+        },
+        "verifiedSubject": {
+          "type": "string",
+          "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+        },
+        "authorizationRef": {
+          "type": "string",
+          "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
         }
       },
       "required": [
@@ -147,6 +163,14 @@
         "journeyRef": {
           "type": "string",
           "description": "Stable journey reference for the audit trail, set by the platform."
+        },
+        "verifiedSubject": {
+          "type": "string",
+          "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+        },
+        "authorizationRef": {
+          "type": "string",
+          "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
         }
       },
       "required": [
@@ -181,6 +205,14 @@
         "executionId": {
           "type": "string",
           "description": "Optional. A workflow worker's execution id; the hold is released only while that worker still holds its lease."
+        },
+        "verifiedSubject": {
+          "type": "string",
+          "description": "Verified JWT subject, pinned by the Runtime and Gateway. Never supplied by the model."
+        },
+        "authorizationRef": {
+          "type": "string",
+          "description": "Correlation reference for the identity binding; application evidence, not a Cedar receipt."
         }
       },
       "required": [

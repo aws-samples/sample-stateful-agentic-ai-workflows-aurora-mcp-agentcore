@@ -142,6 +142,14 @@ async def test_over_budget_and_sold_out_candidates_never_reach_the_reranker(run)
     assert "Dropped 2 of 3" in gate.details and "over the $2,000 budget" in gate.details
 
 
+async def test_a_missing_catalog_row_cannot_keep_its_old_availability(run):
+    ranked, _spans, counts = await run(
+        FakeDb(semantic=[row("REMOVED", places=20)], details=[]), FakeEmbeddings()
+    )
+    assert ranked == []
+    assert counts["eligible"] == 0
+
+
 async def test_unreachable_embeddings_leave_the_lexical_arm_answering_alone(run):
     db = FakeDb(lexical=[row("LEX")], details=[row("LEX")])
 

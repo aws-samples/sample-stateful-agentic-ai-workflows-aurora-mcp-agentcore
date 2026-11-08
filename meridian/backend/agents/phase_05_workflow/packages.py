@@ -52,7 +52,7 @@ def duration_for_party(package: Dict[str, Any], quantity: int) -> Optional[str]:
         listed size: the write still checks the places.
     """
     counted = _counted_places(package.get("availability"))
-    if counted:
+    if "availability" in package:
         return next((d for d, places in counted.items() if places >= quantity), None)
     sizes = package.get("available_sizes") or package.get("durations") or []
     if isinstance(sizes, list) and sizes:
