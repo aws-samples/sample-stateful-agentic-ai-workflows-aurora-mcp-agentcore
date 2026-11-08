@@ -4,6 +4,8 @@ import { MeridianMark } from '../components/MeridianMark';
 import { CredentialForm } from './CredentialForm';
 import '../showcase/signIn.css';
 
+const ERROR_ID = 'signin-error';
+
 interface SignInScreenProps {
   /** Why the person is back here when it was not their choice. */
   message?: string | null;
@@ -29,16 +31,17 @@ export function SignInScreen({
           <MeridianMark variant="stage" />
           <span>Meridian</span>
         </header>
-        <section className="mds-signin-welcome" aria-labelledby="signin-title">
+        <section className="mds-signin-welcome">
           <h1 id="signin-title" ref={heading} tabIndex={-1}>Sign in to Meridian</h1>
           <p className="mds-signin-intro">
             Your trips, preferences and holds belong to you.
             Sign in so Meridian knows who is asking.
           </p>
-          {message && <p className="mds-signin-message" role="alert">{message}</p>}
+          {message && <p id={ERROR_ID} className="mds-signin-message" role="alert">{message}</p>}
           <p role="status" className="mds-visually-hidden">{busy ? 'Signing you in' : ''}</p>
           {onPasswordSignIn ? (
-            <CredentialForm busy={busy} onSubmit={onPasswordSignIn} />
+            <CredentialForm busy={busy} onSubmit={onPasswordSignIn}
+              errorId={message ? ERROR_ID : undefined} />
           ) : (
             <button type="button" className="mds-signin-button" disabled={busy}
               onClick={onSignIn}>
@@ -57,7 +60,7 @@ export function SignInScreen({
           </div>
         </section>
         <figure className="mds-signin-destination" data-theme="dark">
-          <img src="/travel/recovery-flight.jpg" alt="An aircraft approaching the runway at sunset" width={1920} height={1168} />
+          <img src="/travel/recovery-flight.jpg" alt="" width={1920} height={1168} />
           <figcaption>
             <p>Plan. Fly. Land.</p>
             <span>A little more certainty for the journey ahead.</span>

@@ -4,7 +4,10 @@ import { createPkce, randomToken } from './pkce';
 import {
   AuthError, exchangeCode, isRefusal, refreshTokens, revokeRefreshToken, type TokenSet,
 } from './tokenClient';
-import { passwordSignIn, refreshPasswordTokens, revokePasswordTokens } from './passwordClient';
+import {
+  passwordSignIn, refreshPasswordTokens, revokePasswordTokens, UNLINKED_ACCOUNT,
+  VerificationRequiredError,
+} from './passwordClient';
 
 export type SessionStatus = 'signed-out' | 'signing-in' | 'signed-in';
 
@@ -13,6 +16,8 @@ export interface SessionState {
   traveler: SignedInTraveler | null;
   /** Why the person is signed out, when it was not their choice. */
   message: string | null;
+  /** The account needs a step only the hosted page can complete, such as MFA. */
+  hostedSignInRequired: boolean;
 }
 
 export interface SessionDeps {
@@ -37,11 +42,13 @@ export const MESSAGES = {
   refused: 'Sign-in was not completed. Try again, or ask whoever runs this deployment to check your access.',
   unverified: 'Sign-in could not be verified. Try again.',
   failed: 'We could not complete sign-in. Try again.',
-  unlinked: 'This account has no traveler attached. Ask whoever runs this deployment to check your access.',
+  unlinked: UNLINKED_ACCOUNT,
   ended: 'Your session ended. Sign in again.',
 } as const;
 
-const SIGNED_OUT: SessionState = { status: 'signed-out', traveler: null, message: null };
+const SIGNED_OUT: SessionState = {
+  status: 'signed-out', traveler: null, message: null, hostedSignInRequired: false,
+};
 
 /**
  * Browser sign-in through Cognito's API, with hosted authorization-code PKCE as a fallback.
@@ -54,6 +61,8 @@ export class AuthSession {
   private tokens: TokenSet | null = null;
   private timer: unknown = null;
   private inflightRefresh: Promise<void> | null = null;
+  /** An inline password request is awaiting its answer, so there are no tokens to tell. */
+  private inlinePending = false;
   /** Bumped whenever the session ends or a new sign-in starts, so late answers can be ignored. */
   private generation = 0;
   private readonly listeners = new Set<() => void>();
@@ -76,7 +85,8 @@ export class AuthSession {
     this.invalidate();
     this.deps.storage.removeItem(PKCE_KEY);
     const generation = this.generation;
-    this.setState({ status: 'signing-in', traveler: null, message: null });
+    this.setState({ ...SIGNED_OUT, status: 'signing-in' });
+    this.inlinePending = true;
     try {
       const tokens = await passwordSignIn(
         this.deps.config, username, password, this.deps.fetchFn, this.deps.now,
@@ -84,7 +94,8 @@ export class AuthSession {
       if (generation === this.generation) this.applyTokens(tokens);
     } catch (error) {
       if (generation === this.generation) {
-        this.signedOut(error instanceof AuthError ? error.message : MESSAGES.failed);
+        this.signedOut(error instanceof AuthError ? error.message : MESSAGES.failed,
+          error instanceof VerificationRequiredError);
       }
     }
   }
@@ -157,7 +168,7 @@ export class AuthSession {
    */
   signOut(): void {
     const { config } = this.deps;
-    const inline = this.tokens?.source === 'cognito-api';
+    const inline = this.inlinePending || this.tokens?.source === 'cognito-api';
     this.revokeQuietly(this.tokens?.refreshToken ?? null, inline);
     this.signedOut(null);
     if (inline) return;
@@ -215,7 +226,7 @@ export class AuthSession {
     if (this.tokens) this.signedOut(null);
     else this.invalidate();
     const generation = this.generation;
-    this.setState({ status: 'signing-in', traveler: null, message: null });
+    this.setState({ ...SIGNED_OUT, status: 'signing-in' });
     try {
       const tokens = await exchangeCode(
         this.deps.config, code, saved.verifier, this.deps.fetchFn, this.deps.now,
@@ -249,7 +260,8 @@ export class AuthSession {
       return;
     }
     this.tokens = tokens;
-    this.setState({ status: 'signed-in', traveler, message: null });
+    this.inlinePending = false;
+    this.setState({ status: 'signed-in', traveler, message: null, hostedSignInRequired: false });
     this.scheduleRefresh(tokens);
   }
 
@@ -267,14 +279,15 @@ export class AuthSession {
 
   private invalidate(): void {
     this.generation += 1;
+    this.inlinePending = false;
     this.tokens = null;
     this.inflightRefresh = null;
     this.cancelTimer();
   }
 
-  private signedOut(message: string | null): void {
+  private signedOut(message: string | null, hostedSignInRequired = false): void {
     this.invalidate();
-    this.setState({ ...SIGNED_OUT, message });
+    this.setState({ ...SIGNED_OUT, message, hostedSignInRequired });
   }
 
   private setState(next: SessionState): void {

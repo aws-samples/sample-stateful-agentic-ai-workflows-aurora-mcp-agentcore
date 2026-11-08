@@ -1,7 +1,9 @@
 """The one-click hold goes through the runtime and the governed gateway, then persists under RLS."""
 
+import ast
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -465,3 +467,14 @@ async def test_the_reply_body_carries_the_code_that_marks_it_as_the_routes_own(
     body = json_module.loads((await http_exception_handler(None, answered)).body)
 
     assert body == {"error": answered.detail, "code": "governed_write"}
+
+
+def test_production_agent_imports_the_code_table_at_module_level():
+    """audit_vocabulary has no import cycle with the agent, so no function needs a local import."""
+    tree = ast.parse(Path(production_agent_mod.__file__).read_text(encoding="utf-8"))
+    local = [node.lineno for function in ast.walk(tree)
+             if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+             for node in ast.walk(function)
+             if isinstance(node, ast.ImportFrom) and node.module == "backend.audit_vocabulary"]
+    assert local == []
+    assert "CODE_CLASSES" in vars(production_agent_mod)

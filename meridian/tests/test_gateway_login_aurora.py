@@ -13,6 +13,7 @@ import pytest
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.budget import budget_ceiling_per_traveler_cents
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
+from tests.live_support import delete_booking_rows, delete_journey_rows
 
 pytestmark = pytest.mark.database
 
@@ -94,13 +95,12 @@ async def _remove(booking_id, journey_ref):
         "SELECT hr.booking_id FROM hold_requests hr JOIN journey_threads jt "
         "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s", (journey_ref,))
     for booked in {booking_id, *(row["booking_id"] for row in held)} - {""}:
-        await master.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booked,))
-        await master.execute("DELETE FROM booking_lines WHERE booking_id = %s", (booked,))
-        await master.execute("DELETE FROM bookings WHERE booking_id = %s", (booked,))
+        await delete_booking_rows(master, booked)
     await master.execute("UPDATE journeys SET active_thread_id = NULL WHERE active_thread_id = %s",
                          (journey_ref,))
     await master.execute("DELETE FROM journey_threads WHERE thread_id = %s", (journey_ref,))
     for row in journey:
+        await delete_journey_rows(master, row["journey_id"])
         await master.execute("DELETE FROM journeys WHERE journey_id = %s", (row["journey_id"],))
 
 
@@ -170,9 +170,14 @@ async def test_semantic_trip_search_runs_as_the_login(login):
     assert len(rows) <= 3
 
 
+@pytest.mark.parametrize("table", ["bookings", "journeys", "hold_requests"])
+async def test_the_login_reads_no_booking_rows_without_a_traveler_scope(login, table):
+    """Migration 028 grants SELECT for the action audit's checks; row-level security scopes it."""
+    rows = await login.execute(f"SELECT COUNT(*) AS n FROM {table}")
+    assert rows[0]["n"] == 0
+
+
 @pytest.mark.parametrize("sql", [
-    "SELECT COUNT(*) FROM bookings",
-    "SELECT COUNT(*) FROM journeys",
     "SELECT COUNT(*) FROM traveler_access_audit",
     "SELECT backend_admin_count('rls_conversations')",
     "UPDATE trip_packages SET name = name WHERE false",

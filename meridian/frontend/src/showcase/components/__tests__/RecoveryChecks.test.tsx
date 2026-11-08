@@ -8,12 +8,12 @@ import { RecoveryChecks } from '../RecoveryChecks';
 function state(overrides: Partial<MeridianShowcaseState> = {}) {
   return { selectedPhase: 5, conversationId: 'thread-current', recommendations: [], traceSpans: [], ...overrides } as MeridianShowcaseState;
 }
-function span(decision: string, status: string): ShowcaseTraceSpan {
+function span(decision: string, status: string, mode = 'ENFORCE'): ShowcaseTraceSpan {
   return { id: decision, name: 'Hold', type: 'tool', category: 'gateway', status, latencyMs: null, fields: [
     { label: 'gateway_tool', value: 'MeridianHolds___create_courtesy_hold' },
     { label: 'cedar_decision', value: decision },
     { label: 'cedar_policy', value: 'meridian_hold_governance' },
-    { label: 'policy_mode', value: 'ENFORCE' },
+    { label: 'policy_mode', value: mode },
   ] };
 }
 function journey(thread = 'thread-current') {
@@ -88,12 +88,28 @@ describe('RecoveryChecks evidence boundaries', () => {
   it('does not reuse a prior allow when the latest attempt has no decision', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok'), span('', 'error')] })} onOpenProof={vi.fn()} />);
     expect(screen.getByText('Decision unavailable')).toBeVisible();
-    expect(screen.queryByText('Target returned a result')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
   });
   it('keeps policy permission separate from a persisted hold', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok')] })} onOpenProof={vi.fn()} />);
-    expect(screen.getByText('Target returned a result')).toBeVisible();
+    expect(screen.getByText('Cedar allowed')).toBeVisible();
     expect(screen.getByText('Receipt unavailable')).toBeVisible();
+  });
+  it('says Cedar allowed the call when the policy engine enforces', () => {
+    render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok', 'ENFORCE')] })}
+      onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
+    expect(screen.getByText('Cedar allowed')).toBeVisible();
+    expect(screen.getByText(/runs a target only after Cedar permits the call/)).toBeVisible();
+    expect(screen.queryByText('Target returned a result')).not.toBeInTheDocument();
+  });
+  it('keeps the cautious wording when the policy engine is not enforcing', () => {
+    render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok', 'LOG_ONLY')] })}
+      onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Place hold/ }));
+    expect(screen.getByText('Target returned a result')).toBeVisible();
+    expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
+    expect(screen.getByText(/not a service policy receipt/)).toBeVisible();
   });
   it('names the package the recorded hold is for', () => {
     const document = journey();
@@ -123,7 +139,7 @@ describe('RecoveryChecks evidence boundaries', () => {
   it('keeps an observed decision visible while the workflow is paused', () => {
     render(<RecoveryChecks state={state({ workflowStatus: 'paused', traceSpans: [span('allow', 'ok')] })}
       onOpenProof={vi.fn()} />);
-    expect(screen.getByText('Target returned a result')).toBeVisible();
+    expect(screen.getByText('Cedar allowed')).toBeVisible();
     expect(screen.getAllByText('Runs after you resume')).toHaveLength(2);
   });
   it('lists the five recovery steps in the order the talk names them', () => {

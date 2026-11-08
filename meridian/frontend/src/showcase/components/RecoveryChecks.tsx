@@ -45,6 +45,10 @@ function policyCheck(span: ShowcaseTraceSpan | undefined, paused: boolean): Chec
     ...(reason ? [['Returned reason', reason] as [string, string]] : []),
   ] : [];
   if (decision === 'allow' && span?.status === 'ok') {
+    if (field(span, 'policy_mode') === 'ENFORCE') {
+      return { ...check, status: 'Cedar allowed', tone: 'observed', facts,
+        description: 'The Gateway runs a target only after Cedar permits the call, so the target\'s result shows Cedar allowed it. Inspect the action audit and native service logs to verify the commit.' };
+    }
     return { ...check, status: 'Target returned a result', tone: 'observed', facts,
       description: 'The application infers permission from the target response. This is not a service policy receipt. Inspect the action audit and native service logs to verify the decision and commit.' };
   }

@@ -23,6 +23,7 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import OrderRequest, process_order
 from backend.routers.memory import get_memory_profile
+from tests.live_support import delete_booking_rows, delete_journey_rows
 
 pytestmark = pytest.mark.database
 
@@ -76,16 +77,9 @@ class _Holds:
                 "SELECT journey_id FROM hold_requests WHERE booking_id = %s",
                 (booking_id,),
             )
-            await self.client.execute(
-                "DELETE FROM hold_requests WHERE booking_id = %s", (booking_id,)
-            )
-            await self.client.execute(
-                "DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,)
-            )
-            await self.client.execute(
-                "DELETE FROM bookings WHERE booking_id = %s", (booking_id,)
-            )
+            await delete_booking_rows(self.client, booking_id)
             for row in journeys:
+                await delete_journey_rows(self.client, row["journey_id"])
                 await self.client.execute(
                     "DELETE FROM journey_threads WHERE journey_id = %s",
                     (row["journey_id"],),

@@ -7,7 +7,7 @@ const { MeridianAuroraStack } = require('../dist/lib/meridian-aurora-stack');
 function synth(snapshotArn) {
   return Template.fromStack(new MeridianAuroraStack(new App(), 'Aurora', {
     env: { account: '123456789012', region: 'us-east-1' }, clusterIdentifier: 'isolated-rehearsal',
-    vpcId: 'vpc-12345678', subnetIds: ['subnet-12345678', 'subnet-87654321'], engineVersion: '18.3', snapshotArn,
+    vpcId: 'vpc-12345678', subnetIds: ['subnet-12345678', 'subnet-87654321'], engineVersion: '18.6', snapshotArn,
   }));
 }
 for (const snapshotArn of [undefined, 'arn:aws:rds:us-east-1:123456789012:cluster-snapshot:reviewed']) {
@@ -24,7 +24,7 @@ for (const snapshotArn of [undefined, 'arn:aws:rds:us-east-1:123456789012:cluste
     template.hasResourceProperties('AWS::RDS::DBInstance', {
       PubliclyAccessible: false, AutoMinorVersionUpgrade: false,
     });
-    template.hasResourceProperties('AWS::RDS::DBCluster', { EngineVersion: '18.3' });
+    template.hasResourceProperties('AWS::RDS::DBCluster', { EngineVersion: '18.6' });
     template.hasResourceProperties('AWS::EC2::SecurityGroup', { SecurityGroupIngress: Match.absent() });
     const cluster = Object.values(template.findResources('AWS::RDS::DBCluster'))[0];
     assert.equal(cluster.DeletionPolicy, 'Snapshot');

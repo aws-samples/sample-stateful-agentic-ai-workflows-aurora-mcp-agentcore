@@ -159,6 +159,9 @@ EXPECTED_CLASSES = {
     "hold_price_mismatch": "database_guard",
     "hold_total_mismatch": "database_guard",
     "budget_ceiling_exceeded": "business_rule",
+    "hold_failed": "error",
+    "booking_failed": "error",
+    "release_failed": "error",
 }
 
 

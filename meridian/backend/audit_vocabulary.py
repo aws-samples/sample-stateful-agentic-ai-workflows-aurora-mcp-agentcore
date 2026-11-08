@@ -66,8 +66,10 @@ WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
 # How each named code the holds Lambda returns is classified, read from the code that raises it:
 # create_courtesy_hold (scripts/migrations/008), confirm_booking (010) and the Lambda itself.
 # invalid_package_inventory is an error because one of its raising branches is a catalog data
-# fault, not the caller's argument. tests/test_holds_lambda.py keeps the keys equal to the
-# Lambda's BUSINESS_ERRORS.
+# fault, not the caller's argument. ``hold_failed``, ``booking_failed`` and ``release_failed`` are
+# the fixed codes the Lambda returns for any other error, only after it rolled back a transaction
+# it never committed; a commit it cannot confirm is ``*_outcome_unknown``, which is not here.
+# tests/test_holds_lambda.py keeps the keys equal to the Lambda's BUSINESS_ERRORS plus those three.
 CODE_CLASSES = {
     "caller_identity_missing": IDENTITY_CHECK,
     "execution_lease_lost": ERROR,
@@ -86,6 +88,9 @@ CODE_CLASSES = {
     "hold_price_mismatch": DATABASE_GUARD,
     "hold_total_mismatch": DATABASE_GUARD,
     "budget_ceiling_exceeded": BUSINESS_RULE,
+    "hold_failed": ERROR,
+    "booking_failed": ERROR,
+    "release_failed": ERROR,
 }
 
 # The interceptor answers with this prefix. Phase 5 reads the Gateway's text as sent; the Phase 4

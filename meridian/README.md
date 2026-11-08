@@ -319,11 +319,11 @@ python scripts/install_catalog_images.py ~/Downloads/meridian-art --backup ~/art
 
 The script crops and resizes each image and reports packages without artwork.
 
-## Action durability and current release
+## Action durability
 
-[The DAT307 release guide](docs/DAT307_RELEASE.md) coordinates migrations 026-029 with the new
-Lambda, Runtime, interceptor and policy code. Booking mutations now use bounded SQL functions;
-service roles lose direct booking DML after cutover. An action audit row commits with each
+[The booking functions upgrade](docs/BOOKING_FUNCTIONS_UPGRADE.md) coordinates migrations 026-029
+with the Lambda, Runtime, interceptor and policy code. Booking mutations use bounded SQL
+functions; service roles have no direct booking DML after migration 029. An action audit row commits with each
 hold, confirmation or release, including a replay. It binds the booking and request identity
 to the caller subject, workload grant and service correlation IDs.
 

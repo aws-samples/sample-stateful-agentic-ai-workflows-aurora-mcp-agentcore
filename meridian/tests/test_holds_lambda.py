@@ -148,7 +148,8 @@ def test_a_grant_refusal_names_the_deny_row_it_kept(config, monkeypatch, tool, a
 
 
 def test_the_audit_vocabulary_classifies_exactly_the_codes_this_lambda_names():
-    assert set(CODE_CLASSES) == set(holds.BUSINESS_ERRORS)
+    rolled_back = {"hold_failed", "booking_failed", "release_failed"}
+    assert set(CODE_CLASSES) == set(holds.BUSINESS_ERRORS) | rolled_back
     assert len(holds.BUSINESS_ERRORS) == len(set(holds.BUSINESS_ERRORS))
 
 
@@ -588,29 +589,46 @@ def test_a_failed_action_audit_rolls_back_the_booking(config, monkeypatch):
         {"status": "expired", "lapsed": True},
     ],
 )
-def test_retry_after_expiry_or_release_keeps_the_original_request(
+def test_holding_again_after_the_old_hold_lapsed_takes_a_new_request(
     config, monkeypatch, stale
 ):
     first = _default_request_id()
     api = _ledger_api({first: [{"booking_id": "HLD-OLD", **stale}]})
     result = _hold(api, monkeypatch)
-    assert _requested_id(api) == first
-    assert result["hold"]["holdRequestId"] == first
-    lookup_params = api.parameters[api.statements.index(next(
-        s for s in api.statements if "FROM hold_requests" in s
-    ))]
+    assert _requested_id(api) == _next_id(first, "HLD-OLD")
+    assert result["hold"]["holdRequestId"] == _next_id(first, "HLD-OLD")
+    assert result["hold"]["replayed"] is False
+    lookup_params = api.parameters[api.statements.index(holds.HOLD_REQUEST_SQL)]
     assert lookup_params["journey"] == "jrn_1"
 
 
-def test_retry_never_walks_forward_to_a_replacement_request(config, monkeypatch):
+def test_the_next_request_follows_every_dead_request_in_the_chain(config, monkeypatch):
     first = _default_request_id()
     second = _next_id(first, "HLD-1")
+    third = _next_id(second, "HLD-2")
     api = _ledger_api({
         first: [{"booking_id": "HLD-1", "status": "held", "lapsed": True}],
         second: [{"booking_id": "HLD-2", "status": "released", "lapsed": False}],
     })
     _hold(api, monkeypatch)
-    assert _requested_id(api) == first
+    assert _requested_id(api) == third
+
+
+def test_a_chain_of_dead_requests_has_a_limit(config, monkeypatch):
+    class EveryRequestDead(RequestLedgerApi):
+        def execute_statement(self, **kwargs):
+            if kwargs["sql"] == holds.HOLD_REQUEST_SQL:
+                self.statements.append(kwargs["sql"])
+                self.parameters.append({})
+                dead = [{"booking_id": "HLD-X", "status": "released", "lapsed": False}]
+                return {"formattedRecords": json.dumps(dead)}
+            return super().execute_statement(**kwargs)
+
+    api = EveryRequestDead({}, _ledger_api({}).rows_by_marker)
+    result = _hold(api, monkeypatch)
+    assert result == {"error": "hold_failed"}
+    assert api.tx == ["begin", "rollback"]
+    assert api.statements.count(holds.HOLD_REQUEST_SQL) == holds.MAX_REQUEST_CHAIN
 
 
 def test_a_live_default_request_still_replays(config, monkeypatch):
@@ -630,9 +648,10 @@ def test_a_confirmed_default_request_still_replays(config, monkeypatch):
 def test_an_explicit_request_id_is_never_advanced(config, monkeypatch):
     api = _ledger_api({"hrq_mine": [{"booking_id": "HLD-1", "status": "held", "lapsed": True}]})
     args = {**_hold_args(), "holdRequestId": "hrq_mine", "bookingId": "HLD-1"}
-    _hold(api, monkeypatch, args)
+    result = _hold(api, monkeypatch, args)
     assert _requested_id(api) == "hrq_mine"
-    assert not any("JOIN bookings b" in s for s in api.statements), "no chain walk"
+    assert result["hold"]["holdRequestId"] == "hrq_mine"
+    assert holds.HOLD_REQUEST_SQL not in api.statements, "no chain walk"
 
 
 def test_the_request_lookup_runs_under_the_journey_lock_and_the_traveler_scope(
@@ -1331,3 +1350,19 @@ def test_a_thread_insert_that_returns_its_row_proceeds(config, monkeypatch):
     result = _run_tool(monkeypatch, "create_courtesy_hold", api, _hold_args())
     assert result["hold"]["bookingId"] == "HLD-2"
     assert api.tx == ["begin", "commit"]
+
+
+def test_a_seeded_booking_never_reaches_the_action_audit_without_a_hold_request():
+    """Seeded bookings have no hold_requests row, which the action audit insert needs.
+
+    confirm_booking raises before that insert unless the booking is confirmed (a replay) or a
+    held booking with a live expiry. The seed writes neither, so confirming a seeded booking
+    ends in ``booking_not_held`` or ``hold_expired``, never a generic ``booking_failed``.
+    """
+    from scripts.travel_catalog import DEMO_BOOKINGS
+
+    seed = (TARGET.parents[3] / "scripts" / "seed_data.py").read_text(encoding="utf-8")
+    start = seed.index("def seed_bookings")
+    seeding = seed[start:seed.index("\ndef ", start + 1)]
+    assert "hold_expires_at" not in seeding
+    assert {booking["status"] for booking in DEMO_BOOKINGS} <= {"completed", "held"}

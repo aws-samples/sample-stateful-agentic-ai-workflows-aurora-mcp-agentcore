@@ -97,6 +97,46 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 
+describe('hosted fallback for a challenged account', () => {
+  const inline = { ...config, domain: 'meridian-example.auth.us-east-1.amazoncognito.com' };
+
+  async function submitWith(reply: Record<string, unknown>, status = 200) {
+    fetchFn.mockResolvedValue({ ok: status === 200, status, json: async () => reply });
+    const session = new AuthSession({
+      config: inline, fetchFn: fetchFn as unknown as typeof fetch, now: () => 1_000_000, storage,
+      navigate, schedule: () => 1, cancel: () => undefined,
+    });
+    vi.mocked(createBrowserSession).mockReturnValue(session);
+    render(<AuthGate config={inline}><Who /></AuthGate>);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan@example.test' } });
+    fireEvent.change(screen.getByLabelText('Password', { exact: true }),
+      { target: { value: 'not-a-real-password' } });
+    await act(async () => { fireEvent.submit(screen.getByLabelText('Email').closest('form')!); });
+    return session;
+  }
+
+  it('offers secure sign-in after a challenge', async () => {
+    await submitWith({ ChallengeName: 'SOFTWARE_TOKEN_MFA' });
+    const hosted = await screen.findByRole('button', { name: 'Continue with secure sign-in' });
+    await act(async () => { hosted.click(); });
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+  });
+
+  it('does not offer it after an ordinary failure', async () => {
+    await submitWith({ __type: 'NotAuthorizedException' }, 400);
+    await screen.findByText('Check your email and password and try again.');
+    expect(screen.queryByRole('button', { name: 'Continue with secure sign-in' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('does not offer it before any attempt', () => {
+    install();
+    render(<AuthGate config={inline}><Who /></AuthGate>);
+    expect(screen.queryByRole('button', { name: 'Continue with secure sign-in' }))
+      .not.toBeInTheDocument();
+  });
+});
+
 describe('AuthGate with sign-in configured', () => {
   it('shows the sign-in screen, not the app, until someone signs in', () => {
     install();

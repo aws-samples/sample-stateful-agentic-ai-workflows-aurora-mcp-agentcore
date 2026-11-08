@@ -30,9 +30,9 @@ The resources are declared in
 The AgentCore CLI deploys them as one CloudFormation stack,
 `AgentCore-meridianv2-default`.
 
-## Current booking and caller-audit release
+## Booking functions and caller audit (migrations 026 to 029)
 
-Follow [DAT307 release gates](DAT307_RELEASE.md) for migrations 026-029. Prepare 026-028 before
+Follow [the booking functions upgrade](BOOKING_FUNCTIONS_UPGRADE.md) for migrations 026-029. Prepare 026-028 before
 deploying this code. Deploy tool schemas before the revised JWT binding policy, and verify
 that both Runtimes, the holds Lambda and the interceptor agree on authentication mode. The
 interceptor binds traveler and subject; the policy checks both principal tags. Apply 029 only
@@ -315,7 +315,7 @@ Runtime, so confirm each before you run it.
    Apply the first pending migration individually, after reviewing its rolled-back dry run.
    Repeat for 016, 017 and 018 only when each is the next pending file. Never run the script
    bare. Later migrations have their own release ordering; existing installations through
-   025 must follow [the DAT307 release gates](DAT307_RELEASE.md#existing-installations).
+   025 must follow [the booking functions upgrade](BOOKING_FUNCTIONS_UPGRADE.md#existing-installations).
 
    ```bash
    python meridian/scripts/apply_migrations.py --dry-run --only 015_workflow_login.sql

@@ -73,6 +73,18 @@ test('bin/meridian-web.ts forwards the trimmed hosted UI domain, or nothing when
   assert.match(bin, /cognitoHost: cognitoHostFromEnv\(process\.env\.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN\)/);
 });
 
+test('a mixed-case hosted UI domain is lowercased like the frontend reads it', () => {
+  assert.equal(cognitoHostFromEnv('Meridian-X.auth.US-East-1.amazoncognito.com'), COGNITO_HOST);
+  assert.match(contentSecurityPolicy(cognitoHostFromEnv('Meridian-X.auth.US-East-1.amazoncognito.com')),
+    /https:\/\/cognito-idp\.us-east-1\.amazonaws\.com/);
+});
+
+test('the hosted sign-in focus outline has a style, so it is visible', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'branding', 'cognito.css'), 'utf8');
+  const focus = css.split('\n').find(line => line.startsWith('.inputField-customizable:focus'));
+  assert.match(focus, /outline: 2px solid #[0-9a-f]{6}/i);
+});
+
 test('only the Cognito hosted and regional API origins join connect-src', () => {
   const policy = contentSecurityPolicy(COGNITO_HOST);
   assert.equal(connectSrc(policy), `connect-src 'self' https://${COGNITO_HOST} https://cognito-idp.us-east-1.amazonaws.com`);

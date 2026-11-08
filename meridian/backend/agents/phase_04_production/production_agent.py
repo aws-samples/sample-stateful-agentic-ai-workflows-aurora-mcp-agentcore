@@ -54,6 +54,7 @@ from typing import Any, Callable, Coroutine, Dict, Iterable, Iterator, List, Opt
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
 from backend.chat_stream import emit_chat_event
+from backend.audit_vocabulary import CODE_CLASSES
 from backend.concierge_voice import VOICE
 from backend.agentcore.errors import CallerCredentialError
 from backend.agentcore.runtime import (
@@ -359,8 +360,6 @@ def _outcome_unknown(
 def _definitive_refusal(decision: RuntimeDecision, write: str) -> bool:
     """Only evidence of a refusing layer establishes that an action did not run."""
     tool = "create_courtesy_hold" if write == "hold" else "confirm_booking"
-    from backend.audit_vocabulary import CODE_CLASSES
-
     audit = read_turn(decision).audit
     named_guard = any(call.tool == tool and call.refusal_code in CODE_CLASSES
                       for call in audit.tool_calls or [])

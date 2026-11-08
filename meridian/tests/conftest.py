@@ -216,7 +216,3 @@ TRIP_TYPES = [
     "Family Trips",
     "Business Travel",
 ]
-
-
-# Socket-only disposable PostgreSQL fixtures; no connection to configured AWS resources.
-pytest_plugins = ["tests.local_postgres_support"]

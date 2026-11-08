@@ -227,7 +227,7 @@ def test_a_release_receipt_is_a_release(payload, replayed):
     (_response({"error": "hold_not_found"}), "hold_not_found", None),
     (_response({"error": "traveler_not_authorized"}), "traveler_not_authorized", None),
     (_response({"error": "booking_not_held"}), "booking_not_held", None),
-    (_response({"error": "release_failed"}), "the hold target returned an error", None),
+    (_response({"error": "release_failed"}), "release_failed", None),
     (_response({"error": "arn:aws:iam::123456789012:role/x"}),
      "the hold target returned an error", None),
     (_response(text="not json"), "the Gateway result could not be read", None),
@@ -267,3 +267,15 @@ def test_a_transport_failure_propagates_with_its_code():
     with pytest.raises(GatewayToolError) as raised:
         release_governed_hold(call_tool, {})
     assert raised.value.code == "timeout"
+
+
+def test_a_rolled_back_target_error_is_a_definitive_refusal():
+    outcome = place_governed_hold(lambda *_: _response({"error": "hold_failed"}), {})
+    assert (outcome.placed, outcome.error, outcome.definitive_refusal) == (
+        False, "hold_failed", True)
+
+
+@pytest.mark.parametrize("code", ["hold_outcome_unknown", "unrecognized_error"])
+def test_an_unknown_outcome_code_is_not_a_definitive_refusal(code):
+    outcome = place_governed_hold(lambda *_: _response({"error": code}), {})
+    assert not outcome.placed and not outcome.definitive_refusal

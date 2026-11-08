@@ -220,7 +220,7 @@ async def test_a_lost_hold_reply_resumes_the_same_request_on_a_new_worker():
     assert [e["status"] for e in world.lease.executions] == ["paused", "failed", "succeeded"]
 
 
-@pytest.mark.parametrize("code", ["hold_failed", "hold_outcome_unknown"])
+@pytest.mark.parametrize("code", ["hold_outcome_unknown"])
 async def test_a_commit_error_response_preserves_the_pending_action_for_reconciliation(code):
     world = World()
     await world.runner().run(command(RECOVERY))

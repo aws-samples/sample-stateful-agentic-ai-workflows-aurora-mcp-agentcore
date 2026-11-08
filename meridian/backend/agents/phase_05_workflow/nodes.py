@@ -693,6 +693,8 @@ class WorkflowNodes:
             return "the Gateway's identity check refused the call, so nothing reached the target"
         if outcome.error == "insufficient_inventory":
             return "inventory changed"
+        if outcome.error == "hold_failed":
+            return "the hold failed and was rolled back, so nothing was held"
         return outcome.error or "the gateway returned no hold"
 
     @staticmethod

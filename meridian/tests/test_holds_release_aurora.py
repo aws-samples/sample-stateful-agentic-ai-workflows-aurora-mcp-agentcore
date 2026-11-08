@@ -7,6 +7,7 @@ import pytest
 from backend.db.journey_store import claim_execution
 from backend.db.rds_data_client import get_rds_data_client
 from tests import test_gateway_login_aurora as login
+from tests.live_support import delete_booking_rows, delete_journey_rows
 from tests.test_gateway_login_aurora import (
     DECOY,
     JORDAN,
@@ -105,8 +106,8 @@ async def test_release_hold_cannot_reach_another_travelers_hold(holds):
             "SELECT status FROM bookings WHERE booking_id = %s", (booking_id,))
         assert rows == [{"status": "held"}]
     finally:
-        await master.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booking_id,))
-        await master.execute("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+        await delete_booking_rows(master, booking_id)
+        await delete_journey_rows(master, journey_id)
         await master.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
 
 

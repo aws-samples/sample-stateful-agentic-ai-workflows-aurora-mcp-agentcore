@@ -16,6 +16,7 @@ from dotenv import dotenv_values
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from backend.security.redaction import mask_secrets  # noqa: E402
 from scripts.provision_service_logins import require_account  # noqa: E402
 from scripts.sync_cognito_env import stack_outputs  # noqa: E402
 
@@ -54,6 +55,13 @@ def publish(session, env, apply):
     print(f"Published and verified. CSS SHA-256: {hashlib.sha256(css.encode()).hexdigest()}")
 
 
+def failure_detail(error: Exception) -> str:
+    """What to fix, from the error: a missing setting by name, else its text with secrets masked."""
+    if isinstance(error, KeyError):
+        return f"missing setting {error.args[0]}"
+    return mask_secrets(str(error))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--apply", action="store_true")
@@ -70,7 +78,8 @@ def main() -> int:
         print(f"AWS operation failed ({error.response['Error']['Code']}).", file=sys.stderr)
         return 2
     except (BotoCoreError, ValueError, KeyError, OSError) as error:
-        print(f"Branding could not complete ({type(error).__name__}).", file=sys.stderr)
+        print(f"Branding could not complete ({type(error).__name__}): {failure_detail(error)}",
+              file=sys.stderr)
         return 2
     return 0
 

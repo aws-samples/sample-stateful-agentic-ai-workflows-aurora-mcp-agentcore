@@ -21,6 +21,7 @@ from backend.agentcore.identity import get_agentcore_identity
 from backend.db.journey_document import assemble_journey_document
 from backend.db.journey_store import ScopedDb, bind_thread, claim_execution, create_journey
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import as_gateway, delete_booking_rows, delete_journey_rows, gateway_login
 
 pytestmark = pytest.mark.database
 
@@ -46,15 +47,7 @@ class Fixture:
         await self.client.execute(
             "DELETE FROM workflow_snapshots WHERE session_id = %s", (self.thread_id,)
         )
-        await self.client.execute(
-            "DELETE FROM hold_requests WHERE booking_id = %s", (self.booking_id,)
-        )
-        await self.client.execute(
-            "DELETE FROM booking_lines WHERE booking_id = %s", (self.booking_id,)
-        )
-        await self.client.execute(
-            "DELETE FROM bookings WHERE booking_id = %s", (self.booking_id,)
-        )
+        await delete_booking_rows(self.client, self.booking_id)
         await self.client.execute(
             "DELETE FROM journey_executions WHERE thread_id = %s", (self.thread_id,)
         )
@@ -65,9 +58,7 @@ class Fixture:
         await self.client.execute(
             "DELETE FROM journey_threads WHERE thread_id = %s", (self.thread_id,)
         )
-        await self.client.execute(
-            "DELETE FROM hold_requests WHERE journey_id = %s", (self.journey_id,)
-        )
+        await delete_journey_rows(self.client, self.journey_id)
         await self.client.execute(
             "DELETE FROM journeys WHERE journey_id = %s", (self.journey_id,)
         )
@@ -338,8 +329,15 @@ async def test_the_hold_is_reported_with_a_count_of_its_records(
     fingerprint = fingerprint_terms(
         normalize_hold_terms("TKY-003", "3 nights", 1, Decimal("1949.00"))
     )
-    async with journey.scoped() as tx:
-        await journey.client.execute(
+    login = gateway_login()
+    async with login.scoped_session(
+        traveler_id=TRAVELER,
+        agent_type="booking_agent",
+        authorization=get_agentcore_identity().authorization_context(),
+    ) as tx:
+        await as_gateway(
+            login,
+            tx,
             """
             SELECT booking_id FROM create_courtesy_hold(
                 %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
@@ -358,7 +356,6 @@ async def test_the_hold_is_reported_with_a_count_of_its_records(
                 1949.00,
                 1949.00,
             ),
-            transaction_id=tx,
         )
 
     doc = await _document(journey)

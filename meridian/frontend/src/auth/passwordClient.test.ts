@@ -39,6 +39,14 @@ describe('inline Cognito sign-in', () => {
     },
   );
 
+  it('maps a refused Lambda trigger to the unlinked-account message, not "unavailable"', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(reply({
+      __type: 'UserLambdaValidationException', message: 'PreTokenGeneration failed: private',
+    }, 400));
+    await expect(passwordSignIn(config, 'user', 'password', fetchFn, Date.now))
+      .rejects.toThrow('This account has no traveler attached. Ask whoever runs this deployment');
+  });
+
   it('does not treat an MFA or password-change challenge as a signed-in session', async () => {
     const fetchFn = vi.fn().mockResolvedValue(reply({ ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 'private' }));
     await expect(passwordSignIn(config, 'user', 'password', fetchFn, Date.now))

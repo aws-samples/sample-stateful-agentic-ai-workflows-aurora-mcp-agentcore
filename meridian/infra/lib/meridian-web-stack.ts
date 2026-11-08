@@ -54,9 +54,9 @@ export function contentSecurityPolicy(cognitoHost?: string): string {
   ].join('; ');
 }
 
-/** The hosted UI domain `bin/meridian-web.ts` forwards: trimmed, and absent when blank. */
+/** The hosted UI domain `bin/meridian-web.ts` forwards: trimmed, lowercased, absent when blank. */
 export function cognitoHostFromEnv(value: string | undefined): string | undefined {
-  return value?.trim() || undefined;
+  return value?.trim().toLowerCase() || undefined;
 }
 
 /** The policy a build without sign-in ships. */

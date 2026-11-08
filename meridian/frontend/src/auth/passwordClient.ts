@@ -3,6 +3,16 @@ import { AuthError, type TokenSet } from './tokenClient';
 
 export const VERIFICATION_REQUIRED =
   'Additional verification is required. Use secure sign-in to continue.';
+export const UNLINKED_ACCOUNT =
+  'This account has no traveler attached. Ask whoever runs this deployment to check your access.';
+
+/** A challenge or reset the inline form cannot complete; the hosted page can. */
+export class VerificationRequiredError extends AuthError {
+  constructor(status: number | null = null) {
+    super(VERIFICATION_REQUIRED, status);
+    this.name = 'VerificationRequiredError';
+  }
+}
 
 /** Only AWS's standard hosted domain can select a regional credential endpoint. */
 export function passwordEndpoint(config: AuthConfig): string | null {
@@ -23,8 +33,11 @@ function serviceError(payload: Fields, status: number): AuthError {
     return new AuthError('Check your email and password and try again.', status);
   }
   if (name === 'PasswordResetRequiredException' || name === 'UserNotConfirmedException') {
-    return new AuthError(VERIFICATION_REQUIRED, status);
+    return new VerificationRequiredError(status);
   }
+  // The pre-token-generation Lambda refuses a user with no traveler binding. The message
+  // is fixed so it never says whether the user exists.
+  if (name === 'UserLambdaValidationException') return new AuthError(UNLINKED_ACCOUNT, status);
   return new AuthError('Sign-in is unavailable right now. Please try again.', status);
 }
 
@@ -49,7 +62,7 @@ async function request(
 }
 
 function tokensFrom(payload: Fields, now: () => number, previousRefresh?: string): TokenSet {
-  if (payload.ChallengeName) throw new AuthError(VERIFICATION_REQUIRED);
+  if (payload.ChallengeName) throw new VerificationRequiredError();
   const result = fieldsOf(payload.AuthenticationResult);
   const expiry = typeof result.ExpiresIn === 'number' ? now() + result.ExpiresIn * 1000 : NaN;
   if (typeof result.AccessToken !== 'string' || !result.AccessToken

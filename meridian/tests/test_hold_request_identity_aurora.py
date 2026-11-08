@@ -5,12 +5,13 @@ the function itself: a repeat of one request replays the hold it already made,
 a repeat with different terms is refused, and a journey the caller does not own
 is not a way to reach someone else's booking.
 
-Requires migrations 007 and 008 and AWS credentials.
+Requires migrations 007 to 029, AWS credentials and the gateway login secret.
 """
 
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -24,6 +25,7 @@ from backend.agents.phase_05_workflow.hold_intent import (
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import as_gateway, delete_booking_rows, delete_journey_rows, gateway_login
 
 pytestmark = pytest.mark.database
 
@@ -38,6 +40,22 @@ FROM create_courtesy_hold(
     %s::INTEGER, %s::NUMERIC, %s::NUMERIC, %s::TIMESTAMPTZ
 )
 """
+
+
+@asynccontextmanager
+async def _gateway_scope():
+    """A traveler-scoped transaction on the gateway login, the way the holds Lambda opens one.
+
+    Since migration 029 only meridian_gateway may execute the booking functions, and only the
+    Lambda's own steps reach them: pin the scope, then one statement at a time as that role.
+    """
+    login = gateway_login()
+    async with login.scoped_session(
+        traveler_id=TRAVELER,
+        agent_type="booking_agent",
+        authorization=get_agentcore_identity().authorization_context(),
+    ) as tx:
+        yield login, tx
 
 
 async def _a_package_with_room(client) -> tuple[str, str, Decimal]:
@@ -79,13 +97,9 @@ async def test_one_request_produces_one_hold_however_often_it_runs() -> None:
         request_id = f"hrq_{booking_id}"
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             journey_id = await ensure_journey(
-                ScopedDb(client, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
+                ScopedDb(login, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
             )
             args = (
                 booking_id,
@@ -101,17 +115,17 @@ async def test_one_request_produces_one_hold_however_often_it_runs() -> None:
                 expires,
             )
 
-            first = (await client.execute(HOLD_SQL, args, transaction_id=tx))[0]
+            first = (await as_gateway(login, tx, HOLD_SQL, args))[0]
             assert first["replayed"] is False
             assert first["booking_id"] == booking_id
             reserved_after_first = first["seats_reserved"]
 
-            second = (await client.execute(HOLD_SQL, args, transaction_id=tx))[0]
+            second = (await as_gateway(login, tx, HOLD_SQL, args))[0]
             assert second["replayed"] is True, "the same request must not re-reserve"
             assert second["booking_id"] == booking_id
             assert second["seats_reserved"] is None, "a replay counts no inventory"
 
-            lines = await client.execute(
+            lines = await login.execute(
                 "SELECT count(*) AS n FROM booking_lines WHERE booking_id = %s",
                 (booking_id,),
                 transaction_id=tx,
@@ -133,13 +147,9 @@ async def test_the_same_request_id_with_different_terms_is_refused() -> None:
         request_id = f"hrq_{booking_id}"
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             journey_id = await ensure_journey(
-                ScopedDb(client, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
+                ScopedDb(login, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
             )
 
             def args(quantity: int) -> tuple:
@@ -160,9 +170,9 @@ async def test_the_same_request_id_with_different_terms_is_refused() -> None:
                     expires,
                 )
 
-            await client.execute(HOLD_SQL, args(1), transaction_id=tx)
+            await as_gateway(login, tx, HOLD_SQL, args(1))
             with pytest.raises(Exception, match="hold_request_parameter_mismatch"):
-                await client.execute(HOLD_SQL, args(2), transaction_id=tx)
+                await as_gateway(login, tx, HOLD_SQL, args(2))
     finally:
         await _cleanup(client, booking_id, thread_id, journey_id)
 
@@ -175,13 +185,11 @@ async def test_a_journey_the_caller_does_not_own_is_refused() -> None:
         package_id, duration, price = await _a_package_with_room(client)
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             with pytest.raises(Exception, match="journey_not_owned"):
-                await client.execute(
+                await as_gateway(
+                    login,
+                    tx,
                     HOLD_SQL,
                     (
                         booking_id,
@@ -196,7 +204,6 @@ async def test_a_journey_the_caller_does_not_own_is_refused() -> None:
                         price,
                         expires,
                     ),
-                    transaction_id=tx,
                 )
     finally:
         await _cleanup(client, booking_id, "", "")
@@ -213,18 +220,14 @@ async def test_the_workflow_hold_step_reads_back_the_hold_its_request_placed() -
         fingerprint = fingerprint_terms(normalize_hold_terms(package_id, duration, 1, price))
         request_id = f"hrq_{booking_id}"
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             journey_id = await ensure_journey(
-                ScopedDb(client, tx), TRAVELER, thread_id, "Aurora workflow_snapshots"
+                ScopedDb(login, tx), TRAVELER, thread_id, "Aurora workflow_snapshots"
             )
-            await client.execute(HOLD_SQL, (
+            await as_gateway(login, tx, HOLD_SQL, (
                 booking_id, TRAVELER, journey_id, request_id, fingerprint,
                 package_id, duration, 1, price, price, expires,
-            ), transaction_id=tx)
+            ))
 
         def no_call(*_):
             raise AssertionError("the read must not call the Gateway")
@@ -247,13 +250,7 @@ async def test_the_workflow_hold_step_reads_back_the_hold_its_request_placed() -
 
 async def _cleanup(client, booking_id: str, thread_id: str, journey_id: str) -> None:
     """Remove everything the test wrote, as the admin role."""
-    await client.execute(
-        "DELETE FROM hold_requests WHERE booking_id = %s", (booking_id,)
-    )
-    await client.execute(
-        "DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,)
-    )
-    await client.execute("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+    await delete_booking_rows(client, booking_id)
     if thread_id:
         await client.execute(
             "DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,)
@@ -262,9 +259,7 @@ async def _cleanup(client, booking_id: str, thread_id: str, journey_id: str) -> 
             "DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,)
         )
     if journey_id:
-        await client.execute(
-            "DELETE FROM hold_requests WHERE journey_id = %s", (journey_id,)
-        )
+        await delete_journey_rows(client, journey_id)
         await client.execute(
             "DELETE FROM journeys WHERE journey_id = %s", (journey_id,)
         )
@@ -290,19 +285,17 @@ async def test_the_function_refuses_to_oversell() -> None:
         oversell = int(capacity[0]["n"]) + 1
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             journey_id = await ensure_journey(
-                ScopedDb(client, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
+                ScopedDb(login, tx), TRAVELER, thread_id, "AuroraDataApiSaver"
             )
             fingerprint = fingerprint_terms(
                 normalize_hold_terms(package_id, duration, oversell, price)
             )
             with pytest.raises(Exception, match="insufficient_inventory"):
-                await client.execute(
+                await as_gateway(
+                    login,
+                    tx,
                     HOLD_SQL,
                     (
                         booking_id,
@@ -317,7 +310,6 @@ async def test_the_function_refuses_to_oversell() -> None:
                         price * oversell,
                         expires,
                     ),
-                    transaction_id=tx,
                 )
     finally:
         await _cleanup(client, booking_id, thread_id, journey_id)
@@ -330,13 +322,11 @@ async def test_a_scope_that_does_not_match_the_session_is_refused() -> None:
     try:
         package_id, duration, price = await _a_package_with_room(client)
         expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        async with client.scoped_session(
-            traveler_id=TRAVELER,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as tx:
+        async with _gateway_scope() as (login, tx):
             with pytest.raises(Exception, match="traveler_scope_mismatch"):
-                await client.execute(
+                await as_gateway(
+                    login,
+                    tx,
                     HOLD_SQL,
                     (
                         booking_id,
@@ -351,7 +341,6 @@ async def test_a_scope_that_does_not_match_the_session_is_refused() -> None:
                         price,
                         expires,
                     ),
-                    transaction_id=tx,
                 )
     finally:
         await _cleanup(client, booking_id, "", "")

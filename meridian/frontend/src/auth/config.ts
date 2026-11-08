@@ -25,7 +25,8 @@ const HOSTNAME = new RegExp(`^(?=.{1,253}$)${LABEL}(\\.${LABEL})*$`, 'i');
  * the caller is on its own; exactly one set is a configuration mistake and fails loudly.
  */
 export function readAuthConfig(env: AuthEnv, origin: string): AuthConfig | null {
-  const domain = env.VITE_COGNITO_DOMAIN?.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const domain = env.VITE_COGNITO_DOMAIN?.trim().replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '').toLowerCase();
   const clientId = env.VITE_COGNITO_CLIENT_ID?.trim();
   if (!domain && !clientId) return null;
   if (!domain || !clientId) {

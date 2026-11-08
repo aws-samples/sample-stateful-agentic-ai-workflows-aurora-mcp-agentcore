@@ -46,10 +46,10 @@ def duration_for_party(package: Dict[str, Any], quantity: int) -> Optional[str]:
         quantity: The party size the hold is for.
 
     Returns:
-        The first counted duration with at least ``quantity`` places. None when the
-        package counts places and no duration seats the party, so no hold is
-        prepared that the write would refuse. When nothing is counted, the first
-        listed size: the write still checks the places.
+        When the package has an ``availability`` entry, even an empty one: the first counted
+        duration with at least ``quantity`` places, else None, so no hold is prepared that the
+        write would refuse. When it has none, the first of ``available_sizes`` or
+        ``durations``, else ``"7 nights"``; the write still checks the places.
     """
     counted = _counted_places(package.get("availability"))
     if "availability" in package:

@@ -72,3 +72,31 @@ def test_branding_requires_matching_readback_and_preserves_original(release, tmp
     }
     branding.publish(session, env, True)
     assert backup.read_bytes() == original
+
+
+CLUSTER = "arn:aws:rds:us-east-1:123456789012:cluster:meridian"
+
+
+@pytest.fixture
+def command(monkeypatch, tmp_path):
+    monkeypatch.setattr(branding, "ROOT", tmp_path)
+    monkeypatch.setattr(branding.sys, "argv", ["branding"])
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
+    monkeypatch.setattr(branding.boto3, "Session", Mock())
+
+
+def test_a_failed_run_says_what_to_fix_and_masks_account_ids(command, monkeypatch, capsys):
+    def refuse(*_args):
+        raise ValueError(f"Identity stack differs from {CLUSTER}.")
+
+    monkeypatch.setattr(branding, "publish", refuse)
+    assert branding.main() == 2
+    printed = capsys.readouterr().err
+    assert "Identity stack differs from" in printed
+    assert "123456789012" not in printed and "<acct>" in printed
+
+
+def test_a_missing_setting_is_named(command, monkeypatch, capsys):
+    monkeypatch.delenv("AURORA_CLUSTER_ARN")
+    assert branding.main() == 2
+    assert "AURORA_CLUSTER_ARN" in capsys.readouterr().err

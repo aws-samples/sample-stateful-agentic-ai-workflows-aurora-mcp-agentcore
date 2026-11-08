@@ -314,3 +314,20 @@ def test_a_platform_call_error_reaches_the_trace_and_the_model_with_account_ids_
     assert "123456789012" not in reported and "<acct>" in reported
     (handed_to_hooks,) = spy.seen
     assert "123456789012" not in handed_to_hooks and "<acct>" in handed_to_hooks
+
+
+@pytest.mark.parametrize("kind", WRITES)
+@pytest.mark.parametrize(("code", "unknown"), [
+    ("{kind}_failed", False), ("{kind}_outcome_unknown", True)])
+def test_only_a_commit_with_no_answer_is_reported_as_an_unknown_outcome(kind, code, unknown):
+    """The target answers ``{kind}_failed`` only after it rolled back what it never committed."""
+    execute, target, _tool = WRITES[kind]
+    hooks = TraceHooks(asyncio.Queue(), _turn(booking_confirmed=True))
+    text = code.format(kind=kind)
+
+    def call_tool(*_args):
+        return {"status": "error", "content": [{"text": text}]}
+
+    reply = execute(hooks, call_tool, target)
+
+    assert ("outcome is unknown" in reply) is unknown

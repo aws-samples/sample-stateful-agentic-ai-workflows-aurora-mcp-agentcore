@@ -16,8 +16,8 @@
   <a href="https://aws.amazon.com/cdk/"><img height="20" alt="Infrastructure: AWS CDK" src="https://img.shields.io/badge/Infrastructure-AWS%20CDK-355E8C?style=flat-square&amp;labelColor=24354B"></a>
 </p>
 
-Meridian is the reference application for **DAT307-R1: Build stateful agentic AI workflows
-with Aurora, MCP, and AgentCore**. Follow a travel request from a parameterized SQL query to a
+Meridian is a reference application for building stateful agentic AI workflows with Amazon
+Aurora, MCP and Amazon Bedrock AgentCore. Follow a travel request from a parameterized SQL query to a
 governed action, then stop a worker and recover its saved progress.
 
 <p align="center">
@@ -53,8 +53,7 @@ first model-driven agent appears in Phase 3. Phase 5 uses deterministic Strands 
 | **5. Durable workflow** | A separate Runtime executes a Strands Graph with review pauses, saved steps, leases and recovery | [Workflow](meridian/backend/agents/phase_05_workflow/), `workflow_snapshots`, `journey_executions`, stable hold identities and action audit rows |
 
 The Phase 1 and 2 agent definitions are reference examples; the live UI calls the deterministic
-router paths above. See the [phase guides](meridian/backend/agents/README.md) and the
-[session readiness review](meridian/docs/DAT307_READINESS.md) for the complete map.
+router paths above. See the [phase guides](meridian/backend/agents/README.md) for the complete map.
 
 ## Architecture
 
@@ -164,7 +163,7 @@ account-specific configuration out of Git.
 Follow [Prepare the database](meridian/docs/OPERATIONS.md#prepare-the-database). Initialize and
 seed only an empty database. List pending migrations, dry-run **one named migration**, inspect
 its result, then apply that migration. Existing installations must follow the
-[026-029 release order](meridian/docs/DAT307_RELEASE.md); do not apply all four before upgrading
+[026-029 upgrade order](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md); do not apply all four before upgrading
 the running application.
 
 The launcher below selects the provisioned **backend service login** through
@@ -239,7 +238,7 @@ and launch configuration.
 The [prompt guide](meridian/README.md#prompts) gives the precise prompts. The
 [failure exercises](meridian/docs/OPERATIONS.md#exercise-recovery-failures) intentionally stop
 workers or lose replies; run them only in a disposable environment. Capture evidence before a
-rehearsal reset: the administrative reset deletes selected bookings and their action audit rows.
+test reset: the administrative reset deletes selected bookings and their action audit rows.
 
 ## Deploy to your account
 
@@ -248,7 +247,7 @@ rehearsal reset: the administrative reset deletes selected bookings and their ac
 | Aurora | [`meridian/infra/bin/meridian-aurora.ts`](meridian/infra/bin/meridian-aurora.ts) | [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora) |
 | Runtime, Gateway, Memory and Policy | [AgentCore project](meridian/meridian_agentcore/) | [Deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) |
 | Optional hosted web app | [`scripts/publish.py`](meridian/scripts/publish.py) | [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app) |
-| Existing installation upgrade | Migrations 026-029 and coordinated application release | [DAT307 release gates](meridian/docs/DAT307_RELEASE.md) |
+| Existing installation upgrade | Migrations 026-029 and coordinated application release | [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) |
 
 The hosted path uses CloudFront, S3 and an existing App Runner service. The repository does not
 create that App Runner service. Hosting is optional; AWS data and agent services are required
@@ -265,11 +264,9 @@ venv/bin/python -m pip install --require-hashes -r examples/langgraph/requiremen
 PYTHON_DOTENV_DISABLED=1 venv/bin/python -m pytest -m "not database" tests examples/langgraph/tests
 ```
 
-The unit-test guard blocks TCP connections and supplies fake AWS credentials. The local SQL tests
-create and remove their own socket-only PostgreSQL cluster and databases. They need PostgreSQL
-server binaries and pgvector; set `MERIDIAN_PG_CONFIG` to that installation's `pg_config`. They
-report a skip when those prerequisites are absent. Tests marked `database` access a configured
-live Aurora cluster and can write data; do not include them in an offline check.
+The unit-test guard blocks TCP connections and supplies fake AWS credentials. Tests marked
+`database` access a configured live Aurora cluster and can write data; do not include them in an
+offline check.
 
 Frontend, from `meridian/frontend/`: run `npm ci`, `npm run lint`, `npm run typecheck`,
 `npm run test:run`, `npm run build` and `npm run test:accessibility`.
@@ -288,9 +285,8 @@ service correlation IDs. It does not
 constitute a service-issued Cedar decision. Correlate it with Gateway/interceptor/Lambda logs
 and the stored booking. Administrators remain able to alter database records.
 
-Historical screenshots and recordings illustrate the captured release. They do not certify
-an upgrade. The [readiness review](meridian/docs/DAT307_READINESS.md) identifies the remaining
-live proofs and their expected outcomes.
+The [booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md#acceptance-matrix)
+lists the live checks for an upgraded installation and their expected outcomes.
 
 ## Production implementation, scalability and operational resilience
 
@@ -317,7 +313,7 @@ No requests-per-second or concurrent-user target has been established by the fun
 
 For operational procedures, use [waits, retries and readback](meridian/docs/OPERATIONS.md#waits-retries-and-readback),
 the [stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md), and the
-[release and failure matrix](meridian/docs/DAT307_RELEASE.md). For an unknown action outcome,
+[upgrade and failure matrix](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md#acceptance-matrix). For an unknown action outcome,
 look up the original intent and booking first. Capture evidence before an administrative reset;
 resetting a booking deletes its associated action audit and is not a recovery procedure.
 
@@ -353,7 +349,7 @@ excludes scaling above the floor and every other row in the table.
 [Aurora pricing example](https://aws.amazon.com/rds/aurora/pricing/).
 
 Create budget alerts and resource tags before provisioning, then compare measured usage with
-the estimate after a representative rehearsal. Budget alerts do not stop spending. Retained
+the estimate after a representative test run. Budget alerts do not stop spending. Retained
 backups, logs, secrets and images can continue to incur charges after compute is removed.
 
 ### Clean up
@@ -376,8 +372,7 @@ shared CDK bootstrap stack or shared infrastructure as part of this application'
 | [Code structure](meridian/STRUCTURE.md) | Request paths and module responsibilities |
 | [Stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md) | Memory, saved progress and transactions |
 | [Operations](meridian/docs/OPERATIONS.md) | Provisioning, deployment, recovery and teardown |
-| [DAT307 readiness](meridian/docs/DAT307_READINESS.md) | Findings, claim-to-evidence map and failure matrix |
-| [DAT307 release](meridian/docs/DAT307_RELEASE.md) | Migration order, acceptance gates and rehearsal reset |
+| [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) | Migration order, acceptance matrix, rollback and test reset |
 | [Documentation index](meridian/docs/README.md) | All supporting guides |
 
 ## Security and contribution

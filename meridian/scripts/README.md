@@ -6,8 +6,8 @@ The numbered capability source lives in [backend/agents](../backend/agents/READM
 these shared scripts keep one stable command path for operators and CI.
 
 For migrations, list `--pending`, then dry-run and apply the first pending file with
-`--only MIGRATION.sql`. Do not run `apply_migrations.py` bare. The coordinated
-[DAT307 release](../docs/DAT307_RELEASE.md) requires deploying the updated Gateway target
+`--only MIGRATION.sql`. Do not run `apply_migrations.py` bare. The
+[booking functions upgrade](../docs/BOOKING_FUNCTIONS_UPGRADE.md) requires deploying the updated Gateway target
 between migrations 028 and 029 on an existing installation.
 
 `check_runtime_contract.py MeridianConcierge|MeridianWorkflow` is an offline contract check.

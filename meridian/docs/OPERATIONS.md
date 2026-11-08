@@ -27,7 +27,7 @@ IAM permissions, and makes no changes:
 ```bash
 python scripts/provision_preflight.py --account <account-id> --region <region> \
   --vpc-id <vpc-id> --subnet-ids <subnet-in-az-a> <subnet-in-az-b> \
-  --engine-version 18.3 --output .local/provision-preflight.json
+  --engine-version 18.6 --output .local/provision-preflight.json
 ```
 
 Then review and deploy the stack:
@@ -36,7 +36,7 @@ Then review and deploy the stack:
 cd infra
 npm ci && npm run build
 CONTEXT=(-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name>
-  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.3)
+  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.6)
 npx cdk diff   --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 npx cdk deploy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 ```
@@ -98,10 +98,15 @@ An older installation may also need `bind_current_identity.py` to establish its 
 Migration `021_audit_outcome.sql` adds `tool_calls` and `turn_error` to `agent_audit_log`.
 Those final-turn annotations are distinct from the atomic business-action audit added in 028.
 
-**Current release:** migrations 026-028 precede the new Lambda; migration 029 follows a verified
-application cutover. Follow [DAT307 release gates](DAT307_RELEASE.md) before applying them. The
-new action audit commits with each business action; final turn audit persistence remains
-best effort if a process is killed.
+**Migrations 026 to 029:** 026-028 precede the holds Lambda that uses them; 029 follows a
+verified application cutover. Follow [the booking functions upgrade](BOOKING_FUNCTIONS_UPGRADE.md)
+before applying them. The action audit commits with each business action; final turn audit
+persistence remains best effort if a process is killed.
+
+**Migration 030:** updates pgvector to 0.8.2, the version Aurora PostgreSQL 18.6 provides. An
+engine upgrade does not update installed extensions. Upgrade an existing cluster to 18.6 through
+the Aurora stack first (`-c engineVersion=18.6`, after a `cdk diff` that changes only
+`EngineVersion`), then apply 030. The migration refuses to run when 0.8.2 is not available.
 
 Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
 steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025

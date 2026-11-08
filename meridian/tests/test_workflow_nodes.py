@@ -133,6 +133,7 @@ async def test_availability_on_the_plan_path_merges_the_top_three_packages():
     assert merged[0]["available_sizes"] == ["5 nights"]
     assert merged[2]["availability"] == {"5 nights": 4}
     assert merged[3]["available_sizes"] == []
+    assert out["activities"][0]["title"] == "Workflow node: availability fan-out"
 
 
 async def test_a_missing_reviewed_row_loses_stale_availability(nodes, gateway):
@@ -144,7 +145,6 @@ async def test_a_missing_reviewed_row_loses_stale_availability(nodes, gateway):
     assert out["packages"][0]["available_sizes"] == []
     await nodes.hold({**_hold_state(), **out}, HOLD_CONFIG)
     assert gateway.calls == []
-    assert out["activities"][0]["title"] == "Workflow node: availability fan-out"
 
 
 async def test_availability_standalone_returns_the_availability_rows(nodes):
@@ -277,11 +277,19 @@ async def test_hold_ambiguous_outcome_raises_outcome_unknown(nodes, reply):
         await nodes.hold(_hold_state(), HOLD_CONFIG)
 
 
-@pytest.mark.parametrize("code", ["hold_failed", "hold_outcome_unknown", "unrecognized_error"])
+@pytest.mark.parametrize("code", ["hold_outcome_unknown", "unrecognized_error"])
 async def test_a_target_error_cannot_prove_that_no_hold_committed(nodes, code):
     nodes._gateway_call = lambda *_: _envelope({"error": code})
     with pytest.raises(HoldOutcomeUnknown):
         await nodes.hold(_hold_state(), HOLD_CONFIG)
+
+
+async def test_a_rolled_back_hold_is_a_definitive_refusal_not_an_unknown_outcome(nodes):
+    """The Lambda answers hold_failed only after it rolled back a transaction it never committed."""
+    nodes._gateway_call = lambda *_: _envelope({"error": "hold_failed"})
+    out = await nodes.hold(_hold_state(), HOLD_CONFIG)
+    assert "hold_id" not in out
+    assert "rolled back" in _refusal_span(out)["details"]
 
 
 async def test_an_empty_reviewed_plan_cannot_acquire_a_new_candidate(nodes, gateway):

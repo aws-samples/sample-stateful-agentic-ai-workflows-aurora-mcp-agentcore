@@ -14,9 +14,18 @@ CATALOG_AND_GRANTS = {
     ("traveler_access_audit", "INSERT"),
     ("trip_packages", "SELECT"),
 }
+# Migration 028: the holds Lambda appends its action audit row, and that row's checks and the
+# hold_requests policy read the booking, request and journey under row-level security.
+GATEWAY_ACTION_AUDIT = {
+    ("booking_action_audit", "SELECT"),
+    ("booking_action_audit", "INSERT"),
+    ("bookings", "SELECT"),
+    ("hold_requests", "SELECT"),
+    ("journeys", "SELECT"),
+}
 EXPECTED_TABLE_PRIVILEGES = {
     "meridian_backend": CATALOG_AND_GRANTS,
-    "meridian_gateway": CATALOG_AND_GRANTS,
+    "meridian_gateway": CATALOG_AND_GRANTS | GATEWAY_ACTION_AUDIT,
     "meridian_identity": {("traveler_identity_bindings", "SELECT")},
 }
 APP_ROLE_BY_SET_ONLY = [

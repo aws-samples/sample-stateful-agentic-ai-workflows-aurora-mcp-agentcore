@@ -354,7 +354,7 @@ async def cleanup() -> None:
         for row in rows:
             await _purge(db, row["journey_id"], row["thread_id"])
     for booking in bookings:
-        for table in ("hold_requests", "booking_lines", "bookings"):
+        for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
             await db.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,))
     for thread in conversations:
         await db.execute("DELETE FROM trip_interactions WHERE conversation_id = %s", (thread,))

@@ -5,7 +5,7 @@ import os
 import pytest
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.db.rds_data_client import get_rds_data_client
+from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
 
 JORDAN = "trv_meridian_demo"
 DECOY = "trv_demo_decoy"
@@ -71,3 +71,47 @@ async def access_audit_ids(subject: str, traveler: str, decision: str) -> set[st
         "SELECT audit_id FROM traveler_access_audit WHERE subject_id = %s "
         "AND requested_traveler_id = %s AND decision = %s", (subject, traveler, decision))
     return {row["audit_id"] for row in rows}
+
+
+BOOKING_ROW_TABLES = ("booking_action_audit", "hold_requests", "booking_lines", "bookings")
+APP_ROLE = "meridian_app"
+GATEWAY_ROLE = "meridian_gateway"
+
+
+def gateway_login() -> RDSDataClient:
+    """A Data API client on the meridian_gateway login, the only one that may write bookings."""
+    require_env("AURORA_GATEWAY_SECRET_ARN")
+    return RDSDataClient(secret_arn=os.environ["AURORA_GATEWAY_SECRET_ARN"])
+
+
+async def as_gateway(client: RDSDataClient, transaction_id: str, sql: str, params=()) -> list:
+    """Run ``sql`` with the Gateway role's grants inside an open scoped transaction.
+
+    The holds Lambda does the same: it steps to the Gateway role for one statement and back to
+    ``meridian_app``. A statement that raises leaves the transaction aborted, as there.
+
+    Args:
+        client: A client on the meridian_gateway login (:func:`gateway_login`).
+        transaction_id: A transaction from ``client.scoped_session``.
+        sql: The statement.
+        params: Its parameters.
+
+    Returns:
+        The statement's rows.
+    """
+    await client.execute(f"SET LOCAL ROLE {GATEWAY_ROLE}", transaction_id=transaction_id)
+    rows = await client.execute(sql, params, transaction_id=transaction_id)
+    await client.execute(f"SET LOCAL ROLE {APP_ROLE}", transaction_id=transaction_id)
+    return rows
+
+
+async def delete_booking_rows(client, booking_id: str) -> None:
+    """Delete one booking's rows, referencing tables first (migration 028 foreign keys)."""
+    for table in BOOKING_ROW_TABLES:
+        await client.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking_id,))
+
+
+async def delete_journey_rows(client, journey_id: str) -> None:
+    """Delete a journey's action audit and hold identity rows, before the journey itself."""
+    for table in ("booking_action_audit", "hold_requests"):
+        await client.execute(f"DELETE FROM {table} WHERE journey_id = %s", (journey_id,))

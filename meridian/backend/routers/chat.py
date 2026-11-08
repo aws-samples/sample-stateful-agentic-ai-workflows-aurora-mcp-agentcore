@@ -591,8 +591,8 @@ class DomainInputError(ValueError):
 
 
 def _currency_amount(q: str) -> float:
-    match = re.search(r"(?:\$\s*([\d,]+(?:\.\d{1,2})?)|"
-                      r"([\d,]+(?:\.\d{1,2})?)\s*(?:usd|us dollars)\b)", q)
+    match = re.search(r"(?:\$\s*(\d[\d,]*(?:\.\d{1,2})?)|"
+                      r"(\d[\d,]*(?:\.\d{1,2})?)\s*(?:usd|us dollars)\b)", q)
     if not match:
         raise DomainInputError("Please supply a USD amount, or compare specific package IDs.")
     return float(next(value for value in match.groups() if value).replace(",", ""))
@@ -615,20 +615,57 @@ async def _comparison_ids(q: str) -> list[str]:
     raise DomainInputError("Please name two to four package IDs, or ask to compare trip types.")
 
 
+def _resolved(prompts: List[str], resolve: Callable[[], Any]) -> Any:
+    """What ``resolve`` returns, or None after recording the prompt it raised."""
+    try:
+        return resolve()
+    except DomainInputError as exc:
+        prompts.append(str(exc))
+        return None
+
+
 async def _domain_arguments(q: str) -> tuple:
-    """Validate every requested domain input before opening the tool session."""
+    """Resolve the arguments of every route the query asks for, before opening the tool session.
+
+    A route whose argument is missing is skipped and its prompt kept, so it never blocks another
+    route in the same query.
+
+    Returns:
+        ``(compare, ids, destination, region, prompts)``; ``prompts`` lists what the traveler
+        must still supply, in route order.
+
+    Raises:
+        DomainInputError: When no route in the query can run, with the first prompt.
+    """
+    prompts: List[str] = []
     compare = any(k in q for k in ("compare", "comparison", "side by side"))
-    ids = await _comparison_ids(q) if compare else []
-    destination = _named_in(q, _PRICE_RANGE_DESTINATIONS + _INVENTORY_REGIONS) if (
-        "price range" in q
-    ) else None
-    region = _named_in(q, _INVENTORY_REGIONS) if any(
+    ids: List[str] = []
+    if compare:
+        try:
+            ids = await _comparison_ids(q)
+        except DomainInputError as exc:
+            prompts.append(str(exc))
+    destination = _resolved(prompts, lambda: _named_in(
+        q, _PRICE_RANGE_DESTINATIONS + _INVENTORY_REGIONS)) if "price range" in q else None
+    region = _resolved(prompts, lambda: _named_in(q, _INVENTORY_REGIONS)) if any(
         k in q for k in ("how many", "inventory")
     ) else None
+    converts = False
     if not compare and any(k in q for k in _CURRENCY_KEYWORDS):
-        _currency_amount(q)
+        converts = _resolved(prompts, lambda: _currency_amount(q)) is not None
+    runnable = ids or destination or region or converts or any(
+        k in q for k in _LOYALTY_KEYWORDS)
+    if prompts and not runnable:
+        raise DomainInputError(prompts[0])
+    return compare, ids, destination, region, prompts
 
-    return compare, ids, destination, region
+
+def _domain_answer(calls: List[Dict[str, Any]], prompts: List[str]) -> Optional[Dict[str, Any]]:
+    """One call, or a ``multi`` of several, carrying the prompts for routes that could not run."""
+    if not calls:
+        return None
+    answer = calls[0] if len(calls) == 1 else {"tool": "multi", "calls": calls}
+    return {**answer, "prompts": prompts} if prompts else answer
 
 
 async def _call_domain_tool(
@@ -645,7 +682,7 @@ async def _call_domain_tool(
     q = query.lower()
     calls: List[Dict[str, Any]] = []
     compared_packages: List[Dict[str, Any]] = []
-    compare, ids, destination, region = await _domain_arguments(q)
+    compare, ids, destination, region, prompts = await _domain_arguments(q)
 
     async with concierge_mcp_session() as cli:
         if compare:
@@ -672,11 +709,7 @@ async def _call_domain_tool(
         if region:
             calls.append(await _timed_tool_call(cli, "region_inventory", {"region": region}))
 
-    if not calls:
-        return None
-    if len(calls) == 1:
-        return calls[0]
-    return {"tool": "multi", "calls": calls}
+    return _domain_answer(calls, prompts)
 
 
 DISCOVERY_TITLE = "MCP server discovered: meridian-concierge (custom)"
@@ -771,6 +804,7 @@ def _record_domain_calls(
             reply_parts.append(reply)
         if tool_name == "compare_packages":
             compared_ids = list(tool_args.get("package_ids") or [])
+    reply_parts.extend(domain_call.get("prompts") or [])
     return reply_parts, compared_ids
 
 

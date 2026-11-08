@@ -85,7 +85,12 @@ def _result_text(event) -> str:
 
 def _unreported_write(event, kind: str) -> str:
     text = _result_text(event)
-    if not text or text in {f"{kind}_failed", f"{kind}_outcome_unknown"}:
+    if text == f"{kind}_failed":
+        return (
+            f"The {kind} was not made. The service rolled the attempt back, so nothing changed. "
+            "Say so plainly; the traveler may ask again."
+        )
+    if not text or text == f"{kind}_outcome_unknown":
         return (
             f"The {kind} outcome is unknown. Read the saved receipt before retrying "
             "with the same request identity. Do not claim the action failed or create a new intent."

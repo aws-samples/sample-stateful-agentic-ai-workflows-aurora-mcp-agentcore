@@ -11,7 +11,7 @@ describe('SignInScreen', () => {
     expect(screen.getByLabelText('Email')).toHaveFocus();
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'jordan@example.test' } });
     fireEvent.change(screen.getByLabelText('Password', { exact: true }), { target: { value: 'private' } });
-    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+    fireEvent.submit(screen.getByLabelText('Email').closest('form')!);
     expect(password).toHaveBeenCalledWith('jordan@example.test', 'private');
     expect(screen.getByLabelText('Password', { exact: true })).toHaveValue('');
     expect(hosted).not.toHaveBeenCalled();
@@ -51,5 +51,49 @@ describe('SignInScreen', () => {
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading).toHaveAttribute('tabindex', '-1');
     expect(heading).toHaveFocus();
+  });
+
+  describe('accessibility of the inline form', () => {
+    it('keeps one name on the reveal button and reports state with aria-pressed', () => {
+      render(<SignInScreen onPasswordSignIn={vi.fn()} />);
+      const reveal = screen.getByRole('button', { name: 'Show password' });
+      expect(reveal).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(reveal);
+      expect(screen.getByRole('button', { name: 'Show password' }))
+        .toHaveAttribute('aria-pressed', 'true');
+      expect(screen.queryByRole('button', { name: 'Hide password' })).not.toBeInTheDocument();
+    });
+
+    it('does not name the form with text that repeats the sign-in button', () => {
+      render(<SignInScreen onPasswordSignIn={vi.fn()} />);
+      expect(screen.queryByRole('form', { name: 'Sign in' })).not.toBeInTheDocument();
+    });
+
+    it('labels the main landmark once and not the inner section as well', () => {
+      const { container } = render(<SignInScreen />);
+      expect(container.querySelectorAll('[aria-labelledby="signin-title"]')).toHaveLength(1);
+    });
+
+    it('marks both inputs invalid and points them at the alert on an error', () => {
+      render(<SignInScreen onPasswordSignIn={vi.fn()} message="Check your email and password." />);
+      const alert = screen.getByRole('alert');
+      for (const input of [screen.getByLabelText('Email'),
+        screen.getByLabelText('Password', { exact: true })]) {
+        expect(input).toHaveAttribute('aria-invalid', 'true');
+        expect(input).toHaveAttribute('aria-describedby', alert.id);
+      }
+    });
+
+    it('leaves the inputs valid when there is no error', () => {
+      render(<SignInScreen onPasswordSignIn={vi.fn()} />);
+      const email = screen.getByLabelText('Email');
+      expect(email).not.toHaveAttribute('aria-invalid');
+      expect(email).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('hides the decorative photograph from assistive technology', () => {
+      const { container } = render(<SignInScreen />);
+      expect(container.querySelector('figure img')?.getAttribute('alt')).toBe('');
+    });
   });
 });

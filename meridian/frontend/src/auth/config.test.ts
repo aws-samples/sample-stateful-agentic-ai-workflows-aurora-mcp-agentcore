@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readAuthConfig } from './config';
+import { passwordEndpoint } from './passwordClient';
 
 const ORIGIN = 'https://site.example.test';
 
@@ -19,6 +20,15 @@ describe('readAuthConfig', () => {
       redirectUri: 'https://site.example.test/showcase',
       logoutUri: 'https://site.example.test/showcase',
     });
+  });
+
+  it('lowercases the domain so inline sign-in finds its endpoint', () => {
+    const config = readAuthConfig({
+      VITE_COGNITO_DOMAIN: 'Meridian-X.auth.US-East-1.amazoncognito.com',
+      VITE_COGNITO_CLIENT_ID: 'c',
+    }, ORIGIN);
+    expect(config?.domain).toBe('meridian-x.auth.us-east-1.amazoncognito.com');
+    expect(passwordEndpoint(config!)).toBe('https://cognito-idp.us-east-1.amazonaws.com/');
   });
 
   it('accepts a domain written as a URL', () => {

@@ -72,3 +72,35 @@ async def test_empty_comparison_does_not_invent_an_amount_to_convert(client):
         "compare_packages",
         {"package_ids": ["CTY-002", "BCH-003"]},
     )
+
+
+async def test_a_missing_region_blocks_only_the_inventory_route(client):
+    client.call.return_value = [{"package_id": "CTY-002"}]
+    _rows, reply, answered = await chat._concierge_mcp_turn(
+        "Compare CTY-002 and BCH-003, how many places are left?", "traveler", [], [])
+    client.call.assert_awaited_once_with(
+        "compare_packages", {"package_ids": ["CTY-002", "BCH-003"]})
+    assert answered
+    assert "Please name one supported location" in reply
+
+
+async def test_a_missing_destination_blocks_only_the_price_range_route(client):
+    await chat._call_domain_tool(
+        "What is the price range, and what are my Bonvoy points?", traveler_id="traveler")
+    client.call.assert_awaited_once_with(
+        "loyalty_balance", {"travelerId": "traveler", "program": "Marriott Bonvoy"})
+
+
+async def test_a_missing_destination_does_not_block_a_comparison(client):
+    await chat._call_domain_tool(
+        "Compare CTY-002 and BCH-003 and show the price range", traveler_id="traveler")
+    client.call.assert_awaited_once_with(
+        "compare_packages", {"package_ids": ["CTY-002", "BCH-003"]})
+
+
+@pytest.mark.parametrize("query", ["Convert $, to euros", "Convert $,, to euros"])
+async def test_a_currency_sign_with_no_digits_asks_for_a_usd_amount(client, query):
+    _rows, reply, answered = await chat._concierge_mcp_turn(query, "traveler", [], [])
+    assert "Please supply a USD amount" in reply
+    assert not answered
+    client.call.assert_not_awaited()

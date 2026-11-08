@@ -81,7 +81,11 @@ class GovernedHold:
 
     @property
     def definitive_refusal(self) -> bool:
-        """Whether a known guard proves that this attempt made no business write."""
+        """Whether a refusing layer or a named error proves that this attempt made no write.
+
+        Named errors include ``hold_failed``, which the target returns only after it rolled back
+        a transaction it never committed. ``hold_outcome_unknown`` is not among them.
+        """
         return self.refused_by is not None or self.error in {
             *CODE_CLASSES, WORKLOAD_GRANT_REFUSAL,
         }

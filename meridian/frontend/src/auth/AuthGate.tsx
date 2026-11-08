@@ -7,7 +7,7 @@ import type { AuthConfig } from './config';
 import { SessionContext } from './SessionContext';
 import { createBrowserSession } from './session';
 import { SignInScreen } from './SignInScreen';
-import { passwordEndpoint, VERIFICATION_REQUIRED } from './passwordClient';
+import { passwordEndpoint } from './passwordClient';
 
 const SIGN_IN_RESULT_PARAMS = ['code', 'state', 'error', 'error_description'];
 
@@ -107,7 +107,7 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
       onSignIn={() => { setStarting(true); void session.startSignIn(); }}
       onPasswordSignIn={passwordEndpoint(config)
         ? (username, password) => session.passwordSignIn(username, password) : undefined}
-      needsHostedSignIn={state.message === VERIFICATION_REQUIRED}
+      needsHostedSignIn={state.hostedSignInRequired}
     />
   );
 }

@@ -13,10 +13,10 @@
 4. [Dogwood assessment](DOGWOOD_POLICY_ASSESSMENT.md) - optional temporal-policy learning, with implemented and proposed behavior kept separate.
 5. [Signed scope evaluation](SIGNED_SCOPE_EVALUATION.md) - whether Aurora should verify a signed traveler scope, evaluated and not built.
 
-## DAT307 session readiness
+## Upgrade an existing installation
 
-- [Review and evidence map](DAT307_READINESS.md): findings, claim support and failure scenarios.
-- [Release and rehearsal gates](DAT307_RELEASE.md): migrations, rollout, proofs and reset.
+- [Booking functions upgrade](BOOKING_FUNCTIONS_UPGRADE.md): migrations 026-029, rollout order,
+  acceptance matrix, rollback and test-booking reset.
 
 ## Operate and validate
 

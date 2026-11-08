@@ -111,6 +111,19 @@ describe('inline sign-in', () => {
     await pending;
     expect(session.getState().status).toBe('signed-out');
     expect(session.getAccessToken()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('flags a challenged account so the screen can offer the hosted page', async () => {
+    fetchFn.mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ ChallengeName: 'NEW_PASSWORD_REQUIRED' }),
+    });
+    const session = build({ config: inlineConfig });
+    await session.passwordSignIn('jordan@example.test', 'not-a-real-password');
+    expect(session.getState()).toMatchObject({ status: 'signed-out', hostedSignInRequired: true });
+    await session.passwordSignIn('jordan@example.test', 'not-a-real-password');
+    session.signOut();
+    expect(session.getState().hostedSignInRequired).toBe(false);
   });
 });
 
@@ -127,7 +140,7 @@ describe('returning from the hosted page', () => {
       code: 'code-1', code_verifier: saved.verifier,
     });
     expect(session.getState()).toEqual({
-      status: 'signed-in', message: null,
+      status: 'signed-in', message: null, hostedSignInRequired: false,
       traveler: {
         travelerId: 'trv_meridian_demo', displayName: 'Jordan Morgan',
         avatarUrl: '/travel/jordan-morgan.jpg',
@@ -259,7 +272,8 @@ describe('signing out', () => {
     session.signOut();
     expect(session.getAccessToken()).toBeNull();
     expect(timers).toEqual([]);
-    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null });
+    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null,
+      hostedSignInRequired: false });
     const url = new URL(navigate.mock.calls[navigate.mock.calls.length - 1][0]);
     expect(url.origin + url.pathname).toBe('https://d.auth.example.test/logout');
     expect(Object.fromEntries(url.searchParams))
@@ -330,7 +344,8 @@ describe('one refresh at a time', () => {
     gate.resolve(tokenResponse(jordanTokens()));
     await pending;
     expect(session.getAccessToken()).toBeNull();
-    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null });
+    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null,
+      hostedSignInRequired: false });
   });
 
   it('keeps a newer session when an older refresh fails afterwards', async () => {
@@ -355,7 +370,8 @@ describe('one refresh at a time', () => {
     const session = build();
     await session.refreshNow();
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null });
+    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null,
+      hostedSignInRequired: false });
   });
 
   it('drops the old token when a new sign-in begins while signed in', async () => {
