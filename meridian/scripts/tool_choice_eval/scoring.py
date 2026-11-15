@@ -3,7 +3,8 @@
 Three numbers come out. Selection accuracy is the share of runs that called every expected
 tool and nothing outside the expected and allowed tools. The forbidden-call rate is the share
 of runs that called a forbidden tool (a write nobody allowed, or any tool on a turn that gives
-the model none). Argument accuracy is the share of expected argument checks that a call met.
+the model none). Argument accuracy is the share of expected argument checks that the best single
+call of the tool met: every argument of an expected invocation is judged against one call.
 """
 
 from __future__ import annotations
@@ -82,17 +83,28 @@ def _same_scalar(value: Any, expected: Any) -> bool:
     return value == expected
 
 
+def _call_results(
+    arguments: Mapping[str, Mapping[str, Any]], call: ToolCall
+) -> tuple[bool, ...]:
+    return tuple(
+        argument in call.arguments and matches(call.arguments[argument], matcher)
+        for argument, matcher in arguments.items()
+    )
+
+
 def _argument_checks(case: Case, calls: Iterable[ToolCall]) -> tuple[tuple[str, str, bool], ...]:
+    """One check per expected argument, all judged against a single call of the tool.
+
+    The call that meets the most arguments is the one reported (the earliest on a tie), so a
+    request split over two calls, each right about a different argument, passes no check. A tool
+    that was never called fails every one of its checks.
+    """
     calls = list(calls)
     checks = []
     for tool, arguments in case.expected_arguments.items():
-        made = [call for call in calls if call.name == tool]
-        for argument, matcher in arguments.items():
-            passed = any(
-                argument in call.arguments and matches(call.arguments[argument], matcher)
-                for call in made
-            )
-            checks.append((tool, argument, passed))
+        outcomes = [_call_results(arguments, call) for call in calls if call.name == tool]
+        best = max(outcomes, key=sum, default=(False,) * len(arguments))
+        checks.extend((tool, argument, passed) for argument, passed in zip(arguments, best, strict=True))
     return tuple(checks)
 
 

@@ -10,9 +10,10 @@ tools and the platform's narration prompt, as in ``main.converse``. The model is
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Iterable
 
@@ -88,20 +89,24 @@ def turn_prompt_for(case: Case, runtime: Runtime) -> str:
         case.outcome, case.target, case.budget_ceiling_cents, CONFIRMED_ACTIONS[case.turn])
 
 
+def turn_instructions_for(case: Case, runtime: Runtime) -> str:
+    """The turn instructions the Runtime adds to the shared prompt on this case's turn."""
+    hold, booking = case.turn == "confirmed_hold", case.turn == "confirmed_booking"
+    return runtime.prompts.turn_instructions(
+        hold, case.target if hold else None, booking, case.target if booking else None)
+
+
 def build_eval_agent(
     case: Case, model: Any, runtime: Runtime, recorder: CallRecorder
 ) -> Any:
     """The Concierge agent for one case: its prompt, its hooks, and stub tools or none."""
     tools = stub_tools(runtime) if case.offers_tools else []
-    hold, booking = case.turn == "confirmed_hold", case.turn == "confirmed_booking"
-    instructions = runtime.prompts.turn_instructions(
-        hold, case.target if hold else None, booking, case.target if booking else None)
     return runtime.definition.build_agent(
         model=model,
         tools=tools,
         hooks=[runtime.definition.TravelerPinHook(EVAL_TRAVELER), recorder],
         phase=4,
-        extra_instructions=instructions,
+        extra_instructions=turn_instructions_for(case, runtime),
         callback_handler=None,
         messages=messages_for(case),
     )
@@ -143,21 +148,50 @@ def run_cases(
     return scores
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _canonical(case: Case) -> str:
+    """The whole case definition as sorted-key JSON, so no field escapes the hash."""
+    return json.dumps(asdict(case), sort_keys=True, ensure_ascii=False)
+
+
+def _case_inputs(case: Case, runtime: Runtime) -> str:
+    """The turn instructions and the turn prompt the model receives on this case."""
+    return "\n".join((turn_instructions_for(case, runtime), turn_prompt_for(case, runtime)))
+
+
+def _turn_templates(runtime: Runtime) -> str:
+    """The instructions and narration of each turn type, rendered with a fixed sample."""
+    target = {"sample": "target"}
+    parts = [
+        runtime.prompts.turn_instructions(False, None, False, None),
+        runtime.prompts.turn_instructions(True, target, False, None),
+        runtime.prompts.turn_instructions(False, None, True, target),
+    ]
+    parts.extend(
+        runtime.prompts.narration_prompt("sample outcome", target, 100000, action)
+        for action in sorted(set(CONFIRMED_ACTIONS.values())))
+    return "\n".join(parts)
+
+
 def fingerprint(runtime: Runtime, cases: Iterable[Case]) -> SimpleNamespace:
     """What a result was measured against: hashes of the prompt, the tool specs and the cases.
 
-    A score is comparable to another only when these match, apart from the model.
+    The prompt hash covers the shared prompt and the instructions and narration of every turn
+    type. The cases hash covers each full case definition and the model inputs rendered from it
+    (memory context included). A score is comparable to another only when these match, apart
+    from the model.
     """
+    cases = list(cases)
     specs = "".join(
         f"{tool.tool_name}|{tool.tool_spec['description']}|{tool.tool_spec['inputSchema']}"
         for tool in stub_tools(runtime))
-    prompt = runtime.definition.system_prompt(4) + runtime.prompts.UNCONFIRMED
-    case_text = "".join(f"{c.id}|{c.turn}|{c.prompt}|{c.history}" for c in cases)
-
-    def digest(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-
+    prompt = runtime.definition.system_prompt(4) + _turn_templates(runtime)
+    case_text = "\n".join(
+        f"{_canonical(case)}\n{_case_inputs(case, runtime)}" for case in cases)
     return SimpleNamespace(
-        prompt=digest(prompt), tools=digest(specs), cases=digest(case_text),
+        prompt=_digest(prompt), tools=_digest(specs), cases=_digest(case_text),
         tool_names=sorted(tool.tool_name for tool in stub_tools(runtime)),
     )

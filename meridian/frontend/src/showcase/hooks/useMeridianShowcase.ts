@@ -18,7 +18,7 @@ import { CURRENT_TRAVELER } from '../../api/currentTraveler';
 import { ApiError, NotSentError, runWithDeadline, runWithStreamDeadline } from '../../api/request';
 import { useSession } from '../../auth/SessionContext';
 import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
-import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
+import { allocateHoldIntent, holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
   ChatResponse,
   LongTermMemoryFact,
@@ -1132,6 +1132,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         const response = await runWithStreamDeadline(async (signal, touch) => {
           const saved = loadBookingRecovery(travelerKey.current);
           let intent: SavedHoldIntent | undefined = saved.intents[intentKey];
+          let staleConversationId: string | undefined;
           if (intent) {
             // Read before every retry, including after refresh. A failed read
             // is not permission to create a replacement intent.
@@ -1145,18 +1146,20 @@ export function useMeridianShowcase(): MeridianShowcaseState {
               // saw that this exact old receipt had expired.
               if (!existing || existing.order.order_id !== recorded.order.order_id
                 || parseDatabaseTime(existing.order.hold_expires_at) > Date.now()) return recorded;
+              staleConversationId = intent.conversationId;
               intent = undefined;
             }
           }
           if (!intent) {
-            intent = {
-              conversationId: `conv_hold_${crypto.randomUUID()}`,
-              productId: product.product_id, duration, quantity: travelersCount,
-              replacesBookingId: existing?.order.order_id,
-            };
-            saved.intents[intentKey] = intent;
-            try { saveBookingRecovery(travelerKey.current, saved); }
-            catch { throw new NotSentError('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
+            // Allocation re-reads storage under a per-traveler lock, so a second tab
+            // adopts this tab's identity instead of creating another one.
+            try {
+              intent = await allocateHoldIntent(travelerKey.current, intentKey, () => ({
+                conversationId: `conv_hold_${crypto.randomUUID()}`,
+                productId: product.product_id, duration, quantity: travelersCount,
+                replacesBookingId: existing?.order.order_id,
+              }), staleConversationId);
+            } catch { throw new NotSentError('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
           }
           sentIntent = intent;
           return processOrder({

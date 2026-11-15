@@ -49,6 +49,7 @@ MAX_BATCH_ROWS = 1000
 DEFAULT_SETTLE_SECONDS = 180
 DEFAULT_MAX_BATCHES = 20
 MIN_REMAINING_MS = 20_000
+UNCHECKED_BACKLOG_SECONDS = 3600.0
 CONFLICT_CODES = ("PreconditionFailed", "ConditionalRequestConflict")
 METRIC_NAMESPACE = "Meridian/AuditExport"
 
@@ -175,6 +176,7 @@ class TableResult:
     backlog_age_seconds: float = 0.0
     conflict: bool = False
     head: Optional[ChainHead] = None
+    checked: bool = False
 
 
 def canonical(value: Any) -> str:
@@ -333,34 +335,61 @@ def fetch_rows(rds, settings: Settings, table: AuditTable, head: ChainHead,
             raise ExportError(PHRASE_READ) from None
 
 
-def export_table(rds, s3, settings: Settings, table: AuditTable,
-                 time_left_ms: Callable[[], int]) -> TableResult:
-    """Export a table's new rows as chained objects, until caught up or out of budget."""
-    result = TableResult(table.name)
+@dataclass
+class TableRun:
+    """One table's progress through a run: its chain head, batch size and result so far."""
+
+    table: AuditTable
+    result: TableResult
+    head: ChainHead
+    size: int
+    done: bool = False
+    failed: bool = False
+
+
+def begin_table(s3, settings: Settings, table: AuditTable) -> TableRun:
+    """Read the table's chain head from the bucket and ready it for batches."""
     try:
         head = read_head(s3, settings.bucket, table.name)
     except (ClientError, BotoCoreError) as error:
         LOGGER.error("Reading the chain head failed: %s", _error_code(error))
         raise ExportError(PHRASE_STATE) from None
-    size = settings.batch_rows
+    result = TableResult(table.name, head=head)
+    return TableRun(table, result, head, settings.batch_rows)
+
+
+def export_batch(rds, s3, settings: Settings, run: TableRun) -> None:
+    """Read and write at most one batch. Marks the run done when caught up or in conflict."""
+    rows, run.size = fetch_rows(rds, settings, run.table, run.head, run.size)
+    run.result.checked = True
+    if not rows:
+        run.done = True
+        run.result.backlog_age_seconds = 0.0
+        return
+    exported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    new = build_object(run.table.name, run.head, rows, exported_at)
+    if not put_object(s3, settings.bucket, new):
+        LOGGER.warning("Another writer holds object %s of %s", new.head.seq, run.table.name)
+        run.result.conflict = True
+        run.done = True
+        return
+    run.result.rows += len(rows)
+    run.result.objects += 1
+    full = len(rows) == run.size
+    run.result.backlog_age_seconds = float(rows[-1]["age_seconds"]) if full else 0.0
+    run.head = new.head
+    run.result.head = new.head
+
+
+def export_table(rds, s3, settings: Settings, table: AuditTable,
+                 time_left_ms: Callable[[], int]) -> TableResult:
+    """Export a table's new rows as chained objects, until caught up or out of budget."""
+    run = begin_table(s3, settings, table)
     for _ in range(settings.max_batches):
-        if time_left_ms() < MIN_REMAINING_MS:
+        if run.done or time_left_ms() < MIN_REMAINING_MS:
             break
-        rows, size = fetch_rows(rds, settings, table, head, size)
-        if not rows:
-            break
-        exported_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        new = build_object(table.name, head, rows, exported_at)
-        if not put_object(s3, settings.bucket, new):
-            LOGGER.warning("Another writer holds object %s of %s", new.head.seq, table.name)
-            result.conflict = True
-            break
-        result.rows += len(rows)
-        result.objects += 1
-        result.backlog_age_seconds = float(rows[-1]["age_seconds"]) if len(rows) == size else 0.0
-        head = new.head
-    result.head = head
-    return result
+        export_batch(rds, s3, settings, run)
+    return run.result
 
 
 def emit_metrics(results: List[TableResult], completed: bool) -> None:
@@ -397,21 +426,51 @@ def _clients():
     return boto3.client("rds-data", config=config), boto3.client("s3", config=config)
 
 
+def _run_rounds(rds, s3, settings: Settings, runs: List[TableRun],
+                time_left_ms: Callable[[], int]) -> bool:
+    """Give each unfinished table one batch per round, so a busy table cannot starve the rest.
+
+    Stops when every table is caught up, ``max_batches`` rounds have run, or the time is nearly
+    gone. A table that fails is marked failed and skipped. Returns True when any table failed.
+    """
+    for _ in range(settings.max_batches):
+        active = [run for run in runs if not run.done]
+        for run in active:
+            if time_left_ms() < MIN_REMAINING_MS:
+                return any(r.failed for r in runs)
+            try:
+                export_batch(rds, s3, settings, run)
+            except ExportError as error:
+                LOGGER.error("%s: %s", run.table.name, error)
+                run.failed = run.done = True
+        if not active:
+            break
+    return any(r.failed for r in runs)
+
+
 def lambda_handler(_event: dict, context) -> dict:
     """Export every audit table. One table's failure does not stop the others, but fails the run."""
     LOGGER.info(canonical({"event": "audit_export_start", "boto3": boto3.__version__}))
     settings = Settings.from_env()
     rds, s3 = _clients()
-    results: List[TableResult] = []
+    runs: List[TableRun] = []
     failed = False
     for table in TABLES:
         try:
-            results.append(export_table(rds, s3, settings, table,
-                                        context.get_remaining_time_in_millis))
+            runs.append(begin_table(s3, settings, table))
         except ExportError as error:
             LOGGER.error("%s: %s", table.name, error)
             failed = True
-    emit_metrics(results, completed=not failed)
+    failed = _run_rounds(rds, s3, settings, runs, context.get_remaining_time_in_millis) or failed
+    results = [run.result for run in runs if not run.failed]
+    unchecked = [r.table for r in results if not r.checked]
+    if unchecked:
+        LOGGER.warning("Audit export did not read %s this run: the time ran out before its "
+                       "first read, so its backlog is unknown", ", ".join(unchecked))
+        for result in results:
+            if not result.checked:
+                result.backlog_age_seconds = UNCHECKED_BACKLOG_SECONDS
+    emit_metrics(results, completed=not failed and not unchecked)
     if failed:
         raise ExportError(PHRASE_RUN)
     return {"rows": sum(r.rows for r in results), "objects": sum(r.objects for r in results)}

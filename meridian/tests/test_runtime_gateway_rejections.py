@@ -1246,51 +1246,97 @@ class LoopWatch:
 
 
 class HangingWrites(DataPlane):
-    """A data plane whose ``create_event`` waits on ``gate`` (at most 5 s) for chosen writes."""
+    """A data plane whose ``create_event`` waits on ``gate`` (at most 5 s) for chosen writes.
+
+    ``reached`` is set when a chosen write starts, so a test can act on that moment instead of
+    guessing how long the turn takes to get there.
+    """
 
     def __init__(self, hang_when=lambda params: True):
         super().__init__()
         self.gate, self.hang_when, self.hung = threading.Event(), hang_when, 0
+        self.reached = threading.Event()
 
     def create_event(self, **params):
         if self.hang_when(params):
             self.hung += 1
             self.calls.append(("create_event", params))
+            self.reached.set()
             self.gate.wait(5)
             return {"event": {"eventId": f"evt-{len(self.calls)}"}}
         return super().create_event(**params)
 
 
-async def collect_events(module, model, payload=PAYLOAD):
+def watchdogs_under_test_control(module, monkeypatch):
+    """Give the turn an idle limit no test reaches, and return the watchdogs it creates.
+
+    The test ends the turn itself with ``expire``, so no wall-clock limit decides whether the
+    fault was reached first.
+    """
+    made = []
+
+    class Recorded(module.TurnWatchdog):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            made.append(self)
+
+    monkeypatch.setattr(module, "TurnWatchdog", Recorded)
+    monkeypatch.setattr(module, "IDLE_LIMIT_SECONDS", RUN_BOUND_SECONDS * 4)
+    return made
+
+
+def expire(made):
+    """End the turn now, as if it had made no progress for its idle limit."""
+    made[-1].idle_seconds = 0.0
+
+
+async def until_set(flag):
+    """Wait until a ``threading.Event`` is set; ``asyncio.wait_for`` bounds the wait."""
+    while not flag.is_set():
+        await asyncio.sleep(0.01)
+
+
+async def collect_events(module, model, payload=PAYLOAD, on_event=lambda _event: None):
     module.MCPClient = client_class(gateway(cedar))
     module.concierge_model = lambda: model
-    return [json.loads(item) async for item in module.invoke(payload, None)]
+    events = []
+    async for item in module.invoke(payload, None):
+        events.append(json.loads(item))
+        on_event(events[-1])
+    return events
 
 
 @needs_sdk
 def test_a_hung_memory_write_leaves_the_loop_free_and_the_watchdog_and_keepalive_running(
         short_deadline_sdk, monkeypatch):
     module = short_deadline_sdk
+    made = watchdogs_under_test_control(module, monkeypatch)
     monkeypatch.setattr(module, "KEEPALIVE_SECONDS", 0.4)
     monkeypatch.setattr(module, "SETTLE_SECONDS", 0.3)
-    module.data_plane = module.stub_session.plane = HangingWrites(
+    plane = module.data_plane = module.stub_session.plane = HangingWrites(
         lambda params: "Kyoto" in json.dumps(params, default=str))
+
+    def end_turn_once_a_keepalive_came_during_the_hang(event):
+        if event == {"type": "keepalive"} and plane.reached.is_set():
+            expire(made)
 
     async def scenario():
         async with LoopWatch() as watch:
             try:
-                events = await collect_events(module, ScriptedModel(says("unreachable")))
+                events = await collect_events(
+                    module, ScriptedModel(says("unreachable")),
+                    on_event=end_turn_once_a_keepalive_came_during_the_hang)
+                still_hung = not plane.gate.is_set()
             finally:
-                module.data_plane.gate.set()
-        return events, watch.longest
+                plane.gate.set()
+        return events, still_hung, watch.longest
 
-    started = time.perf_counter()
-    events, longest = asyncio.run(asyncio.wait_for(scenario(), RUN_BOUND_SECONDS))
+    events, still_hung, longest = asyncio.run(asyncio.wait_for(scenario(), RUN_BOUND_SECONDS))
 
-    assert module.data_plane.hung >= 1
+    assert plane.hung >= 1
     assert {"type": "keepalive"} in events, "the keepalive kept running while Memory hung"
     assert events[-1]["type"] == "error" and "did not finish in time" in events[-1]["message"]
-    assert time.perf_counter() - started < 4.5, "the watchdog ended the turn at its idle limit"
+    assert still_hung, "the watchdog ended the turn while the write was still hung"
     assert longest < 0.5, f"the loop stalled for {longest:.2f} s"
 
 
@@ -1347,8 +1393,10 @@ class ThrottlingSession(StubSession):
 
 
 @needs_sdk
-def test_a_throttled_memory_write_is_retried_and_the_turn_finishes(short_deadline_sdk):
+def test_a_throttled_memory_write_is_retried_and_the_turn_finishes(
+        short_deadline_sdk, monkeypatch):
     module = short_deadline_sdk
+    watchdogs_under_test_control(module, monkeypatch)
     session = module.stub_session = ThrottlingSession(module.data_plane, throttles=1)
     module.memory_session = lambda: session
 
@@ -1402,6 +1450,7 @@ def cancelled_during_a_write(module, monkeypatch):
 
     Returns the data plane with what the turn and its repair wrote, the late write included.
     """
+    made = watchdogs_under_test_control(module, monkeypatch)
     monkeypatch.setattr(module, "SETTLE_SECONDS", 0.5)
     plane = module.stub_session.plane = module.data_plane = ReplayPlane(
         lambda params: "price_range" in json.dumps(params, default=str))
@@ -1409,9 +1458,15 @@ def cancelled_during_a_write(module, monkeypatch):
     module.concierge_model = lambda: price_model(says("unreachable"))
 
     async def scenario():
+        async def expire_at_the_write():
+            await until_set(plane.reached)
+            expire(made)
+
+        expirer = asyncio.create_task(expire_at_the_write())
         try:
             return [json.loads(item) async for item in module.invoke(PAYLOAD, None)]
         finally:
+            expirer.cancel()
             await asyncio.sleep(0.2)
             plane.gate.set()
             await asyncio.sleep(0.5)

@@ -374,3 +374,64 @@ def test_the_exporter_reads_every_audit_table_the_migrations_create(audit):
     for name in created:
         assert re.search(rf"CREATE POLICY \w+ ON {name}\s+FOR SELECT TO meridian_audit_export",
                          grants), name
+
+
+class StepClock(Context):
+    """A Lambda clock that loses ``step_ms`` every time the exporter asks for the time left."""
+
+    def __init__(self, remaining_ms, step_ms=30_000):
+        super().__init__(remaining_ms)
+        self.step_ms = step_ms
+
+    def get_remaining_time_in_millis(self):
+        left = self.remaining_ms
+        self.remaining_ms -= self.step_ms
+        return left
+
+
+def busy_world(aurora, rows=4):
+    for n in range(rows):
+        aurora.add("agent_audit_log", f"aud_{n}", f"2026-11-14 10:00:0{n}")
+        aurora.add("traveler_access_audit", f"acc_{n}", f"2026-11-14 10:00:0{n}+00")
+        aurora.add("booking_action_audit", f"act_{n}", f"2026-11-14 10:00:0{n}+00")
+
+
+def metric_of(caplog):
+    return next(json.loads(r.message) for r in caplog.records
+                if r.message.startswith("{") and "_aws" in r.message)
+
+
+def test_tables_take_turns_so_a_busy_one_cannot_starve_the_others(world, monkeypatch, caplog):
+    audit, aurora, bucket = world
+    monkeypatch.setenv("AUDIT_EXPORT_BATCH_ROWS", "1")
+    busy_world(aurora)
+    with caplog.at_level("INFO"):
+        outcome = audit.lambda_handler({}, StepClock(100_000))
+    assert outcome == {"rows": 3, "objects": 3}
+    for name in ("agent_audit_log", "traveler_access_audit", "booking_action_audit"):
+        assert audit.read_head(bucket, "audit-bucket", name).seq == 1
+    assert metric_of(caplog)["RunsCompleted"] == 1
+
+
+def test_a_table_never_fetched_in_a_run_blocks_completion_and_is_named(
+        world, monkeypatch, caplog):
+    audit, aurora, bucket = world
+    monkeypatch.setenv("AUDIT_EXPORT_BATCH_ROWS", "1")
+    busy_world(aurora)
+    with caplog.at_level("INFO"):
+        outcome = audit.lambda_handler({}, StepClock(70_000))
+    assert outcome == {"rows": 2, "objects": 2}
+    metric = metric_of(caplog)
+    assert metric["RunsCompleted"] == 0
+    assert metric["BacklogAgeSeconds"] > 0
+    warning = next(r.message for r in caplog.records if r.levelname == "WARNING")
+    assert "booking_action_audit" in warning and "agent_audit_log" not in warning
+
+
+def test_a_table_that_is_caught_up_counts_as_checked(world, caplog):
+    audit, aurora, _bucket = world
+    aurora.add("agent_audit_log", "aud_1", "2026-11-14 10:00:01")
+    with caplog.at_level("INFO"):
+        audit.lambda_handler({}, Context())
+    assert metric_of(caplog)["RunsCompleted"] == 1
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]

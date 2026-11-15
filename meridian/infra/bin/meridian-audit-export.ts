@@ -26,6 +26,6 @@ new MeridianAuditExportStack(app, 'MeridianAuditExport', {
   scheduleMinutes: optionalNumber('scheduleMinutes'),
   settleSeconds: optionalNumber('settleSeconds'),
   logRetentionDays: optionalNumber('logRetentionDays'),
-  alarmTopicArn: app.node.tryGetContext('alarmTopicArn'),
+  alarmTopicArn: app.node.tryGetContext('alarmTopicArn') ?? config.alarmTopicArn,
   description: 'Meridian tamper-evident audit export: Object Lock bucket, exporter Lambda, schedule and alarms',
 });

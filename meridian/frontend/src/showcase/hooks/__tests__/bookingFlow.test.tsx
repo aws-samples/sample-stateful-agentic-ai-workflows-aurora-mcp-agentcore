@@ -175,6 +175,7 @@ it('stops waiting without discarding the hold identity or accepting a late reply
   await waitFor(() => expect(result.current.travelersCount).toBe(2));
   let pending!: Promise<void>;
   act(() => { pending = result.current.holdTrip(tokyo); });
+  await waitFor(() => expect(processOrder).toHaveBeenCalledTimes(1));
   const identity = vi.mocked(processOrder).mock.calls[0][0].conversation_id;
   await act(async () => { result.current.stopWaiting(); await pending; });
   expect(result.current.isLoading).toBe(false);

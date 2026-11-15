@@ -4,10 +4,25 @@ export interface AuditExportConfig {
   clusterArn: string;
   auditExportSecretArn: string;
   database: string;
+  alarmTopicArn?: string;
 }
 
 function arnParts(arn: string): string[] {
   return arn.split(':');
+}
+
+function resolveAlarmTopicArn(value: string | undefined, account: string, region: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const [, , service, topicRegion, topicAccount, name] = arnParts(value);
+  if (service !== 'sns' || !name) {
+    throw new Error('AUDIT_EXPORT_ALARM_TOPIC_ARN must be an SNS topic ARN');
+  }
+  if (topicAccount !== account || topicRegion !== region) {
+    throw new Error('AUDIT_EXPORT_ALARM_TOPIC_ARN must be in the account and Region of AURORA_CLUSTER_ARN');
+  }
+  return value;
 }
 
 /**
@@ -40,5 +55,12 @@ export function resolveAuditExportConfig(
   if (defaultAccount !== account) {
     throw new Error('The AWS credentials are for a different account than AURORA_CLUSTER_ARN; check AWS_PROFILE');
   }
-  return { account, region, clusterArn, auditExportSecretArn, database: dotenv.AURORA_DATABASE ?? 'meridian' };
+  return {
+    account,
+    region,
+    clusterArn,
+    auditExportSecretArn,
+    database: dotenv.AURORA_DATABASE ?? 'meridian',
+    alarmTopicArn: resolveAlarmTopicArn(dotenv.AUDIT_EXPORT_ALARM_TOPIC_ARN, account, region),
+  };
 }

@@ -620,6 +620,12 @@ to how the application writes audit rows.
   `FOR SELECT TO meridian_audit_export USING (true)`. The exporter never writes to Aurora.
 - **Schedule.** An EventBridge Scheduler schedule runs the exporter Lambda
   (`infra/functions/audit_export`) every five minutes. The Lambda reads through the Data API.
+  The tables take turns: each unfinished table gets one batch per round, up to
+  `AUDIT_EXPORT_MAX_BATCHES` rounds, so a table with a large backlog cannot use up the run before
+  the others are read. A run counts as completed (`RunsCompleted` 1) only when every table was
+  read at least once and none failed. When the time runs out before a table's first read, the run
+  logs a warning naming that table, emits `RunsCompleted` 0, and reports that table's backlog as
+  3600 seconds in `BacklogAgeSeconds`, not 0.
 - **Watermark.** Rows are read in `(timestamp, id)` order, strictly after the last exported row,
   using the column the database sets on insert (`ran_at`, `decided_at`, `recorded_at`) and the
   primary key as the tie-breaker. None of the tables has a sequence column, and a sequence would not
@@ -659,8 +665,10 @@ to how the application writes audit rows.
   retention or legal-hold permission.
 - **Alarms.** Lambda errors; no completed run for three schedule periods (`RunsCompleted`
   from the Lambda's embedded metric line); and export lag (`BacklogAgeSeconds` over 1800 seconds for
-  two periods, which a full batch of old rows causes). Pass `-c alarmTopicArn=<topic>` to notify an
-  SNS topic. Without it the alarms only change state.
+  two periods, which a full batch of old rows causes). Set `AUDIT_EXPORT_ALARM_TOPIC_ARN` in
+  `meridian/.env` to notify an SNS topic on every deploy (`-c alarmTopicArn=<topic>` overrides it).
+  Without either the alarms only change state, and a deploy without it removes existing alarm
+  actions.
 - **Chain heads.** Each run that writes an object logs the table, sequence and SHA-256 of its head,
   and each run logs the boto3 version it ran with. The log group is retained when the stack is deleted
   and keeps 365 days (`-c logRetentionDays=<days>`).
@@ -755,7 +763,12 @@ Each step that calls AWS needs the owner's approval. Run from `meridian/`.
 
    The verifier is read-only: it lists and reads objects and, with `--compare-aurora`, reads the
    tables as `meridian_audit_export`. Exit 0 means verified, 1 findings, 2 could not run, 3 usage
-   error. Its identity needs `s3:ListBucketVersions`, `s3:GetObject`, `s3:GetObjectVersion` and
+   error. A `--head` must name a known table that `--table` selects (all tables when `--table` is
+   not given) and may be given once per table; otherwise the verifier exits 3 before it calls
+   AWS. A recorded head that the chain does not reach, including one for an empty chain, is a
+   `head-mismatch`. With `--compare-aurora`, a missing row that sorts before the watermark row in
+   the database's `(timestamp, id)` order is `row-unexported`, also when it shares the
+   watermark's timestamp. Its identity needs `s3:ListBucketVersions`, `s3:GetObject`, `s3:GetObjectVersion` and
    `kms:Decrypt`.
 
 | Finding | Meaning |

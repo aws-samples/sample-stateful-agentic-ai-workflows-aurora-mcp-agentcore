@@ -126,6 +126,51 @@ async def run_blocking_shielded(func: Callable[..., Any], /, *args: Any, **kwarg
         raise
 
 
+async def begin_transaction_shielded(
+    begin: Callable[[], str], rollback: Callable[[str], None]
+) -> str:
+    """Begin a Data API transaction without losing its id to a cancellation.
+
+    The ``BeginTransaction`` call is shielded like ``run_blocking_shielded``. A caller
+    cancelled while it waits would otherwise never learn the transaction id, so no
+    rollback could follow and the transaction would stay open until the idle timeout. On
+    cancellation this waits for the call, rolls back the transaction it opened (best
+    effort, logged on failure), and re-raises the cancellation.
+
+    Args:
+        begin: The blocking callable that opens the transaction and returns its id.
+        rollback: The blocking callable that rolls a transaction back, given its id.
+
+    Returns:
+        The new transaction id.
+    """
+    operation = asyncio.create_task(asyncio.to_thread(begin))
+    try:
+        return await asyncio.shield(operation)
+    except asyncio.CancelledError:
+        await _roll_back_begun(operation, rollback)
+        raise
+
+
+async def _roll_back_begun(operation: "asyncio.Task[str]", rollback: Callable[[str], None]) -> None:
+    """Wait for a shielded ``BeginTransaction`` and roll back the transaction it opened."""
+    while not operation.done():
+        try:
+            await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            continue
+        except Exception:
+            break
+    if operation.cancelled() or operation.exception() is not None:
+        return  # Nothing was opened, and the SDK error is retrieved; cancellation wins.
+    transaction_id = operation.result()
+    try:
+        await run_blocking_shielded(rollback, transaction_id)
+    except Exception:
+        logger.exception("Failed to roll back transaction %s opened during cancellation",
+                         transaction_id)
+
+
 @dataclass
 class ScopeTimings:
     """What one scoped session's setup took, each part measured around its own calls.
@@ -555,7 +600,8 @@ class RDSDataClient:
                 "ENVIRONMENT=development."
             )
         timings = timings or ScopeTimings()
-        tx = await run_blocking_shielded(self.begin_transaction)
+        tx = await begin_transaction_shielded(
+            self.begin_transaction, self.rollback_transaction)
         transaction_finished = False
         try:
             if traveler_id is not None:

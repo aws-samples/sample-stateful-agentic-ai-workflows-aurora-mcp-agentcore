@@ -225,7 +225,7 @@ test('the deploy config needs the cluster, the login secret and credentials for 
   const dotenv = { AURORA_CLUSTER_ARN: props.clusterArn, AURORA_AUDIT_EXPORT_SECRET_ARN: props.auditExportSecretArn };
   assert.deepEqual(resolveAuditExportConfig(dotenv, '123456789012'), {
     account: '123456789012', region: 'us-east-1', clusterArn: props.clusterArn,
-    auditExportSecretArn: props.auditExportSecretArn, database: 'meridian',
+    auditExportSecretArn: props.auditExportSecretArn, database: 'meridian', alarmTopicArn: undefined,
   });
   assert.throws(() => resolveAuditExportConfig({}, '123456789012'), /AURORA_CLUSTER_ARN/);
   assert.throws(() => resolveAuditExportConfig({ AURORA_CLUSTER_ARN: props.clusterArn }, '123456789012'),
@@ -238,4 +238,15 @@ test('the deploy config needs the cluster, the login secret and credentials for 
     '123456789012'), /different Region/);
   assert.throws(() => resolveAuditExportConfig(dotenv, undefined), /CDK_DEFAULT_ACCOUNT/);
   assert.throws(() => resolveAuditExportConfig(dotenv, '111122223333'), /different account/);
+});
+
+test('the alarm topic is read from the deploy config and must match the cluster', () => {
+  const dotenv = { AURORA_CLUSTER_ARN: props.clusterArn, AURORA_AUDIT_EXPORT_SECRET_ARN: props.auditExportSecretArn };
+  const topic = 'arn:aws:sns:us-east-1:123456789012:meridian-audit-export-alarms';
+  const withTopic = (value) => resolveAuditExportConfig({ ...dotenv, AUDIT_EXPORT_ALARM_TOPIC_ARN: value }, '123456789012');
+  assert.equal(withTopic(topic).alarmTopicArn, topic);
+  assert.equal(withTopic('').alarmTopicArn, undefined);
+  assert.throws(() => withTopic(topic.replace('123456789012', '111122223333')), /account and Region/);
+  assert.throws(() => withTopic(topic.replace('us-east-1', 'us-west-2')), /account and Region/);
+  assert.throws(() => withTopic('arn:aws:sqs:us-east-1:123456789012:queue'), /SNS topic ARN/);
 });

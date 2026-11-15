@@ -245,6 +245,48 @@ def test_a_repeated_tool_call_checks_the_arguments_of_any_of_its_calls():
     assert score_case(case, calls).argument_checks[0][2] is True
 
 
+def test_arguments_split_across_two_calls_of_one_tool_do_not_pass():
+    case = case_with(
+        expected_tools=["currency_convert"],
+        expected_arguments={"currency_convert": {
+            "amount": {"equals": 2400}, "from_currency": {"equals_ci": "USD"},
+            "to_currency": {"equals_ci": "EUR"}}})
+    split = [ToolCall("currency_convert", {"amount": 2400, "from_currency": "CAD",
+                                           "to_currency": "JPY"}),
+             ToolCall("currency_convert", {"amount": 1, "from_currency": "USD",
+                                           "to_currency": "EUR"})]
+    checks = score_case(case, split).argument_checks
+    assert not all(passed for _, _, passed in checks)
+    assert checks == (("currency_convert", "amount", False),
+                      ("currency_convert", "from_currency", True),
+                      ("currency_convert", "to_currency", True))
+
+
+def test_argument_diagnostics_come_from_the_best_matching_call():
+    case = case_with(
+        expected_tools=["currency_convert"],
+        expected_arguments={"currency_convert": {
+            "amount": {"equals": 2400}, "from_currency": {"equals_ci": "USD"},
+            "to_currency": {"equals_ci": "EUR"}}})
+    calls = [ToolCall("currency_convert", {"amount": 1, "from_currency": "CAD",
+                                           "to_currency": "JPY"}),
+             ToolCall("currency_convert", {"amount": 2400, "from_currency": "USD",
+                                           "to_currency": "JPY"})]
+    assert score_case(case, calls).argument_checks == (
+        ("currency_convert", "amount", True), ("currency_convert", "from_currency", True),
+        ("currency_convert", "to_currency", False))
+
+
+def test_a_tool_that_was_never_called_fails_every_argument_check():
+    case = case_with(
+        expected_tools=["currency_convert"],
+        expected_arguments={"currency_convert": {"amount": {"equals": 1},
+                                                 "to_currency": {"equals_ci": "EUR"}}})
+    checks = score_case(case, []).argument_checks
+    assert checks == (("currency_convert", "amount", False),
+                      ("currency_convert", "to_currency", False))
+
+
 def test_the_summary_rates_exclude_errored_runs_and_report_them():
     case = case_with(expected_tools=["currency_convert"],
                      expected_arguments={"currency_convert": {"amount": {"equals": 10}}})
@@ -354,6 +396,73 @@ def test_the_fingerprint_changes_when_the_prompt_text_changes(runtime, monkeypat
     monkeypatch.setattr(runtime.prompts, "UNCONFIRMED", runtime.prompts.UNCONFIRMED + " x")
     assert runner.fingerprint(runtime, cases).prompt != before.prompt
     assert runner.fingerprint(runtime, cases).tools == before.tools
+
+
+def raw_case(**fields):
+    base = {"id": "sample_case", "prompt": "Convert 10 USD to EUR.",
+            "expected_tools": ["currency_convert"],
+            "expected_arguments": {"currency_convert": {"amount": {"equals": 10}}}}
+    return {**base, **fields}
+
+
+def confirmed_raw(**fields):
+    base = {"id": "confirmed_case", "turn": "confirmed_hold", "outcome": "held",
+            "target": {"packageId": "CTY-002"}, "budget_ceiling_cents": 500000}
+    return {**base, **fields}
+
+
+@pytest.mark.parametrize("raw_a, raw_b", [
+    (raw_case(), raw_case(memory_context="Prefers aisle seats.")),
+    (raw_case(), raw_case(expected_tools=["price_range", "currency_convert"])),
+    (raw_case(), raw_case(allowed_tools=["loyalty_balance"])),
+    (raw_case(), raw_case(forbidden_tools=["price_range"])),
+    (raw_case(), raw_case(note="a different reason")),
+    (raw_case(), raw_case(expected_arguments={"currency_convert": {"amount": {"equals": 11}}})),
+    (raw_case(), raw_case(expected_arguments={"currency_convert": {"amount": {
+        "equals_ci": "10"}}})),
+    (confirmed_raw(), confirmed_raw(outcome="refused")),
+    (confirmed_raw(), confirmed_raw(target={"packageId": "CTY-001"})),
+    (confirmed_raw(), confirmed_raw(budget_ceiling_cents=1)),
+    (confirmed_raw(), confirmed_raw(turn="confirmed_booking")),
+])
+def test_the_fingerprint_covers_every_field_of_a_case(runtime, raw_a, raw_b):
+    first = runner.fingerprint(runtime, [parse_case(raw_a)])
+    second = runner.fingerprint(runtime, [parse_case(raw_b)])
+    assert (first.prompt, first.cases) != (second.prompt, second.cases)
+
+
+def test_the_fingerprint_changes_when_confirmed_turn_text_changes(runtime, monkeypatch):
+    cases = [parse_case(confirmed_raw()), parse_case(confirmed_raw(
+        id="confirmed_booking_case", turn="confirmed_booking"))]
+    before = runner.fingerprint(runtime, cases)
+    for name in ("CONFIRMED", "BOOKING_CONFIRMED"):
+        monkeypatch.setattr(runtime.prompts, name, getattr(runtime.prompts, name) + " x")
+        after = runner.fingerprint(runtime, cases)
+        assert after.prompt != before.prompt, name
+        monkeypatch.undo()
+    monkeypatch.setattr(runtime.prompts, "ACTION_LABELS", {"hold": "a hold!", "booking": "b!"})
+    assert runner.fingerprint(runtime, cases).cases != before.cases
+
+
+def test_the_fingerprint_changes_when_the_unconfirmed_turn_template_changes(
+    runtime, monkeypatch
+):
+    cases = [parse_case(raw_case(memory_context="Prefers aisle seats."))]
+    before = runner.fingerprint(runtime, cases)
+    original = runtime.prompts.turn_prompt
+    monkeypatch.setattr(runtime.prompts, "turn_prompt",
+                        lambda *args: original(*args) + "\nextra")
+    assert runner.fingerprint(runtime, cases).cases != before.cases
+
+
+def test_the_fingerprint_is_stable_across_runs_and_key_order(runtime):
+    first = parse_case(raw_case(expected_arguments={"currency_convert": {
+        "amount": {"equals": 10}, "to_currency": {"equals_ci": "EUR"}}}))
+    reordered = parse_case(raw_case(expected_arguments={"currency_convert": {
+        "to_currency": {"equals_ci": "EUR"}, "amount": {"equals": 10}}}))
+    one = runner.fingerprint(runtime, [first])
+    assert one == runner.fingerprint(runtime, [first])
+    assert one == runner.fingerprint(runtime, [reordered])
 
 
 # -- the command line never reaches Amazon Bedrock by accident ---------------------------------

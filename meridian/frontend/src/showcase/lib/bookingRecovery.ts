@@ -30,8 +30,47 @@ export function loadBookingRecovery(travelerId: string): BookingRecovery {
   return value;
 }
 
+/** Merges into what storage holds now, so a save never drops another tab's entries. */
 export function saveBookingRecovery(travelerId: string, value: BookingRecovery): void {
   // Persist before dispatch. If storage is unavailable, do not start a write
   // whose retry identity would disappear on refresh.
-  window.localStorage.setItem(keyFor(travelerId), JSON.stringify(value));
+  const stored = loadBookingRecovery(travelerId);
+  const merged: BookingRecovery = {
+    intents: { ...stored.intents, ...value.intents },
+    bookings: { ...stored.bookings, ...value.bookings },
+  };
+  window.localStorage.setItem(keyFor(travelerId), JSON.stringify(merged));
+}
+
+const lockNameFor = (travelerId: string) => `meridian:booking-recovery-lock:v1:${travelerId}`;
+
+async function withTravelerLock<T>(travelerId: string, work: () => T): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (!locks?.request) return work();
+  return locks.request(lockNameFor(travelerId), async () => work());
+}
+
+/**
+ * Returns the saved hold intent for `intentKey`, or creates and saves one.
+ *
+ * Read, allocation and write run under a per-traveler Web Lock, so two tabs asking for the same
+ * hold agree on one idempotency ID. A saved intent is reused unless its conversation ID is
+ * `staleConversationId` (the expired receipt this click replaces), which another tab may already
+ * have replaced. Without `navigator.locks` the same steps run unlocked: the merge in
+ * `saveBookingRecovery` still keeps both tabs' entries, but a simultaneous first request can
+ * still pick two IDs.
+ */
+export function allocateHoldIntent(
+  travelerId: string,
+  intentKey: string,
+  create: () => SavedHoldIntent,
+  staleConversationId?: string,
+): Promise<SavedHoldIntent> {
+  return withTravelerLock(travelerId, () => {
+    const current = loadBookingRecovery(travelerId).intents[intentKey];
+    if (current && current.conversationId !== staleConversationId) return current;
+    const intent = create();
+    saveBookingRecovery(travelerId, { intents: { [intentKey]: intent }, bookings: {} });
+    return intent;
+  });
 }

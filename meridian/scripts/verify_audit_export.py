@@ -83,8 +83,9 @@ class Walk:
     objects: int = 0
     rows: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     head_seq: int = 0
-    head_sha256: str = ""
+    head_sha256: str = "0" * 64
     watermark_ts: str = ""
+    watermark_id: str = ""
     findings: List[Finding] = field(default_factory=list)
 
 
@@ -188,6 +189,7 @@ def walk_chain(s3, bucket: str, table: str, prefix: str) -> Walk:
             check_object(walk, key, header, rows, previous)
             _record_rows(walk, seq, rows)
             walk.watermark_ts = header["last"]["ts"]
+            walk.watermark_id = header["last"]["id"]
         previous, walk.head_seq, walk.head_sha256 = digest, seq, digest
         walk.objects += 1
     return walk
@@ -219,10 +221,28 @@ def differing_columns(exported: Dict[str, Any], current: Dict[str, Any]) -> List
     return sorted(k for k in set(exported) | set(current) if exported.get(k) != current.get(k))
 
 
+def _watermark_position(walk: Walk, rows: List[Dict[str, str]]) -> int:
+    """How many of ``rows`` (in the database's order) are at or before the watermark.
+
+    The exporter resumes after ``(ts, id)`` in the database's order, where ids compare as text
+    under the database collation, so the position comes from the order Aurora returned. When the
+    watermark row itself is gone from Aurora (reported as ``row-deleted``), fall back to the
+    timestamp, then the id as Python text.
+    """
+    if not walk.watermark_ts:
+        return 0
+    for position, row in enumerate(rows):
+        if row["wm_id"] == walk.watermark_id:
+            return position + 1
+    mark = (parse_ts(walk.watermark_ts), walk.watermark_id)
+    return sum(1 for row in rows if (parse_ts(row["wm_ts"]), row["wm_id"]) <= mark)
+
+
 def compare_with_aurora(walk: Walk, rows: List[Dict[str, str]]) -> Tuple[List[Finding], int]:
     """Find exported rows that were edited or deleted, and rows missing behind the watermark.
 
-    Returns the findings and the count of rows after the watermark, which are only pending.
+    ``rows`` are in the database's ``(ts, id)`` order. Returns the findings and the count of
+    rows after the watermark, which are only pending.
     """
     findings: List[Finding] = []
     current = {row["wm_id"]: row for row in rows}
@@ -237,10 +257,12 @@ def compare_with_aurora(walk: Walk, rows: List[Dict[str, str]]) -> Tuple[List[Fi
             findings.append(Finding(walk.table, "row-edited",
                                     f"row {ident} changed after export: {', '.join(columns)}"))
     pending = 0
-    for ident, now in current.items():
+    behind = _watermark_position(walk, rows)
+    for position, now in enumerate(rows):
+        ident = now["wm_id"]
         if ident in walk.rows:
             continue
-        if walk.watermark_ts and parse_ts(now["wm_ts"]) < parse_ts(walk.watermark_ts):
+        if position < behind:
             findings.append(Finding(walk.table, "row-unexported",
                                     f"row {ident} is behind the watermark and not exported"))
         else:
@@ -249,14 +271,26 @@ def compare_with_aurora(walk: Walk, rows: List[Dict[str, str]]) -> Tuple[List[Fi
 
 
 def parse_heads(values: List[str]) -> Dict[str, Tuple[int, str]]:
-    """Read repeated --head TABLE=SEQ:SHA256 values."""
-    heads = {}
+    """Read repeated --head TABLE=SEQ:SHA256 values; a table named twice raises ValueError."""
+    heads: Dict[str, Tuple[int, str]] = {}
     for value in values:
         match = HEAD_ARG.match(value)
         if not match:
             raise ValueError(f"--head must look like TABLE=SEQ:SHA256, got {value!r}")
+        if match.group(1) in heads:
+            raise ValueError(f"--head names {match.group(1)} twice")
         heads[match.group(1)] = (int(match.group(2)), match.group(3))
     return heads
+
+
+def check_heads_match_tables(heads: Dict[str, Tuple[int, str]], names: List[str],
+                             selected: List[str]) -> None:
+    """Raise ValueError for a head whose table is unknown or not among the selected tables."""
+    for table in heads:
+        if table not in names:
+            raise ValueError(f"--head names an unknown table {table!r}; known: {', '.join(names)}")
+        if table not in selected:
+            raise ValueError(f"--head names {table!r}, which --table does not select")
 
 
 def build_parser() -> UsageParser:
@@ -328,11 +362,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     unknown = [name for name in args.table if name not in names]
     if unknown or not args.bucket:
         parser.error(f"unknown table {unknown}" if unknown else "--bucket is required")
+    tables = [names[n] for n in args.table] or list(exporter.TABLES)
     try:
-        parse_heads(args.head)
+        check_heads_match_tables(
+            parse_heads(args.head), list(names), [table.name for table in tables])
     except ValueError as error:
         parser.error(str(error))
-    tables = [names[n] for n in args.table] or list(exporter.TABLES)
     if args.dry_run:
         _plan(args, exporter, tables)
         return EXIT_OK

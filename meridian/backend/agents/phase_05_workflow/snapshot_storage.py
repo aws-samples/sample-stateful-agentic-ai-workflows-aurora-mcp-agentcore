@@ -23,7 +23,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from strands.types.exceptions import StorageError
 
 from backend.db.journey_store import ExecutionLeaseLostError
-from backend.db.rds_data_client import run_blocking_shielded
+from backend.db.rds_data_client import begin_transaction_shielded, run_blocking_shielded
 
 # The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
 # Live tests read back ASCII, multibyte and escape-dense snapshots just under this cap.
@@ -172,7 +172,8 @@ class AuroraSnapshotStorage:
         per snapshot would bury the authorization evidence. The master role
         ignores the pin; meridian_workflow is bound by it.
         """
-        tx = await run_blocking_shielded(self._client.begin_transaction)
+        tx = await begin_transaction_shielded(
+            self._client.begin_transaction, self._client.rollback_transaction)
         committed = False
 
         def commit() -> None:

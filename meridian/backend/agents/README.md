@@ -58,13 +58,18 @@ The stubs take their names and schemas from `meridian_agentcore/agentcore/gatewa
 so a changed description is what the model sees on the next run. They return canned catalog
 results and write nothing. It prints three numbers: selection accuracy, forbidden-call rate and
 argument accuracy, with hashes of the prompt, the tool specs and the cases so two runs can be
-compared. Run it before merging any change to the prompt, a tool description or an argument name,
-three times per case (`--repeats 3`), and compare with the recorded baseline.
+compared. The prompt hash covers the shared prompt plus the instructions and narration of every
+turn type; the cases hash covers each full case definition (memory context, expected tools and
+argument matchers, confirmed-turn data) and the model inputs rendered from it. An expected
+invocation passes its argument checks only when one call of the tool meets them all. Run it before
+merging any change to the prompt, a tool description or an argument name, three times per case
+(`--repeats 3`), and compare with the recorded baseline.
 
-Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `fcad8613406f`, tools
-`f7102d25b38e`, cases `7b7437371d35`, 29 cases x 3: 87 runs, none errored, selection accuracy
-1.00, argument accuracy 1.00 over 93 checks, forbidden-call rate 0.00. The default thresholds are
-0.95, 0.95 and 0.00. A changed hash means the baseline no longer applies: run it again.
+Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `d4c88f717866`, tools
+`f7102d25b38e`, cases `1458d7689217`, 29 cases x 3: 87 runs, none errored, selection accuracy
+1.00, argument accuracy 1.00 over 93 checks (each judged against one call), forbidden-call rate
+0.00. The default thresholds are 0.95, 0.95 and 0.00. A changed hash means the baseline no longer
+applies: run it again.
 
 It is a dry run unless given `--apply --i-understand-this-changes-aws`, because it invokes the
 model on Amazon Bedrock and bills the calling account; ask the account owner first. It refuses

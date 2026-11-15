@@ -237,3 +237,63 @@ def test_head_values_round_trip(world):
 def test_the_loader_gives_the_same_tables_the_exporter_uses(exporter):
     assert [t.name for t in exporter.TABLES] == [
         "agent_audit_log", "traveler_access_audit", "booking_action_audit"]
+
+
+SHA = "a" * 64
+
+
+@pytest.mark.parametrize("head_table", ["agnet_audit_log", "traveler_access_audit"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_a_head_that_names_no_selected_table_is_a_usage_error_before_any_client(
+        world, monkeypatch, capsys, head_table, dry_run):
+    def refuse(*_a, **_k):
+        raise AssertionError("no AWS client may be built for a bad --head")
+
+    monkeypatch.setattr(verifier.boto3, "client", refuse)
+    extra = ["--dry-run"] if dry_run else []
+    with pytest.raises(SystemExit) as stop:
+        verifier.main(["--bucket", "audit-bucket", "--table", TABLE, "--head",
+                       f"{head_table}=9:{SHA}", *extra])
+    assert stop.value.code == 3
+    assert head_table in capsys.readouterr().err
+
+
+def test_a_head_given_twice_for_one_table_is_a_usage_error(world, capsys):
+    with pytest.raises(SystemExit) as stop:
+        verifier.main(["--bucket", "audit-bucket", "--table", TABLE,
+                       "--head", f"{TABLE}=1:{SHA}", "--head", f"{TABLE}=2:{SHA}"])
+    assert stop.value.code == 3
+    assert "twice" in capsys.readouterr().err
+
+
+def test_a_head_for_a_table_in_the_default_selection_is_checked(world, capsys):
+    code = verifier.main(["--bucket", "audit-bucket", "--head", f"{TABLE}=9:{SHA}"])
+    out = capsys.readouterr()
+    assert code == 1 and "head-mismatch" in out.out
+
+
+def test_an_empty_chain_does_not_satisfy_a_recorded_head(exporter, monkeypatch, capsys):
+    bucket = FakeBucket()
+    monkeypatch.setattr(verifier.boto3, "client", lambda *_a, **_k: bucket)
+    code = verifier.main(["--bucket", "audit-bucket", "--table", TABLE,
+                          "--head", f"{TABLE}=9:{SHA}"])
+    out = capsys.readouterr()
+    assert code == 1 and codes(out) == ["head-mismatch"]
+
+
+def test_an_empty_chain_matches_a_recorded_genesis_head(exporter, monkeypatch):
+    bucket = FakeBucket()
+    monkeypatch.setattr(verifier.boto3, "client", lambda *_a, **_k: bucket)
+    assert verifier.main(["--bucket", "audit-bucket", "--table", TABLE,
+                          "--head", f"{TABLE}=0:{'0' * 64}"]) == 0
+
+
+def test_rows_at_the_watermark_timestamp_are_split_by_their_place_in_database_order(
+        world, capsys):
+    aurora, _bucket = world
+    aurora.add(TABLE, "aud_0", "2026-11-14 10:00:03")
+    aurora.add(TABLE, "aud_9", "2026-11-14 10:00:03")
+    code, out = run(capsys, "--compare-aurora")
+    assert code == 1 and codes(out) == ["row-unexported"]
+    assert "aud_0" in out.out and "aud_9" not in out.out
+    assert "1 pending" in out.out

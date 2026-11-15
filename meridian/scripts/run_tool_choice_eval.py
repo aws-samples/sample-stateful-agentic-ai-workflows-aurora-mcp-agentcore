@@ -43,8 +43,8 @@ from scripts.tool_choice_eval.scoring import CaseScore, Summary, summarize  # no
 
 LOCAL_DIR = MERIDIAN_DIR / ".local"
 EXIT_PASS, EXIT_MISSED, EXIT_INCONCLUSIVE, EXIT_REFUSED = 0, 1, 2, 3
-# Set from the baseline of 15 Nov 2026 (prompt fcad8613406f, tools f7102d25b38e, cases
-# 7b7437371d35, global.anthropic.claude-sonnet-5-5, 29 cases x 3): selection 1.00, argument
+# Set from the baseline of 15 Nov 2026 (prompt d4c88f717866, tools f7102d25b38e, cases
+# 1458d7689217, global.anthropic.claude-sonnet-5-5, 29 cases x 3): selection 1.00, argument
 # accuracy 1.00 over 93 checks, forbidden-call rate 0.00. The minimums leave room for one or
 # two nondeterministic misses; a forbidden call is never accepted.
 DEFAULT_MIN_SELECTION = 0.95

@@ -55,6 +55,49 @@ def _row_to_package(row: dict, similarity: Optional[float] = None) -> TripPackag
     )
 
 
+FEATURED_PER_TYPE = 2
+FEATURED_PAGE_CAP = 10
+
+
+async def _list_featured(
+    db, cols: str, trip_type: Optional[str], limit: int, offset: int
+) -> PackageListResponse:
+    """Page through the top packages by price in each trip type.
+
+    The trip type filter applies before ranking. Equal prices rank by package id, so the
+    order and the pages are the same on every call.
+    """
+    where = "WHERE trip_type = %s" if trip_type else ""
+    filter_params = (trip_type,) if trip_type else ()
+    ranked = f"""
+        WITH ranked AS (
+            SELECT {cols},
+                   ROW_NUMBER() OVER (
+                       PARTITION BY trip_type ORDER BY price_per_person DESC, package_id
+                   ) AS rn
+            FROM trip_packages
+            {where}
+        )
+    """
+    page_size = min(limit, FEATURED_PAGE_CAP)
+    results = await db.execute(
+        f"""{ranked}
+            SELECT {cols}
+            FROM ranked
+            WHERE rn <= {FEATURED_PER_TYPE}
+            ORDER BY trip_type, price_per_person DESC, package_id
+            LIMIT %s OFFSET %s
+        """,
+        (*filter_params, page_size, offset),
+    )
+    count = await db.execute_one(
+        f"{ranked} SELECT COUNT(*) AS count FROM ranked WHERE rn <= {FEATURED_PER_TYPE}",
+        filter_params,
+    )
+    total = int(count["count"]) if count else 0
+    return PackageListResponse(packages=[_row_to_package(r) for r in results], total=total)
+
+
 async def _list_packages(
     trip_type: Optional[str],
     limit: int,
@@ -67,21 +110,7 @@ async def _list_packages(
               package_places_left(package_id) AS availability, highlights"""
 
     if featured:
-        query = f"""
-            WITH ranked AS (
-                SELECT {cols},
-                       ROW_NUMBER() OVER (PARTITION BY trip_type ORDER BY price_per_person DESC) AS rn
-                FROM trip_packages
-            )
-            SELECT {cols}
-            FROM ranked
-            WHERE rn <= 2
-            ORDER BY trip_type, price_per_person DESC
-            LIMIT %s
-        """
-        results = await db.execute(query, (min(limit, 10),))
-        packages = [_row_to_package(r) for r in results]
-        return PackageListResponse(packages=packages, total=len(packages))
+        return await _list_featured(db, cols, trip_type, limit, offset)
 
     if trip_type:
         query = f"""
