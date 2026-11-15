@@ -2,6 +2,7 @@
 import { App } from 'aws-cdk-lib';
 import { MeridianWebBackendStack } from '../lib/meridian-web-backend-stack';
 import { MeridianWebRolesStack } from '../lib/meridian-web-roles-stack';
+import { MeridianWebServiceStack } from '../lib/meridian-web-service-stack';
 import {
   MeridianWebStack,
   backendHost,
@@ -13,6 +14,14 @@ import {
 import { rolesStackWiring } from '../lib/meridian-web-wiring';
 
 const app = new App();
+
+function required(scope: App, key: string): string {
+  const value = scope.node.tryGetContext(key);
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Required context: -c ${key}=...`);
+  }
+  return value.trim();
+}
 
 // Meridian's Aurora cluster, AgentCore resources and the api-token secret all
 // live in one region. Pin the stacks to it instead of inheriting the shell's
@@ -39,6 +48,22 @@ new MeridianWebBackendStack(app, 'MeridianWebBackend', {
   environment,
   description: 'Meridian travel concierge: the FastAPI backend image for App Runner',
 });
+
+// The App Runner service stack exists only when the role ARNs are given (-c instanceRoleArn=...
+// -c accessRoleArn=...), so a publish that does not manage the service is unchanged. The image
+// is always explicit (-c serviceImageUri=...): the live image for the import, never a default.
+const instanceRoleArn = app.node.tryGetContext('instanceRoleArn');
+if (instanceRoleArn) {
+  new MeridianWebServiceStack(app, 'MeridianWebService', {
+    env,
+    environment,
+    imageUri: required(app, 'serviceImageUri'),
+    instanceRoleArn,
+    accessRoleArn: required(app, 'accessRoleArn'),
+    apiTokenSecretArn: mode === 'iam' ? required(app, 'apiTokenSecretArn') : undefined,
+    description: 'Meridian travel concierge: the App Runner service, imported and retained',
+  });
+}
 
 if (process.env.MERIDIAN_BACKEND_HOST) {
   new MeridianWebStack(app, 'MeridianWeb', {

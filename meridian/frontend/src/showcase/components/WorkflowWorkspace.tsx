@@ -36,7 +36,7 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
       </div>
       {canContinue || state.error ? <button type="button" className="mc-session-primary" onClick={onOpenRecovery} disabled={state.isLoading}>
         Continue at recovery desk <ArrowRight size={18} aria-hidden="true" />
-      </button> : <button type="button" className="mc-session-primary" disabled={state.isLoading} onClick={() => void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5)}>
+      </button> : <button type="button" className="mc-session-primary" disabled={state.isLoading} onClick={() => void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5, { intent: 'recovery' })}>
         {state.isLoading ? <Pause size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
         {state.isLoading ? 'Running to saved step…' : 'Run to saved step'}
       </button>}

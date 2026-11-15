@@ -402,3 +402,13 @@ test('a Concierge model that is not a global inference profile is refused', () =
   setEnv(spec, 'MeridianConcierge', 'BEDROCK_MODEL_ID', 'us.openai.gpt-6-sol');
   expect(() => synthesize('geo-model', spec)).toThrow(/BEDROCK_MODEL_ID.*global\./);
 });
+
+test('the sample deploys no online evaluation and keeps every Runtime on platform version V1', () => {
+  // AgentCore Evaluations is the production step (backend/agents/README.md, Measuring tool choice);
+  // the sample measures tool choice offline, so it creates no evaluation config and no role for one.
+  const template = synthesize('no-online-eval', renderTemplate(), ENV);
+
+  expect(ofType(template, 'AWS::BedrockAgentCore::OnlineEvaluationConfig')).toHaveLength(0);
+  const runtimes = ofType(template, 'AWS::BedrockAgentCore::Runtime');
+  expect(runtimes.map(runtime => runtime.Properties.PlatformVersion)).toEqual(['V1', 'V1']);
+});

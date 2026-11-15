@@ -92,7 +92,9 @@ it('hands the original disruption request to Phase 5 from the follow-up chip', (
   render(<ChatTranscript state={state} />);
   fireEvent.click(screen.getByRole('button', { name: 'Run this in Workflow' }));
   expect(state.setSelectedPhase).toHaveBeenCalledWith(5);
-  expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_FINALE_PROMPT, true, 5);
+  expect(state.applyPhaseExample).toHaveBeenCalledWith(
+    SHOWCASE_FINALE_PROMPT, true, 5, { intent: 'recovery' },
+  );
   expect(state.submitPrompt).not.toHaveBeenCalled();
 });
 
@@ -488,6 +490,17 @@ describe('Experience presentation polish', () => {
     starters = container.querySelector('.mds-chat-query-starters');
     expect(starters).toHaveClass('has-2');
     expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(2);
+  });
+
+  it('starts a recovery with the typed intent, the one launch that can reach the hold', () => {
+    const state = makeState();
+    render(<RecoveryWorkspace state={state} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start recovery' }));
+
+    expect(state.applyPhaseExample).toHaveBeenCalledWith(
+      SHOWCASE_FINALE_PROMPT, true, 5, { intent: 'recovery' },
+    );
   });
 
   it('renders an intentional recovery launch state before live results exist', () => {
@@ -1421,7 +1434,7 @@ it('carries the boundary question into the next capability without running it in
   render(<ChatComposer state={state} proofMode />);
   fireEvent.click(screen.getByRole('button', { name: 'Continue in MCP' }));
   expect(state.setSelectedPhase).toHaveBeenCalledWith(2);
-  expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_EXAMPLE_PROMPTS[2][0], false, 2);
+  expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_EXAMPLE_PROMPTS[2][0], false, 2, undefined);
 });
 
 

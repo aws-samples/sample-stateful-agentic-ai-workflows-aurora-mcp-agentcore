@@ -292,7 +292,7 @@ def _runtime_payload(runtime: str, mode: str, label: str, ctx: Context) -> dict[
     if runtime == WORKFLOW:
         return {"event": "workflow_turn", "mode": "start", "thread_id": ctx.thread(label),
                 "traveler_id": JORDAN_TRAVELER, "query": QUERY, "travelers_count": 1,
-                "review_only": True}
+                "review_only": True, "intent": "recovery"}
     return {"event": "concierge_turn", "prompt": "Say hello in one short sentence.",
             "conversation_id": ctx.session(label), "traveler_id": JORDAN_TRAVELER}
 

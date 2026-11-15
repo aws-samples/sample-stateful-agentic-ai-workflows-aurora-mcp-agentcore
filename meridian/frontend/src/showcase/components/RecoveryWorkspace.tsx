@@ -667,7 +667,7 @@ export function RecoveryWorkspace({
 
   const startRecovery = () => {
     state.setSelectedPhase(5);
-    void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5);
+    void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5, { intent: 'recovery' });
   };
   const hasConversation =
     state.messages.length > 0 || state.isLoading || Boolean(state.error);

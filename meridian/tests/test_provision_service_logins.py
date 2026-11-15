@@ -60,16 +60,30 @@ def run(spec, aws, **overrides):
     return prov.provision_login(spec, **arguments)
 
 
-def test_there_are_exactly_four_logins_each_with_its_own_names():
-    assert sorted(prov.LOGINS) == ["backend", "catalog", "gateway", "identity"]
+def test_there_are_exactly_five_logins_each_with_its_own_names():
+    assert sorted(prov.LOGINS) == ["audit", "backend", "catalog", "gateway", "identity"]
     specs = list(prov.LOGINS.values())
     for field in ("role", "secret_name", "policy_name", "env_key"):
-        assert len({getattr(s, field) for s in specs}) == 4
+        assert len({getattr(s, field) for s in specs}) == 5
     assert [s.role for s in specs] == [
-        "meridian_backend", "meridian_gateway", "meridian_identity", "meridian_catalog"]
+        "meridian_backend", "meridian_gateway", "meridian_identity", "meridian_catalog",
+        "meridian_audit_export"]
     assert [s.env_key for s in specs] == [
         "AURORA_BACKEND_SECRET_ARN", "AURORA_GATEWAY_SECRET_ARN", "AURORA_IDENTITY_SECRET_ARN",
-        "AURORA_CATALOG_SECRET_ARN"]
+        "AURORA_CATALOG_SECRET_ARN", "AURORA_AUDIT_EXPORT_SECRET_ARN"]
+
+
+def test_the_audit_login_has_its_own_secret_and_a_policy_for_that_secret_alone():
+    spec = prov.LOGINS["audit"]
+    assert (spec.role, spec.secret_name, spec.policy_name, spec.env_key) == (
+        "meridian_audit_export", "meridian/aurora/audit-export-login",
+        "MeridianAuditExportAuroraAccess", "AURORA_AUDIT_EXPORT_SECRET_ARN")
+    doc = prov.policy_document(spec, CLUSTER, secret_arn(spec))
+    secret_reads = [s for s in doc["Statement"] if "secretsmanager" in str(s["Action"])]
+    assert secret_reads == [{"Sid": "AuditLoginSecret", "Effect": "Allow",
+                             "Action": "secretsmanager:GetSecretValue",
+                             "Resource": secret_arn(spec)}]
+    assert "catalog-login" not in json.dumps(doc) and "*" not in json.dumps(doc)
 
 
 def test_the_catalog_login_has_its_own_secret_and_a_policy_for_that_secret_alone():

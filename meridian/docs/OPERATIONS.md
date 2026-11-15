@@ -15,10 +15,23 @@ Secrets Manager secret for its database user. If you already have one, set
 `meridian/.env` and skip to [Prepare the database](#prepare-the-database).
 
 `infra/bin/meridian-aurora.ts` is a CDK app that creates an encrypted Aurora
-PostgreSQL 18 cluster: one private Serverless v2 writer (0.5 to 16 ACUs), the
-Data API, TLS required, no inbound database port, seven-day backups, deletion
-protection, and an RDS-managed master secret. It needs a VPC with two subnets
-in different Availability Zones.
+PostgreSQL 18 cluster: one private Serverless v2 writer and one failover reader in a
+second Availability Zone (1 to 16 ACUs), the Data API, TLS required, no inbound
+database port, seven-day backups, deletion protection, and an RDS-managed master
+secret. It needs a VPC with two subnets in different Availability Zones, and you name
+the reader's zone: pick the zone the writer is not in (`aws rds describe-db-instances` shows it),
+and it must meet three conditions: it is one of the cluster's own Availability Zones, fixed when
+the cluster is created (`aws rds describe-db-clusters` lists them as `AvailabilityZones`); RDS
+offers `db.serverless` there for the engine version (`aws rds describe-orderable-db-instance-options
+--engine aurora-postgresql --engine-version 18.6 --db-instance-class db.serverless`; in US East
+(N. Virginia) on 14 Nov 2026 it did not list `us-east-1e`); and `subnetIds` includes a subnet in
+it. A zone that fails any of these makes CloudFormation roll the update back.
+The writer has no zone property, because adding one to an existing writer makes CloudFormation
+replace it. The reader is in promotion tier 1, so it scales
+with the writer and a failover lands on warm capacity. The Data API reaches only the
+writer, so the reader carries no application reads. The 1 ACU minimum lifts the 2,000
+`max_connections` cap that a 0 or 0.5 ACU minimum imposes; `max_connections` is static,
+so reboot the instances after changing the maximum.
 
 First run the read-only preflight. It checks your identity, subnet capacity,
 the engine version, RDS quotas, the RDS service-linked role, CDK bootstrap and
@@ -36,7 +49,8 @@ Then review and deploy the stack:
 cd infra
 npm ci && npm run build
 CONTEXT=(-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name>
-  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.6)
+  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.6
+  -c readerAvailabilityZone=<az-not-the-writers>)
 npx cdk diff   --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 npx cdk deploy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 ```
@@ -107,6 +121,31 @@ persistence remains best effort if a process is killed.
 engine upgrade does not update installed extensions. Upgrade an existing cluster to 18.6 through
 the Aurora stack first (`-c engineVersion=18.6`, after a `cdk diff` that changes only
 `EngineVersion`), then apply 030. The migration refuses to run when 0.8.2 is not available.
+
+**Migration 031:** sets `statement_timeout` 30s, `lock_timeout` 10s and
+`idle_in_transaction_session_timeout` 120s on each workload login. The statement limit is below the
+Data API's 45 second call timeout, and the idle limit is below its three minute idle rollback, so
+Aurora ends a runaway statement or an abandoned transaction itself. New Data API connections pick
+the limits up, and a pooled connection opened earlier keeps the old values until the Data API
+recycles it; the master login keeps the defaults. The lock limit also bounds the advisory locks a
+hold or confirmation takes: under heavy contention on one package, a write that waits more than
+10 seconds fails cleanly with the Lambda's fixed code instead of waiting toward the 45 second call
+timeout.
+
+**Migration 032:** moves `create_courtesy_hold`, `confirm_booking` and `release_courtesy_hold` from
+the master login to `meridian_booking_owner`, a role that cannot log in or bypass RLS. It reads every
+booking for the seat count through explicit `FOR SELECT` policies, and each insert or update it makes
+must still pass the traveler-scope policies, so Aurora refuses a booking row outside the
+transaction's scope even if a function had a bug. It may update only `status` and `confirmed_at`.
+EXECUTE grants are unchanged. The master inherits the owner role, so a later migration run as the
+master can still grant, revoke or alter these functions; a later `CREATE OR REPLACE` must also
+grant `CREATE ON SCHEMA public` to `meridian_booking_owner` around the statement and revoke it
+after, as 032 does.
+
+**Migration 033:** creates the read-only `meridian_audit_export` login for the audit export, with the
+same session limits as 031 and TimeZone UTC, and adds one export-order index to each audit table. It
+changes no existing policy or grant. Apply it only before provisioning that login; see
+[Audit export](#audit-export).
 
 Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
 steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025
@@ -332,7 +371,7 @@ A policy is validated against the Gateway's tool schema, so a tool and its polic
 
 ## Service logins
 
-Four Aurora logins sit next to `meridian_workflow`. None owns anything or can
+Five Aurora logins sit next to `meridian_workflow`. None owns anything or can
 bypass row-level security, and each holds only what its workload queries.
 
 | Login | Workload | Holds |
@@ -341,6 +380,7 @@ bypass row-level security, and each holds only what its workload queries.
 | `meridian_gateway` | The `MeridianHolds` Lambda | Identity and package reads, access audit INSERT, SET ROLE to `meridian_app`, EXECUTE on the three bounded booking functions, and SELECT/INSERT on `booking_action_audit`; no direct booking DML after migration 029 |
 | `meridian_identity` | The Amazon Cognito pre-token-generation Lambda | SELECT on `traveler_identity_bindings` |
 | `meridian_catalog` | The `meridian-catalog-tools` Lambda behind the `MeridianCatalog` target | SELECT on `trip_packages` and EXECUTE on `package_places_left`, and nothing else: no identity bindings, no audit, no SET ROLE |
+| `meridian_audit_export` | The audit export Lambda ([Audit export](#audit-export)) | SELECT on `agent_audit_log`, `traveler_access_audit` and `booking_action_audit` through one SELECT policy each, and nothing else: no write, no SET ROLE |
 
 The backend counts rows across every traveler in only two places, the RLS probe
 and the session receipt. The master login used to do that without RLS applying
@@ -418,9 +458,10 @@ publishing the backend. Removing the setting also removes any old hosted overrid
    ```
 
    With only migration 018 applied, name the three 018 logins one at a time, as above.
-   `--login all` also provisions `catalog` (role `meridian_catalog`, created by migration 022),
-   so use it only once 022 is applied; before that it rotates the first three passwords and
-   then fails at `ALTER ROLE meridian_catalog`. `--login` is required, and `--apply` also needs
+   `--login all` also provisions `catalog` (role `meridian_catalog`, created by migration 022)
+   and `audit` (role `meridian_audit_export`, created by migration 033), so use it only once
+   both are applied; before that it rotates the earlier passwords and then fails at the first
+   `ALTER ROLE` for a role that does not exist. `--login` is required, and `--apply` also needs
    `--i-understand-this-changes-aws`: without it the script exits 3 and changes nothing, and so does an
    abbreviated flag. Running `--apply` again rotates the password. Between the `ALTER ROLE` and
    the secret update, anything holding the old secret fails.
@@ -557,6 +598,180 @@ read a table the repository no longer has and that `PUBLIC` could still execute.
 
 Then create the Lambda and its role, as section 2 of the
 [AgentCore deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md#2-create-the-catalog-lambda) says.
+
+## Audit export
+
+The audit tables (`agent_audit_log`, `traveler_access_audit` and `booking_action_audit`) live in
+Aurora, where the master login can edit or delete a row without leaving a trace in the table. The
+audit export copies new rows to an Amazon S3 bucket with Object Lock, as a hash chain, so a later
+edit or deletion can be found. It is an export a customer can lift into production, not a change
+to how the application writes audit rows.
+
+### How it works
+
+- **Login.** `meridian_audit_export` (migration `033_audit_export_login.sql`) holds SELECT on the
+  three audit tables and nothing else: no sequence, no function, no write, no role. It does not
+  bypass RLS. It has the same session limits as the other logins (statement timeout 30 seconds,
+  lock timeout 10 seconds, idle-in-transaction timeout 120 seconds) and TimeZone UTC. The migration
+  also adds an index on each table in export order, `(ran_at, audit_id)`, `(decided_at, audit_id)`
+  and `(recorded_at, action_audit_id)`; the runner applies a migration in one transaction, so they
+  are plain `CREATE INDEX`, which blocks writes to those small tables briefly. Apply it when no
+  workflow is running. It sees every traveler's rows through one explicit policy per table,
+  `FOR SELECT TO meridian_audit_export USING (true)`. The exporter never writes to Aurora.
+- **Schedule.** An EventBridge Scheduler schedule runs the exporter Lambda
+  (`infra/functions/audit_export`) every five minutes. The Lambda reads through the Data API.
+- **Watermark.** Rows are read in `(timestamp, id)` order, strictly after the last exported row,
+  using the column the database sets on insert (`ran_at`, `decided_at`, `recorded_at`) and the
+  primary key as the tie-breaker. None of the tables has a sequence column, and a sequence would not
+  help: it is assigned at insert, not commit. A transaction stamps its rows with its start time, so a
+  row can commit after a row with a later stamp. The exporter therefore reads only rows older than
+  `settleSeconds` (default 180), which must exceed the longest transaction that writes audit rows. The
+  application's scoped sessions write an audit row and commit within one request. A row that still commits behind
+  the watermark is never exported; the verifier reports it as `row-unexported`.
+- **Time zone.** `agent_audit_log.ran_at` is a timestamp without time zone, holding the writing
+  session's local time. The settle comparison uses `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, so it does
+  not depend on the exporter's session, but it assumes every writer stores UTC. A writer in another
+  zone would shift that table's settle time by its offset. `tests/test_migration_033_live.py`
+  asserts `TimeZone = UTC` for every workload login and the audit login; run it before relying on
+  the export, and again after changing a login's settings.
+- **State.** There is no state store. The latest object of a table names the last exported row, and
+  its own bytes give the hash the next object carries, so a retry recomputes the same position. A
+  write uses `If-None-Match: *`, so an overlapping run or a retry after a lost reply cannot overwrite
+  an object; it finds the object on its next run. An empty batch writes nothing.
+- **Objects.** One JSON Lines object per table and batch, at
+  `audit-export/v1/<table>/<group>/<seq>.jsonl`. The first line is a header with the sequence
+  number, `prev_sha256` (the SHA-256 of the previous object's bytes, zeros for the first), the row
+  count, the first and last row, and the export time. Each following line is one row as Aurora
+  renders it with `to_jsonb`. The same range is in the object's metadata. A batch holds at most 200
+  rows, halves on a Data API response over its 1 MB limit, and fails with a fixed phrase when one row
+  alone is too large.
+- **Bucket.** Object Lock with a default retention (`GOVERNANCE`, 30 days; set `retentionMode`
+  and `retentionDays`), versioning, SSE-KMS with a customer-managed key that rotates, Block Public
+  Access, a TLS-only policy, and a policy that denies `s3:DeleteObject`, `s3:DeleteObjectVersion`
+  and (in `GOVERNANCE`) `s3:BypassGovernanceRetention` to every principal, and a policy that denies
+  `s3:PutObject` to every principal unless the request carries `If-None-Match` (the documented
+  `Null` condition on `s3:if-none-match`), so no key can be overwritten. The key is customer
+  managed so that reading an export needs `kms:Decrypt` as well as S3 access, and every use is in
+  CloudTrail; the bucket and key are retained when the stack is deleted.
+- **Exporter permissions.** The Data API and the login secret through the managed policy
+  `MeridianAuditExportAuroraAccess`; `s3:PutObject` and `s3:GetObject` on the export prefix,
+  `s3:ListBucket` for that prefix, and `kms:GenerateDataKey` and `kms:Decrypt` on the key. No delete,
+  retention or legal-hold permission.
+- **Alarms.** Lambda errors; no completed run for three schedule periods (`RunsCompleted`
+  from the Lambda's embedded metric line); and export lag (`BacklogAgeSeconds` over 1800 seconds for
+  two periods, which a full batch of old rows causes). Pass `-c alarmTopicArn=<topic>` to notify an
+  SNS topic. Without it the alarms only change state.
+- **Chain heads.** Each run that writes an object logs the table, sequence and SHA-256 of its head,
+  and each run logs the boto3 version it ran with. The log group is retained when the stack is deleted
+  and keeps 365 days (`-c logRetentionDays=<days>`).
+  Copy a head somewhere the bucket's administrators cannot write, and pass it to the verifier.
+
+### Choose the Object Lock mode
+
+`GOVERNANCE` is the default because this repository deploys into workshop and event accounts, where
+an irreversible lock is a cost with no benefit. A principal with `s3:BypassGovernanceRetention`
+can delete a governed version, and the bucket policy denies that permission to everyone, so doing so
+takes a bucket policy change first (`s3:PutBucketPolicy`, recorded by CloudTrail). `COMPLIANCE` lets
+nobody delete or shorten retention before the date, root included, and cannot be undone: deploy it
+with `-c retentionMode=COMPLIANCE -c retentionDays=<days>` only when your retention policy says so.
+The sample sets no lifecycle expiry; expiry and cost follow your retention policy.
+
+### What this proves, and what it does not
+
+- It detects an edit or a deletion of an exported row, an edit, a removal or a delete marker on an
+  object, and a gap in the chain, when the verifier runs.
+- A row edited or deleted between its insert and its export (about `settleSeconds` plus the
+  schedule period, normally under ten minutes) is exported as it then stood. The export does not
+  detect it.
+- A master-user action before export is not recorded. Nothing here records the actions, only the
+  rows.
+- A row that commits behind the watermark is not exported, and the verifier reports it.
+- Removing the newest objects (a truncated tail) leaves a valid chain. A delete marker, or a head you
+  recorded elsewhere, reveals it. Governance retention can be bypassed by whoever may first change
+  the bucket policy.
+- A principal who can write both Aurora and the bucket (for example one account's administrator)
+  can rewrite both. Keep the bucket in an account whose administrators differ from the database's,
+  and use `COMPLIANCE`, for evidence you must rely on.
+- The export holds the audit rows' content, including traveler ids and verified subjects. Treat
+  the bucket and the key as the same sensitivity as the audit tables.
+
+### Create the audit export
+
+Each step that calls AWS needs the owner's approval. Run from `meridian/`.
+
+1. L0a: apply migration 033 alone. List pending migrations, dry-run it, read the result, then apply:
+
+   ```bash
+   python scripts/apply_migrations.py --pending
+   python scripts/apply_migrations.py --dry-run --only 033_audit_export_login.sql
+   python scripts/apply_migrations.py --only 033_audit_export_login.sql
+   ```
+
+   A failed role check is a finding to investigate, not permission to alter the role into shape.
+
+2. L0b: report the plan, then provision the login, its secret and its managed policy:
+
+   ```bash
+   python scripts/provision_service_logins.py --login audit
+   python scripts/provision_service_logins.py --login audit --apply \
+     --i-understand-this-changes-aws --write-env
+   ```
+
+   This writes `AURORA_AUDIT_EXPORT_SECRET_ARN` to `.env`. The stack needs the managed policy to
+   exist before it deploys, as the identity stack does.
+
+3. L0c: prove the login against the live cluster, including what it must not do, and that the
+   exporter's SQL pages every row once in the order Aurora sorts by:
+
+   ```bash
+   python -m pytest -m database tests/test_migration_033_live.py
+   ```
+
+4. L1: deploy the stack from `infra/` with the real npm binary:
+
+   ```bash
+   cd infra
+   npm run build
+   node_modules/.bin/cdk diff -a "node dist/bin/meridian-audit-export.js"
+   node_modules/.bin/cdk deploy -a "node dist/bin/meridian-audit-export.js" \
+     -c retentionMode=GOVERNANCE -c retentionDays=30
+   ```
+
+   Read the diff first. It should create one bucket, one key, one Lambda and its role and log
+   group, the schedule and its role, and three alarms. The stack is termination protected.
+
+5. L2: wait for the first scheduled run (five minutes), then read the Lambda's log for the
+   `audit_export_head` lines and the `RunsCompleted` metric. A run that exports nothing is normal when
+   no row is older than the settle time.
+
+6. L3: verify. Dry-run first, then read the bucket, then compare with Aurora:
+
+   ```bash
+   python scripts/verify_audit_export.py --bucket <bucket> --dry-run
+   python scripts/verify_audit_export.py --bucket <bucket>
+   python scripts/verify_audit_export.py --bucket <bucket> --compare-aurora \
+     --head agent_audit_log=<seq>:<sha256>
+   ```
+
+   The verifier is read-only: it lists and reads objects and, with `--compare-aurora`, reads the
+   tables as `meridian_audit_export`. Exit 0 means verified, 1 findings, 2 could not run, 3 usage
+   error. Its identity needs `s3:ListBucketVersions`, `s3:GetObject`, `s3:GetObjectVersion` and
+   `kms:Decrypt`.
+
+| Finding | Meaning |
+| --- | --- |
+| `chain-broken`, `chain-gap` | An object was edited or removed, or a sequence number is missing |
+| `metadata-mismatch`, `extra-version` | An object's bytes differ from what the exporter recorded, or a second version of its key exists |
+| `delete-marker` | A delete was requested on an object key |
+| `row-count`, `range-mismatch`, `header-mismatch`, `object-malformed`, `duplicate-row` | An object is inconsistent with its own header |
+| `head-mismatch` | The latest object is not the head you recorded |
+| `row-edited` | An exported row differs in Aurora now; the columns are named, not the values |
+| `row-deleted` | An exported row is not in Aurora |
+| `row-unexported` | A row behind the watermark was never exported |
+
+To stop exporting, delete the schedule, or turn off termination protection and destroy the stack.
+The bucket and key stay. To retire the login, run `ALTER ROLE meridian_audit_export NOLOGIN PASSWORD
+NULL` as the master login and delete the secret and the managed policy.
 
 ## Sign-in and who is calling
 
@@ -1582,6 +1797,91 @@ stops on them.
 The container starts through `backend/launch.py`, which opens the port before
 the application finishes loading; [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md)
 explains why App Runner needs this.
+
+## Bring the App Runner service under CloudFormation
+
+The hosted backend's App Runner service (`meridian-web`) was created outside CloudFormation.
+The `MeridianWebService` stack (`infra/lib/meridian-web-service-stack.ts`) describes it as an
+`AWS::AppRunner::Service` with `DeletionPolicy` and `UpdateReplacePolicy` `Retain`, so it can be
+rebuilt from code. `AWS::AppRunner::Service` supports resource import, drift detection and the
+IaC generator
+([resource type support](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resource-import-supported-resources.html)).
+App Runner no longer accepts new customers, so this rebuilds the service only in an account that
+already uses it.
+
+The import is a one-time change to AWS. Do it only with the account owner's approval for each
+step. An import creates, updates and deletes nothing: CloudFormation records the existing service
+in the stack and does not call `UpdateService`. The rules
+([import considerations](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/import-resources-manually.html)):
+the imported resource needs a `DeletionPolicy`; CloudFormation does not check that the template
+matches the live service, so step 3 does; the import change set cannot add, change or remove any
+other resource.
+
+The stack exists only when the synth gets `-c instanceRoleArn=...`, and it then requires
+`-c accessRoleArn=...` and `-c serviceImageUri=...` (and `-c apiTokenSecretArn=...` in the `iam`
+release). There is no default image: the synth fails without one, so no deploy can pick an image by
+accident. Every other publish is unchanged. Keep the values in `.local/` (git-ignored), never in a
+tracked file:
+
+- `.local/apprunner-import.env`: `instanceRoleArn` and `accessRoleArn` (the `InstanceRoleArn` and
+  `AccessRoleArn` outputs of `MeridianWebRoles`, equal to the live service's roles),
+  `serviceImageUri` (the live `ImageIdentifier`), and for the `iam` release `apiTokenSecretArn`.
+- `.local/apprunner-import-mapping.json`:
+  `{"<logical id>": {"ServiceArn": "<service arn>"}}`. The logical id is `BackendService` plus a
+  hash; read it from the synthesized template.
+
+1. **Read the live service** (read-only): `aws apprunner describe-service --service-arn ...`. Copy
+   the image identifier into `serviceImageUri`. Pass the live image, not the one this checkout
+   would build: a different image in the template would deploy on the first update.
+2. **Synthesize** from `infra/`, with the same `.env`, Region and release mode as the live service:
+   `npx cdk synth MeridianWebService -c instanceRoleArn=... -c accessRoleArn=...
+   -c serviceImageUri=...` (add `-c apiTokenSecretArn=...` in the `iam` release).
+3. **Compare field by field** (read-only `DescribeService` and `ListTagsForResource`):
+   `python scripts/check_apprunner_import.py --region <region> --service-arn <arn>
+   --image-uri <serviceImageUri>`. It must print `MATCH` and exit 0. It refuses a template older
+   than 30 minutes or synthesized for another image. It checks name, image, roles, port, start
+   command, every environment variable and secret reference (a duplicate name is refused), size,
+   health check, network, observability, encryption and tags, and prints field paths only. Any
+   difference means the template is wrong: fix the code or the context, never the service. The
+   auto scaling configuration is an accepted match: the template names none, and the script
+   requires the live one to be the account's `DefaultConfiguration` revision 1.
+4. **Import** from `infra/`: `npx cdk import MeridianWebService --resource-mapping
+   ../.local/apprunner-import-mapping.json` plus the same `-c` values. The prompt must list the
+   service and nothing else. The `AWS::CDK::Metadata` resource is not a resource to import; if the
+   prompt or the change set lists anything besides `AWS::AppRunner::Service`, answer no.
+5. **Check for drift**: `aws cloudformation detect-stack-drift --stack-name MeridianWebService`,
+   then `describe-stack-resource-drifts`. Expect `IN_SYNC`. Then run `cdk diff MeridianWebService`
+   with the same context: expect no differences. A difference must not be deployed until it is
+   understood.
+6. **Confirm the service did not change**: `describe-service` shows the same `UpdatedAt`, the
+   status is `RUNNING`, and no new operation appears in `list-operations`. Run
+   `python scripts/published.py`.
+
+**Variables nothing reads.** The live service carries three variables that no file in the
+repository reads: `AGENTCORE_GATEWAY_SEARCH_TOOL` and two checkpoint settings with the
+`LANGGRAPH_` prefix. `LEGACY_LIVE_ENVIRONMENT` in the stack file names them; the framework lives
+only in `examples/langgraph/`. They reached the service through
+`publish.py`, which keeps the live variables under the new ones. The stack lists them in
+`LEGACY_LIVE_ENVIRONMENT` so the import is an exact match. Remove them later, never during the
+import: empty that object in a reviewed change, run the check, read `cdk diff`, and deploy
+`MeridianWebService` once, with the live image and approval. That is an `UpdateService` and a
+deployment. Confirm first that the image the service runs does not read them: the repository
+shows no reader, but the running image is not this checkout.
+
+**Updates after the import.** `publish.py` remains the update path until a reviewed follow-up moves
+its `update_service` step to the stack. It changes the image and environment through the API, so
+the stack drifts after every publish. After any `publish.py --apply`, run drift detection on
+`MeridianWebService` and read the result. Do not run `cdk deploy MeridianWebService` or
+`cdk deploy --all` with a `serviceImageUri` other than the one the service runs now: it is an
+`UpdateService` with that image. To bring the stack back in line after a publish, set
+`serviceImageUri` to the image `describe-service` shows and run `cdk diff` first.
+
+**Rollback.** Both policies are `Retain`, so removing the resource from the stack never touches the
+service. If step 4 or 5 goes wrong, `aws cloudformation delete-stack --stack-name
+MeridianWebService` after the import has finished (or after `IMPORT_ROLLBACK_COMPLETE`) leaves the
+service running as it was; run it only with approval. A failed import rolls back to
+`IMPORT_ROLLBACK_COMPLETE` and leaves the service unmanaged, as before. Retain also means deleting
+the stack does not delete the service: to remove it, delete it in App Runner by hand.
 
 ## Troubleshooting
 

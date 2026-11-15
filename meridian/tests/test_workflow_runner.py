@@ -113,10 +113,19 @@ class World:
         )
 
 
-def command(query=CANONICAL, *, resume=False, traveler="trv_x", thread="t1", **kw):
+def command(
+    query=CANONICAL, *, resume=False, traveler="trv_x", thread="t1", recovery=None, **kw
+):
+    """A start is a recovery unless a test says otherwise; a resume never declares one."""
     return WorkflowCommand(
-        query=query, traveler_id=traveler, thread_id=thread, resume=resume, travelers_count=2, **kw
+        query=query, traveler_id=traveler, thread_id=thread, resume=resume, travelers_count=2,
+        recovery=(not resume) if recovery is None else recovery, **kw
     )
+
+
+def read_command():
+    """A free-text read: no typed recovery, so it can never reach the hold."""
+    return command("Find me a romantic trip to Paris", recovery=False)
 
 
 async def test_a_paused_run_releases_its_lease_as_paused():
@@ -170,7 +179,7 @@ async def test_saved_progress_cannot_be_overwritten_by_a_fresh_start():
 
 async def test_a_finished_run_has_nothing_to_resume():
     world = World()
-    await world.runner().run(command("Find me a romantic trip to Paris"))
+    await world.runner().run(read_command())
     with pytest.raises(WorkflowConflictError, match="no pending"):
         await world.runner().run(command("Resume workflow", resume=True))
 
@@ -199,7 +208,7 @@ async def test_lease_loss_stops_the_run_and_records_failure():
         return {"response": "late", "activities": state["activities"]}
 
     with pytest.raises(ExecutionLeaseLostError):
-        await world.runner(synthesize=slow).run(command("Find me a romantic trip to Paris"))
+        await world.runner(synthesize=slow).run(read_command())
     assert [e["status"] for e in world.lease.executions] == ["failed"]
 
 
@@ -398,7 +407,7 @@ async def test_progress_saved_between_the_read_and_the_claim_conflicts_and_fails
 async def test_a_resume_keeps_the_saved_party_size():
     world = World()
     start = WorkflowCommand(
-        query=RECOVERY, traveler_id="trv_x", thread_id="t1", travelers_count=3
+        query=RECOVERY, traveler_id="trv_x", thread_id="t1", travelers_count=3, recovery=True
     )
     await world.runner().run(start)
     resume = WorkflowCommand(
@@ -509,7 +518,7 @@ async def test_a_failed_release_does_not_hide_the_lease_loss():
         return {"response": "late", "activities": state["activities"]}
 
     with pytest.raises(ExecutionLeaseLostError):
-        await world.runner(synthesize=slow).run(command("Find me a romantic trip to Paris"))
+        await world.runner(synthesize=slow).run(read_command())
 
 
 async def test_a_failed_release_is_logged_with_its_execution(caplog):
@@ -520,7 +529,7 @@ async def test_a_failed_release_is_logged_with_its_execution(caplog):
 
     world.lease.release = release
     with caplog.at_level(logging.ERROR, logger="backend.agents.phase_05_workflow.runner"):
-        result = await world.runner().run(command("Find me a romantic trip to Paris"))
+        result = await world.runner().run(read_command())
     assert result["workflow_status"] == "complete"
     assert any(
         "exe_t1_1" in record.getMessage() and "t1" in record.getMessage()
@@ -713,3 +722,82 @@ async def test_a_cedar_denial_envelope_reaches_no_snapshot_event_or_response():
     for text in (stored, json.dumps(events)):
         assert "123456789012" not in text and "arn:aws" not in text
         assert "abc.def.ghi" not in text
+
+
+@pytest.mark.parametrize("query", [CANONICAL, RECOVERY])
+async def test_recovery_words_without_the_typed_intent_never_hold_in_a_full_run(query):
+    """Old keyword-only path: start, answer the pauses, resume. No hold is ever requested."""
+    world = World()
+    await world.runner().run(command(query, recovery=False))
+    for _ in range(2):
+        try:
+            result = await world.runner("worker-b").run(command("Resume", resume=True))
+        except WorkflowConflictError:
+            break
+        assert "hold_id" not in result or result["hold_id"] is None
+    assert world.gateway.calls == []
+
+
+async def test_a_resume_cannot_declare_a_recovery():
+    world = World()
+    with pytest.raises(WorkflowRequestError, match="recovery"):
+        await world.runner().run(command("Resume", resume=True, recovery=True))
+    assert world.gateway.calls == []
+
+
+async def resave_inputs(world, thread="t1", **changes):
+    """Rewrite the saved task's inputs: a value sets a key, ``None`` removes it.
+
+    A run paused before the typed intent shipped has no ``recovery`` key at all.
+    """
+    key = snapshot_key(thread)
+    snapshot = json.loads(await world.storages[thread].read(key))
+    inputs = json.loads(snapshot["data"]["state"]["current_task"])
+    for name, value in changes.items():
+        inputs.pop(name, None) if value is None else inputs.__setitem__(name, value)
+    snapshot["data"]["state"]["current_task"] = json.dumps(inputs, sort_keys=True)
+    await world.storages[thread].write(key, json.dumps(snapshot).encode("utf-8"))
+
+
+async def resume_from_review(world, query, **changes):
+    """Pause after search for review, rewrite the saved inputs, then resume.
+
+    The hold edge is read when availability finishes, so only a run paused before that point
+    (at the review) is decided by the saved inputs.
+    """
+    await world.runner().run(command(query, recovery=True, review_only=True))
+    await resave_inputs(world, **changes)
+    return await world.runner("worker-b").run(command("Resume", resume=True))
+
+
+async def test_a_legacy_run_with_recovery_wording_still_holds_on_resume():
+    """Paused before the deploy: no recovery key, so the old keyword rule decides, once."""
+    world = World()
+    await resume_from_review(world, RECOVERY, recovery=None)
+    assert [call["travelerConfirmed"] for call in world.gateway.calls] == [True]
+
+
+async def test_a_legacy_run_without_recovery_wording_does_not_hold():
+    world = World()
+    result = await resume_from_review(world, "Find me another way to Tokyo.", recovery=None)
+    assert world.gateway.calls == []
+    assert result["workflow_status"] != "paused"
+
+
+async def test_a_saved_recovery_of_false_never_holds_even_with_recovery_wording():
+    world = World()
+    await resume_from_review(world, RECOVERY, recovery=False)
+    assert world.gateway.calls == []
+
+
+async def test_a_legacy_rule_does_not_rewrite_the_saved_inputs():
+    world = World()
+    await resume_from_review(world, RECOVERY, recovery=None)
+    snapshot = json.loads(await world.snapshot("t1"))
+    assert "recovery" not in json.loads(snapshot["data"]["state"]["current_task"])
+
+
+async def test_a_new_start_without_the_intent_never_holds_whatever_it_says():
+    world = World()
+    await world.runner().run(command(RECOVERY, recovery=False))
+    assert world.gateway.calls == []

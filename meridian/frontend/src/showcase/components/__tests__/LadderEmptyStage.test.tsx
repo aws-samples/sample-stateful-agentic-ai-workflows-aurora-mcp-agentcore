@@ -30,7 +30,7 @@ describe('LadderEmptyStage', () => {
     const current = state();
     render(<LadderEmptyStage state={current} />);
     fireEvent.click(screen.getByText('City trips under $2,000 per traveler'));
-    expect(current.applyPhaseExample).toHaveBeenCalledWith(PHASE_ONE[0], true, undefined);
+    expect(current.applyPhaseExample).toHaveBeenCalledWith(PHASE_ONE[0], true, undefined, undefined);
   });
 
   it('uses the Phase 3 prompt pair and disables cards while a request runs', () => {

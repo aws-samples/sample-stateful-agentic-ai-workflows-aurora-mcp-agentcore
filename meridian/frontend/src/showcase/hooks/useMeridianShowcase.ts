@@ -97,6 +97,8 @@ export const EMPTY_FILTERS: ChatFilters = {
 /** How a prompt is sent: as a review-only start, or as the resume that holds a chosen package. */
 export interface PromptOptions {
   reviewOnly?: boolean;
+  /** Declares a recovery, the only request that can reach the hold. Set by the launching action. */
+  intent?: 'recovery';
   selectedPackageId?: string;
 }
 
@@ -184,6 +186,7 @@ export interface MeridianShowcaseState {
     prompt: string,
     runImmediately?: boolean,
     phaseOverride?: Phase,
+    options?: PromptOptions,
   ) => Promise<void>;
   replayLastPrompt: () => Promise<void>;
   replayTrace: () => void;
@@ -454,6 +457,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
   const lastPromptPhaseOverride = useRef<Phase>();
   const lastPromptOptions = useRef<PromptOptions>();
+  // A launch prompt put in the composer without sending, with the options its launch carries. It
+  // applies only to a send of that exact text, so editing the text makes it a read again.
+  const pendingLaunch = useRef<{ prompt: string; options: PromptOptions } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
@@ -740,7 +746,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [restoreJourney]);
 
   const submitPrompt = useCallback(
-    async (overridePrompt?: string, phaseOverride?: Phase, options?: PromptOptions) => {
+    async (overridePrompt?: string, phaseOverride?: Phase, sentOptions?: PromptOptions) => {
       if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
         setError(TRAVELER_CONTEXT_MESSAGE);
         return;
@@ -751,6 +757,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       }
       const baseRaw = (overridePrompt ?? currentPrompt).trim();
       if (!baseRaw || chatController.current) return;
+      const pending = pendingLaunch.current;
+      const options = sentOptions ?? (pending?.prompt === baseRaw ? pending.options : undefined);
+      pendingLaunch.current = null;
       if (writeController.current) { setError(WRITE_IN_PROGRESS_MESSAGE); return; }
       if (isLoading) return;
       const generation = ++requestGeneration.current;
@@ -859,6 +868,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           phase: requestPhase,
           ...(phaseOverride === 4 ? { experience: 'concierge' as const } : {}),
           ...(options?.reviewOnly ? { review_only: true } : {}),
+          // The recovery intent is a Phase 5 routing input; the backend refuses it elsewhere.
+          ...(options?.intent && requestPhase === 5 ? { intent: options.intent } : {}),
           ...(options?.selectedPackageId ? { selected_package_id: options.selectedPackageId } : {}),
           ...(requestPhase >= 4
             ? {
@@ -925,10 +936,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       prompt: string,
       runImmediately = false,
       phaseOverride?: Phase,
+      options?: PromptOptions,
     ) => {
       setCurrentPrompt(prompt);
       if (runImmediately) {
-        await submitPrompt(prompt, phaseOverride);
+        await submitPrompt(prompt, phaseOverride, options);
+      } else {
+        pendingLaunch.current = options ? { prompt: prompt.trim(), options } : null;
       }
     },
     [submitPrompt],
@@ -939,6 +953,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
+    pendingLaunch.current = null;
     // Compute the transition from the CURRENT phase directly - never from a
     // side-effect written inside a setState updater. The updater can run
     // asynchronously (and twice under StrictMode), so reading a flag it sets

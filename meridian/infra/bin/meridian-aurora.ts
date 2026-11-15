@@ -14,6 +14,8 @@ const clusterIdentifier = required('clusterIdentifier');
 new MeridianAuroraStack(app, 'MeridianAurora', {
   env: { account, region: required('region') },
   clusterIdentifier, vpcId: required('vpcId'), subnetIds: required('subnetIds').split(','),
-  engineVersion: required('engineVersion'), snapshotArn: app.node.tryGetContext('snapshotArn'),
+  engineVersion: required('engineVersion'),
+  readerAvailabilityZone: required('readerAvailabilityZone'),
+  snapshotArn: app.node.tryGetContext('snapshotArn'),
   description: 'Meridian encrypted Aurora - separate creation or restore, no automatic cutover',
 });

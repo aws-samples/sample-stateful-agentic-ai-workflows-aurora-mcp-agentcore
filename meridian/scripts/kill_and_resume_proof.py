@@ -149,6 +149,7 @@ async def _run_workflow(
         traveler_id=TRAVELER,
         thread_id=thread_id,
         resume=resume,
+        recovery=not resume,
         travelers_count=2,
     )
     return await runner.run(command, after_pause=after_pause)

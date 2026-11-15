@@ -238,7 +238,8 @@ def main() -> int:
 
     # Phase 5: pause, resume, evidence
     p5, _ = record("p5_finale_pause", "POST", "/api/chat",
-                   {"message": FINALE, "phase": 5, "customer_id": TRAVELER, "travelers_count": 2},
+                   {"message": FINALE, "phase": 5, "customer_id": TRAVELER, "travelers_count": 2,
+                    "intent": "recovery"},
                    ok=ok, paused=lambda b, s: b.get("workflow_status") == "paused",
                    products=has_products,
                    resume_chip=lambda b, s: (b.get("follow_ups") or []) == ["Resume workflow from the saved step"],

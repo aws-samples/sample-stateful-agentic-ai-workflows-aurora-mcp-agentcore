@@ -1,28 +1,12 @@
-"""How a Phase 5 request routes through the graph, and where it pauses."""
+"""How a Phase 5 request routes through the graph, and where it pauses.
 
-
-def is_recovery_request(query: str) -> bool:
-    """Does this query justify committing inventory?
-
-    Only a disruption does. `classify_intent` labels anything that names both
-    a trip and a date as a "plan", which correctly includes a documented
-    availability question like "Which trip lengths are still available for
-    Amalfi Coast Villa Week?". Routing on intent alone would let a read reserve
-    seats, so the hold node needs a stronger signal: the traveler's trip broke
-    and we are rebuilding it.
-    """
-    q = (query or "").lower()
-    disrupted = any(
-        marker in q
-        for marker in ("cancelled", "canceled", "disrupt", "stranded", "rebook", "missed")
-    )
-    reworking = any(
-        marker in q for marker in ("rework", "rebuild", "replan", "re-plan", "recover")
-    )
-    return disrupted and reworking
+Words choose only a read route here. Whether a run may reach the hold is not decided by words:
+it is the typed ``recovery`` input the request carries (see ``WorkflowCommand.recovery``).
+"""
 
 
 def classify_intent(query: str) -> str:
+    """The read route a free-text query takes: search, availability, plan or memory_recall."""
     q = query.lower()
     # Explicit recall language wins over incidental planning words. For
     # example, "Recall my October Tokyo plan..." is asking for memory even
@@ -83,20 +67,25 @@ def classify_intent(query: str) -> str:
     return "search"
 
 
-def pauses_after_search(query: str, review_only: bool) -> bool:
+def pauses_after_search(query: str, review_only: bool, recovery: bool) -> bool:
     """Whether the run stops for review once search has completed.
 
-    A review request always does. So does the canonical recovery, which pauses
-    after search so the room sees a saved step before availability fan-out.
-    A route that runs no search has nothing to pause after.
+    Only a recovery stops here: the pause is the traveler's chance to answer before a hold, so
+    a read-only run, whatever it asks for, has nothing to wait for. A recovery stops when the
+    caller asked to review the shortlist, and for the canonical recovery, so the room sees a
+    saved step before availability fan-out. A route that runs no search has nothing to pause
+    after.
 
     Args:
         query: The traveler's request.
         review_only: The caller asked to review the shortlist first.
+        recovery: The request declared a recovery.
 
     Returns:
         True when the graph must interrupt before the node that follows search.
     """
+    if not recovery:
+        return False
     if review_only:
         return True
     normalized = query.lower()

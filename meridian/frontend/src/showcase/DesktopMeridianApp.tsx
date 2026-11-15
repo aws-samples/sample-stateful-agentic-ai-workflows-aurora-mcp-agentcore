@@ -639,7 +639,7 @@ export function DesktopMeridianApp({
             onPreferences={() => openNavItem('preferences')}
             onReviewRecovery={() => {
               if (!state.recoveryRequest || state.isLoading) return;
-              void state.submitPrompt(state.recoveryRequest, 5, { reviewOnly: true });
+              void state.submitPrompt(state.recoveryRequest, 5, { reviewOnly: true, intent: 'recovery' });
               setView('recovery');
             }} />
         </aside>

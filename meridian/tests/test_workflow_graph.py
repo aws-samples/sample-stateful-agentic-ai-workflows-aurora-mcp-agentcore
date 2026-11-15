@@ -73,10 +73,11 @@ class Harness:
         return json.loads(raw) if raw else None
 
 
-def task(query, thread="t1"):
+def task(query, thread="t1", recovery=True):
+    """The run's inputs; ``recovery`` is the typed intent the request carries."""
     return run_task(
         query=query, traveler_id="trv_x", conversation_id=thread,
-        journey_id="jrn_test", travelers_count=2,
+        journey_id="jrn_test", travelers_count=2, recovery=recovery,
     )
 
 
@@ -106,7 +107,7 @@ async def test_non_recovery_routes_match_the_langgraph_workflow(query, route):
         gateway_call=harness.gateway,
     )
     graph = harness.graph("t1", nodes=nodes)
-    result = await graph.invoke_async(task(query))
+    result = await graph.invoke_async(task(query, recovery=False))
     assert result.status.value == "completed"
     assert [node.node_id for node in result.execution_order] == route
     assert harness.gateway.calls == []
@@ -121,9 +122,9 @@ CONFIRM_PAUSE = ("prepare_hold", CONFIRM_INTERRUPT)
     (CANONICAL, True, REVIEW_PAUSE),
     (RECOVERY_WORDINGS[1], False, CONFIRM_PAUSE),
     (RECOVERY_WORDINGS[1], True, REVIEW_PAUSE),
-    # An availability question runs no search, so review has nothing to pause after.
+    # A typed recovery always plans, so it searches before it checks availability.
     (RECOVERY_WORDINGS[2], False, CONFIRM_PAUSE),
-    (RECOVERY_WORDINGS[2], True, CONFIRM_PAUSE),
+    (RECOVERY_WORDINGS[2], True, REVIEW_PAUSE),
     (RECOVERY_WORDINGS[3], False, CONFIRM_PAUSE),
     (RECOVERY_WORDINGS[3], True, REVIEW_PAUSE),
 ])
@@ -141,19 +142,46 @@ async def test_no_hold_without_jordans_answered_review(query, review, pause):
     assert harness.gateway.calls == []
 
 
-async def test_review_pauses_a_search_only_route_before_synthesize():
+@pytest.mark.parametrize("query", RECOVERY_WORDINGS)
+async def test_recovery_words_alone_never_reach_the_hold(query):
+    """The hold path needs the typed intent. Even a confirmed run cannot hold on words."""
     harness = Harness()
-    await harness.graph("t1", review=True).invoke_async(task("Find me a romantic trip to Paris"))
-    snapshot = await harness.snapshot("t1")
-    assert next_nodes(snapshot) == ["synthesize"]
-    assert [i["name"] for i in pending_interrupts(snapshot)] == [REVIEW_INTERRUPT]
+    result = await harness.graph("t1", confirmed=True).invoke_async(task(query, recovery=False))
+    order = [node.node_id for node in result.execution_order]
+    assert result.status.value == "completed"
+    assert "prepare_hold" not in order and "hold" not in order
+    assert harness.gateway.calls == []
 
-    resumed = harness.graph("t1", confirmed=True, review=True)
-    result = await resumed.invoke_async(answers_for(snapshot))
+
+async def test_the_typed_intent_reaches_the_hold_whatever_the_words():
+    """A recovery launched by the UI needs no disruption vocabulary in the prompt."""
+    harness = Harness()
+    plain = "Find me another way to Tokyo."
+    result = await harness.graph("t1").invoke_async(task(plain))
+    snapshot = await harness.snapshot("t1")
+    assert result.status.value == "interrupted"
+    assert [node.node_id for node in result.execution_order] == [
+        "classify", "search", "availability",
+    ]
+    assert (next_nodes(snapshot), [i["name"] for i in pending_interrupts(snapshot)]) == (
+        ["prepare_hold"], [CONFIRM_INTERRUPT],
+    )
+    resumed = harness.graph("t1", confirmed=True)
+    await resumed.invoke_async(answers_for(snapshot))
+    assert [call["travelerConfirmed"] for call in harness.gateway.calls] == [True]
+
+
+async def test_a_read_only_run_never_pauses_for_review_even_when_review_is_asked():
+    """A pause promises a hold is coming; a read-only run has none, so it just finishes."""
+    harness = Harness()
+    result = await harness.graph("t1", review=True).invoke_async(
+        task("Find me a romantic trip to Paris", recovery=False)
+    )
     assert result.status.value == "completed"
     assert [node.node_id for node in result.execution_order] == [
         "classify", "search", "synthesize"
     ]
+    assert harness.gateway.calls == []
 
 
 async def test_the_canonical_recovery_pauses_after_search():
@@ -209,7 +237,9 @@ async def test_a_lost_hold_reply_replays_the_same_intent_in_a_new_graph():
 ])
 async def test_pause_after_search_stops_before_whichever_node_runs_next(query, following):
     harness = Harness()
-    result = await harness.graph("t1", pause_after="search").invoke_async(task(query))
+    result = await harness.graph("t1", pause_after="search").invoke_async(
+        task(query, recovery=False)
+    )
     snapshot = await harness.snapshot("t1")
     assert result.status.value == "interrupted"
     assert next_nodes(snapshot) == [following]

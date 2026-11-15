@@ -143,11 +143,66 @@ describe('Concierge request context', () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await act(async () => { await result.current.submitPrompt('Rework my canceled trip and check availability.', 4); });
     expect(result.current.recoveryRequest).toContain('Rework');
-    await act(async () => { await result.current.submitPrompt(result.current.recoveryRequest!, 5, { reviewOnly: true }); });
+    await act(async () => { await result.current.submitPrompt(result.current.recoveryRequest!, 5, { reviewOnly: true, intent: 'recovery' }); });
     expect(result.current.recoveryRequest).toBeNull();
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, intent: 'recovery' }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
     await act(async () => { await result.current.replayLastPrompt(); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, resume: undefined }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, intent: 'recovery', resume: undefined }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
+  });
+
+  it('sends the recovery intent only when the launching action sets it', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      message: 'Paused for review.', activities: [], conversation_id: 'phase5-thread',
+    });
+    const words = 'My flight was canceled. Rework my Tokyo trip and check availability.';
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.submitPrompt(words, 5); });
+    expect(vi.mocked(sendChatMessage).mock.calls[0][0]).not.toHaveProperty('intent');
+    await act(async () => {
+      await result.current.submitPrompt(words, 5, { intent: 'recovery' });
+    });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: 5, intent: 'recovery' }),
+      expect.any(AbortSignal), expect.any(Function), expect.any(Function),
+    );
+    await act(async () => { await result.current.replayLastPrompt(); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: 5, intent: 'recovery' }),
+      expect.any(AbortSignal), expect.any(Function), expect.any(Function),
+    );
+  });
+
+  it('keeps the recovery intent of a prompt put in the composer, only for that exact text', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      message: 'Paused for review.', activities: [], conversation_id: 'phase5-thread',
+    });
+    const story = 'My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.';
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.applyPhaseExample(story, false, 5, { intent: 'recovery' }); });
+    await act(async () => { await result.current.submitPrompt(undefined, 5); });
+    expect(vi.mocked(sendChatMessage).mock.calls[0][0]).toMatchObject({ phase: 5, intent: 'recovery' });
+
+    await act(async () => { await result.current.applyPhaseExample(story, false, 5, { intent: 'recovery' }); });
+    act(() => result.current.setCurrentPrompt(`${story} Also check hotels.`));
+    await act(async () => { await result.current.submitPrompt(undefined, 5); });
+    expect(vi.mocked(sendChatMessage).mock.calls[1][0]).not.toHaveProperty('intent');
+  });
+
+  it('drops a pending recovery intent when the phase changes or the send is not Phase 5', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      message: 'Here are trips.', activities: [], conversation_id: 'thread-x',
+    });
+    const story = 'My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.';
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.applyPhaseExample(story, false, 5, { intent: 'recovery' }); });
+    act(() => result.current.setSelectedPhase(4));
+    act(() => result.current.setCurrentPrompt(story));
+    await act(async () => { await result.current.submitPrompt(undefined, 4); });
+    expect(vi.mocked(sendChatMessage).mock.calls[0][0]).toMatchObject({ phase: 4 });
+    expect(vi.mocked(sendChatMessage).mock.calls[0][0]).not.toHaveProperty('intent');
+
+    await act(async () => { await result.current.submitPrompt(story, 3, { intent: 'recovery' }); });
+    expect(vi.mocked(sendChatMessage).mock.calls[1][0]).not.toHaveProperty('intent');
   });
 
   it('sends the chosen package with the resume of a paused recovery', async () => {

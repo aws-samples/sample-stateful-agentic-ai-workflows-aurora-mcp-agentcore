@@ -96,6 +96,7 @@ uses the governed Gateway path.
 | --- | --- |
 | `meridian_agentcore/` | AgentCore CLI project: runtime code, gateway Lambda targets, configuration templates, CDK app |
 | `infra/bin/meridian-aurora.ts` | CDK app for an encrypted Aurora PostgreSQL cluster with the Data API |
+| `infra/bin/meridian-audit-export.ts`, `infra/functions/audit_export/` | CDK app and Lambda for the tamper-evident audit export: an Object Lock bucket, the exporter on a five-minute schedule and its alarms |
 | `infra/bin/meridian-web.ts` | CDK app for the hosted web app: S3 and CloudFront site, App Runner image and roles |
 | `Dockerfile` | Backend container with the locked PostgreSQL MCP server |
 
@@ -116,7 +117,8 @@ uses the governed Gateway path.
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
 | `scripts/stage_concierge_runtime.py`, `scripts/generate_catalog_tool_schema.py` | Copy the shared concierge definition into the Concierge Runtime; generate the `MeridianCatalog` tool schema from the tool functions |
 | `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload (`--traveler`, `--apply`), and stage the Runtime's backend copy |
-| `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway`, `meridian_identity` and `meridian_catalog` logins, their secrets and managed policies |
+| `scripts/verify_audit_export.py` | Read-only check of the audit export's hash chain, and optionally of Aurora's rows against it |
+| `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway`, `meridian_identity`, `meridian_catalog` and `meridian_audit_export` logins, their secrets and managed policies |
 | `scripts/seed_cognito_users.py`, `scripts/sync_cognito_env.py`, `scripts/cognito_tokens.py` | Create the two sign-in users and their traveler bindings, copy the identity stack outputs into `.env`, and mint real tokens for tests |
 | `scripts/release_identity.py`, `scripts/identity_release/` | Operate the coordinated identity release: read every hop back (`check`), deploy the Gateway stages, attach the interceptor, move the Lambdas, save a snapshot and roll back; dry run unless given `--apply --i-understand-this-changes-aws` |
 | `scripts/prove_backend_login.py` | Run the real backend on this machine as the `meridian_backend` login and drive it through the phase paths before the cutover |

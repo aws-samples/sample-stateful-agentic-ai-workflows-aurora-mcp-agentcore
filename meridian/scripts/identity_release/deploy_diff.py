@@ -68,6 +68,10 @@ CONCIERGE_RUNTIME = "AgentMeridianConcierge"
 CODE_ONLY_RULE = "code-only Lambda hotfix"
 # A target a release replaced. Its removal is the one removal a complete-stage plan may carry.
 RETIRED_TARGETS = ("SemanticTripSearchLambda",)
+# Constructs a release retired that the complete stage may delete, with everything under them
+# (role, policy). The online tool-choice evaluation left the sample on 15 Nov 2026: tool choice is
+# measured offline, and AgentCore Evaluations is the production step.
+RETIRED_CONSTRUCTS = ("OnlineEvalConciergeToolChoice",)
 CODE_PROPERTIES = ("Code", "Metadata")
 CODE_FIELDS = ("S3Key", "S3Bucket")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -283,6 +287,8 @@ def _expected_findings(changes: list[Change], stage: str) -> list[str]:
     missing = [resource for resource in wanted if resource not in present]
     if not missing or (stage == stages.COMPLETE and _is_catalog_release(changes)):
         return []
+    if stage == stages.COMPLETE and all(_retired_construct(c) for c in changes):
+        return []
     complete_stage = stage == stages.COMPLETE
     refusal = _code_only_refusal(changes) if complete_stage else None
     if complete_stage and _updates_function(changes) and refusal is None:
@@ -313,6 +319,13 @@ def _retired_target(change: Change) -> bool:
     return any(_names_target(change, name) for name in RETIRED_TARGETS)
 
 
+def _retired_construct(change: Change) -> bool:
+    """Whether a removal is a retired construct or something under it (no longer name)."""
+    return change.kind == "-" and any(
+        re.search(rf"(?:^|\s)Application/{re.escape(name)}(?:/|\s|$)", change.rest)
+        for name in RETIRED_CONSTRUCTS)
+
+
 def _removal_findings(changes: list[Change], stage: str, mode: str,
                       replacing: bool) -> list[str]:
     replaced = _other(mode)
@@ -321,6 +334,8 @@ def _removal_findings(changes: list[Change], stage: str, mode: str,
     found = []
     for c in changes:
         if c.kind != "-":
+            continue
+        if stage == stages.COMPLETE and _retired_construct(c):
             continue
         if stage == stages.COMPLETE and _retired_target(c):
             if not concierge_updated:
@@ -334,9 +349,9 @@ def _removal_findings(changes: list[Change], stage: str, mode: str,
             continue
         found.append(
             f"the plan deletes {c.type} ({c.rest}); only the replaced {replaced} Gateway's own "
-            "constructs and the Cedar engine may go in the first stage, a target a release "
-            "retired may go at the complete stage, and nothing else may go, so a stale state "
-            "file or render would do this: run the render again")
+            "constructs and the Cedar engine may go in the first stage, a target or construct a "
+            "release retired may go at the complete stage, and nothing else may go, so a stale "
+            "state file or render would do this: run the render again")
     return found
 
 

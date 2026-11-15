@@ -191,6 +191,7 @@ async def workflow():
             conversation_id="contract",
             journey_id="journey",
             travelers_count=1,
+            recovery=True,
         )
     )
     snapshot = json.loads(await storage.read(snapshot_key("contract")))

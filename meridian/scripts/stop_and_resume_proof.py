@@ -200,7 +200,7 @@ def _resume_body(thread: str) -> dict:
 async def _start(client, thread: str) -> str:
     reply = await asyncio.to_thread(call, "/chat", {
         "message": CANONICAL, "phase": 5, "customer_id": TRAVELER,
-        "conversation_id": thread, "travelers_count": 2,
+        "conversation_id": thread, "travelers_count": 2, "intent": "recovery",
     })
     journey = await _journey_id(thread)
     holds = await _holds_for(client, journey)

@@ -136,7 +136,10 @@ values, Cognito pool or client ids, the hosted-UI host, or 12-digit AWS account 
   read without the pins silently matches zero rows, so an empty result is not proof of no data.
 - Least-privilege logins: `meridian_backend`, `meridian_gateway`, `meridian_identity`,
   `meridian_catalog`, `meridian_workflow`. None bypasses RLS. The backend reads an admin count only
-  through the definer function `backend_admin_count` (`backend/db/admin_counts.py`).
+  through the definer function `backend_admin_count` (`backend/db/admin_counts.py`). Each login
+  has statement, lock and idle-transaction timeouts (migration 031).
+- The booking write functions are owned by `meridian_booking_owner` (migration 032), which RLS
+  binds: its writes must pass the traveler-scope policies. Never move them back to the master.
 - `MERIDIAN_AGENTCORE_AUTH` is `iam` (default, also when unset) or `jwt`. Only the files in
   `BRANCHING_FILES` in `tests/test_identity_switch_matrix.py` may branch on the mode. Add a row
   there with a test, or do not branch. `backend/agentcore/auth_mode.py` is the one definition.

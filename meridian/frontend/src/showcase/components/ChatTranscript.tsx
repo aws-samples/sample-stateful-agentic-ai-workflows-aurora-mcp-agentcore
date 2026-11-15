@@ -282,7 +282,7 @@ function FollowUpChips({
           onClick={() => {
             if (prompt === 'Run this in Workflow' && state.lastPrompt) {
               state.setSelectedPhase(5);
-              void state.applyPhaseExample(state.lastPrompt, true, 5);
+              void state.applyPhaseExample(state.lastPrompt, true, 5, { intent: 'recovery' });
               return;
             }
             void state.submitPrompt(prompt);

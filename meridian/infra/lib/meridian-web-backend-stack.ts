@@ -14,9 +14,10 @@ export interface MeridianWebBackendStackProps extends StackProps {
  * The backend image, built from meridian/Dockerfile and pushed to the CDK
  * assets repository.
  *
- * The established App Runner service was provisioned outside CloudFormation.
- * scripts/publish.py updates that exact service without deleting/recreating it.
- * This stack owns only the image and non-secret service configuration.
+ * The established App Runner service was provisioned outside CloudFormation and is brought
+ * under CloudFormation by MeridianWebService (an import, see docs/OPERATIONS.md).
+ * scripts/publish.py remains the path that updates the service. This stack owns the image
+ * and the non-secret service configuration it outputs.
  */
 export class MeridianWebBackendStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebBackendStackProps) {

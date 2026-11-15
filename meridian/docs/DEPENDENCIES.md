@@ -62,6 +62,25 @@ constraints and ignores `uv.lock`. Those constraints pin every package, so deplo
 resolve the same versions today (the lock adds the two platform-marked packages above). They agree
 because of the pins, not because deploy reads the lock.
 
+## Audit status - November 15, 2026
+
+- Backend lock: GHSA-mf5v-w3w3-f6cg (CVE-2026-126360), slow `traceparent` parsing in
+  `opentelemetry-api` before 1.45.2, is fixed by moving the OpenTelemetry release set together:
+  `opentelemetry-api` and `opentelemetry-sdk` 1.45.1 to 1.45.2, and `opentelemetry-semantic-conventions`,
+  `opentelemetry-instrumentation` and `opentelemetry-instrumentation-threading` 0.66b1 to 0.66b2, the
+  versions `opentelemetry-sdk` 1.45.2 requires. No other line of `requirements.txt` changed. All three
+  `pip_audit` lines report no known vulnerabilities, and the `-m "not database"` suite passes.
+- Runtime manifests: the same advisory is fixed by the same matched release set. `aws-opentelemetry-distro`
+  0.22.0, the newest release, still pins 1.45.1 / 0.66b1, so on the owner's decision (15 Nov 2026) each
+  Runtime overrides its 59 OpenTelemetry packages to 1.45.2 / 0.66b2 in `[tool.uv] override-dependencies`
+  (the two packages that version on their own, `opentelemetry-propagator-aws-xray` and
+  `opentelemetry-sdk-extension-aws`, stay). Moving the whole set keeps every package on the versions its
+  neighbours declare; the distro logs a version-mismatch warning at start and still configures tracing,
+  exports spans and round-trips `traceparent` (checked against the installed lock). Both locks change only
+  OpenTelemetry lines, `scripts/audit_runtime_dependencies.py` reports no known vulnerabilities and ignores
+  nothing, and the runtime contract passes for both Runtimes.
+  `tests/test_runtime_dependencies.py` fails when the distro moves: then take its pins and drop these overrides.
+
 ## Audit status - November 7, 2026
 
 - Backend plus Runtime-test lock: no known vulnerabilities reported by `pip_audit`.

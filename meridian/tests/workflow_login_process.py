@@ -37,7 +37,7 @@ async def main(thread_id: str, mode: str) -> None:
     runner._nodes._booking_status = AsyncMock(return_value=None)
     command = WorkflowCommand(
         query=QUERY, traveler_id="trv_meridian_demo", thread_id=thread_id,
-        resume=mode == "resume", travelers_count=2,
+        resume=mode == "resume", recovery=mode != "resume", travelers_count=2,
     )
     result = await runner.run(command)
     print(json.dumps({"event": "done", "workflow_status": result["workflow_status"],

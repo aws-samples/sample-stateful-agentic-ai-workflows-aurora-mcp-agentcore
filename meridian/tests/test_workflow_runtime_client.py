@@ -64,6 +64,9 @@ async def test_a_chosen_package_rides_in_the_payload_only_when_set():
     payload = json.loads(client.invoke_agent_runtime.call_args.kwargs["payload"])
     assert payload["selected_package_id"] == "pkg_kyoto"
     assert "selected_package_id" not in json.loads(wr.WorkflowRuntimeClient.payload(COMMAND))
+    assert "intent" not in json.loads(wr.WorkflowRuntimeClient.payload(COMMAND))
+    recovery = dataclasses.replace(COMMAND, recovery=True)
+    assert json.loads(wr.WorkflowRuntimeClient.payload(recovery))["intent"] == "recovery"
 
 
 def test_session_ids_are_stable_long_enough_and_distinct_from_the_concierge():

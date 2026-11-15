@@ -64,7 +64,7 @@ class World:
     async def run(self, *, resume=False, chosen=None, worker_id="worker-a", query=RECOVERY):
         return await self.runner(worker_id).run(WorkflowCommand(
             query=query, traveler_id="trv_x", thread_id="t1", resume=resume,
-            travelers_count=2, selected_package_id=chosen,
+            travelers_count=2, selected_package_id=chosen, recovery=not resume,
         ))
 
     async def saved_task(self):

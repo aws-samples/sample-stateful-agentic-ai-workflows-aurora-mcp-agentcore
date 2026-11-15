@@ -1,7 +1,8 @@
-"""Give the backend, gateway, identity and catalog logins passwords only Secrets Manager knows.
+"""Give the service logins passwords only Secrets Manager knows.
 
-Migration 018 creates meridian_backend, meridian_gateway and meridian_identity, and migration 022
-creates meridian_catalog, with NOLOGIN. For each login this script:
+Migration 018 creates meridian_backend, meridian_gateway and meridian_identity, migration 022
+creates meridian_catalog, and migration 033 creates meridian_audit_export, all with NOLOGIN. For
+each login this script:
 1. generates a password and sends Postgres only its SCRAM-SHA-256 verifier; the plaintext
    password never reaches the database, its logs or the Data API request;
 2. stores {"username", "password"} in that login's own Secrets Manager secret;
@@ -97,6 +98,9 @@ LOGINS: Dict[str, LoginSpec] = {
         LoginSpec("catalog", "meridian_catalog", "meridian/aurora/catalog-login",
                   "MeridianCatalogAuroraAccess", "AURORA_CATALOG_SECRET_ARN",
                   "the meridian-catalog-tools Lambda behind the MeridianCatalog target"),
+        LoginSpec("audit", "meridian_audit_export", "meridian/aurora/audit-export-login",
+                  "MeridianAuditExportAuroraAccess", "AURORA_AUDIT_EXPORT_SECRET_ARN",
+                  "the audit export Lambda"),
     )
 }
 

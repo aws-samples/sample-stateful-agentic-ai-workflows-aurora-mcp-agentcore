@@ -55,6 +55,17 @@ async def test_a_start_builds_the_command_and_returns_the_public_state():
     json.dumps(out)
 
 
+async def test_the_recovery_intent_is_typed_and_only_a_start_may_carry_it():
+    runner = Runner(result={})
+    await events({**START, "intent": "recovery"}, runner)
+    await events(START, runner)
+    assert [c.recovery for c in runner.commands] == [True, False]
+    for bad in ({**START, "intent": "hold"}, {**START, "intent": True},
+                {**START, "mode": "resume", "intent": "recovery"}):
+        refused = await events(bad, Runner(result={}))
+        assert [e["code"] for e in refused] == ["request"]
+
+
 async def test_a_resume_sets_resume():
     runner = Runner(result={})
     await events({**START, "mode": "resume"}, runner)

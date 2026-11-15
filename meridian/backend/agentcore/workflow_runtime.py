@@ -134,8 +134,8 @@ class WorkflowRuntimeClient:
     def payload(command: WorkflowCommand) -> bytes:
         """The Runtime payload: the command's typed fields and nothing else.
 
-        ``selected_package_id`` is sent only with a choice, so a turn without one
-        reads the same to a Runtime deployed before the field existed.
+        ``selected_package_id`` and ``intent`` are sent only when set, so a turn without
+        them reads the same to a Runtime deployed before the fields existed.
         """
         body = {
             "event": WORKFLOW_EVENT,
@@ -148,6 +148,8 @@ class WorkflowRuntimeClient:
         }
         if command.selected_package_id is not None:
             body["selected_package_id"] = command.selected_package_id
+        if command.recovery:
+            body["intent"] = "recovery"
         return json.dumps(body).encode("utf-8")
 
     def _send(self, session_id: str, payload: bytes) -> Any:

@@ -68,7 +68,7 @@ test('Concierge leads with remembered context and offers a reviewable recovery w
   await page.getByRole('button', { name: 'Review recovery plan', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Resume and request hold', exact: true })).toBeVisible();
   expect(requests).toHaveLength(3);
-  expect(requests[2]).toMatchObject({ phase: 5, message: disruption, review_only: true, travelers_count: 2 });
+  expect(requests[2]).toMatchObject({ phase: 5, message: disruption, review_only: true, intent: 'recovery', travelers_count: 2 });
   expect(requests[2].resume).toBeUndefined();
   expect(requests[2].conversation_id).not.toBe('traveler-conversation');
   const thread = new URL(page.url()).searchParams.get('thread');

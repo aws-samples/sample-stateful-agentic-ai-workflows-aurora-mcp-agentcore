@@ -42,8 +42,9 @@ HEARTBEAT_SECONDS = 10
 MODES = ("ping", "resume", "start")
 TURN_KEYS = frozenset({
     "event", "mode", "thread_id", "traveler_id", "query", "travelers_count", "review_only",
-    "selected_package_id",
+    "selected_package_id", "intent",
 })
+RECOVERY_INTENT = "recovery"
 MAX_PACKAGE_ID = 50
 RESULT_KEYS = (
     "activities", "packages", "response", "conversation_id", "workflow_status",
@@ -127,6 +128,18 @@ def _text(payload: Dict[str, Any], key: str) -> str:
     return value
 
 
+def _recovery_intent(payload: Dict[str, Any], mode: str) -> bool:
+    """Whether the payload declares a recovery; only a start may, and only by its one value."""
+    intent = payload.get("intent")
+    if intent is None:
+        return False
+    if intent != RECOVERY_INTENT:
+        raise WorkflowRequestError(f"intent must be {RECOVERY_INTENT!r} when it is sent")
+    if mode == "resume":
+        raise WorkflowRequestError("intent is sent when starting a run, not when resuming one")
+    return True
+
+
 def parse_turn(
     payload: Any, session_id: Optional[str], headers: Optional[Mapping[str, str]] = None
 ) -> Optional[WorkflowCommand]:
@@ -154,6 +167,7 @@ def parse_turn(
     review_only = payload.get("review_only", False)
     if not isinstance(review_only, bool):
         raise WorkflowRequestError("review_only must be true or false")
+    recovery = _recovery_intent(payload, mode)
     chosen = payload.get("selected_package_id")
     if chosen is not None and not (
         isinstance(chosen, str) and chosen.strip() and len(chosen) <= MAX_PACKAGE_ID
@@ -171,6 +185,7 @@ def parse_turn(
         resume=mode == "resume",
         travelers_count=payload.get("travelers_count", 1),
         review_only=review_only,
+        recovery=recovery,
         selected_package_id=chosen,
     )
 

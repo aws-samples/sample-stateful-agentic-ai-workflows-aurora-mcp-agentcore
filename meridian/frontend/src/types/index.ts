@@ -156,6 +156,8 @@ export interface ChatRequest {
   memory_enabled?: boolean;
   experience?: 'capability' | 'concierge';
   review_only?: boolean;
+  /** Set by the action that launches a recovery. Words in `message` never start one. Phase 5 start only. */
+  intent?: 'recovery';
   /** The reviewed alternative the traveler chose; sent only with the resume that answers it. */
   selected_package_id?: string;
 }

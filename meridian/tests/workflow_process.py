@@ -37,7 +37,7 @@ async def main(thread_id: str, mode: str) -> None:
 
     command = WorkflowCommand(
         query=QUERY, traveler_id="trv_meridian_demo", thread_id=thread_id,
-        resume=mode == "hold", travelers_count=2,
+        resume=mode == "hold", recovery=mode != "hold", travelers_count=2,
     )
     result = await runner.run(command, after_pause=hold_forever if mode == "hold" else None)
     print(json.dumps({"event": "done", "status": result["workflow_status"]}), flush=True)

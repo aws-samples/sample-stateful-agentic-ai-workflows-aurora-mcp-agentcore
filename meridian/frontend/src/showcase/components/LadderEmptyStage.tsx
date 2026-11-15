@@ -1,6 +1,7 @@
 import { ArrowRight, Check } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ladderStarters } from '../lib/ladderStarters';
+import { recoveryLaunch } from '../lib/recoveryLaunch';
 import { PHASE_QUERY_BOUNDARIES, showcasePromptLabel } from '../lib/showcaseAdapters';
 
 /** Centered starter prompts for a ladder phase that has no conversation yet. */
@@ -17,7 +18,9 @@ export function LadderEmptyStage({ state }: { state: MeridianShowcaseState }) {
               type="button"
               className={`mc-ladder-empty-card${stretch ? ' is-stretch' : ' is-works'}`}
               disabled={state.isLoading}
-              onClick={() => void state.applyPhaseExample(prompt, true, undefined)}
+              onClick={() => void state.applyPhaseExample(
+                prompt, true, undefined, recoveryLaunch(prompt, state.selectedPhase),
+              )}
               aria-label={label === prompt ? prompt : `${label}: ${prompt}`}
               title={stretch ? `${PHASE_QUERY_BOUNDARIES[state.selectedPhase]} ${prompt}` : prompt}
             >

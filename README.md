@@ -270,8 +270,12 @@ test reset: the administrative reset deletes selected bookings and their action 
 | Existing installation upgrade | Migrations 026-029 and coordinated application release | [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) |
 
 The hosted path uses CloudFront, S3 and an existing App Runner service. The repository does not
-create that App Runner service. Hosting is optional; AWS data and agent services are required
-for the corresponding local application features.
+create that service; the opt-in `MeridianWebService` stack describes it so an account that already
+runs it can import it into CloudFormation
+([Operations](meridian/docs/OPERATIONS.md#bring-the-app-runner-service-under-cloudformation)).
+App Runner stopped accepting new customers on 30 April 2026, so a new deployment hosts the backend,
+one stateless container, on Amazon ECS with AWS Fargate or a similar service. Hosting is optional;
+AWS data and agent services are required for the corresponding local application features.
 
 ## Tests and evidence
 
@@ -316,13 +320,14 @@ time objectives, and an expected traffic profile before adapting it for customer
 
 | Area | Implemented here | Production work to complete |
 | --- | --- | --- |
-| Identity and least privilege | JWT validation at backend, Runtimes and Gateway; trusted argument binding; Cedar; service logins and transaction-scoped RLS | Use your identity lifecycle, tenant model and credential rotation. Restrict direct Lambda invocation and service-secret access, which sit outside the traveler-facing boundary. Re-run cross-traveler and direct-access tests after IAM or policy changes. |
+| Identity and least privilege | JWT validation at backend, Runtimes and Gateway; trusted argument binding; Cedar; service logins and transaction-scoped RLS; booking writes only through functions whose owner RLS also binds | Use your identity lifecycle, tenant model and credential rotation. Restrict direct Lambda invocation and service-secret access, which sit outside the traveler-facing boundary. Re-run cross-traveler and direct-access tests after IAM or policy changes. |
 | Horizontal scaling | Separate hosted backend and Runtimes; Aurora snapshots and leases coordinate workflow attempts | Load-test concurrent journeys and hot inventory keys. Match App Runner scaling, Runtime quotas and Lambda concurrency to database and model capacity. An SDK HTTP pool is not a PostgreSQL pool or a capacity reservation. |
-| Database capacity | One Serverless v2 writer, 0.5-16 ACUs in the supplied CDK template; shared inventory locks prevent oversubscription | Measure query latency, lock waits, ACU utilization and Data API throttling. Tune vector/full-text indexes and candidate limits using representative data. Decide whether a standby reader and failover topology meet your availability objectives; the template creates no reader. |
+| Database capacity | One Serverless v2 writer and one failover reader in a second Availability Zone, 1-16 ACUs, in the supplied CDK template; workload logins bounded by statement, lock and idle-transaction timeouts; shared inventory locks prevent oversubscription | Measure query latency, lock waits, ACU utilization and Data API throttling. Tune vector/full-text indexes and candidate limits using representative data. Test writer failover and resume under load. The Data API reaches only the writer, so read scaling needs a driver or an RDS Proxy read-only endpoint. |
 | Retries and backpressure | Bounded retries, stable action IDs, committed-result lookup, worker leases and fenced writes | Apply admission limits per tenant and workload. Retry only transient failures with a bounded budget; preserve the same business intent on ambiguous commits. Do not turn a timeout into a new booking request. |
 | Long-running work | Streamed responses, saved progress and explicit outcome readback | Treat HTTP disconnection as loss of observation. Work after a web request is best effort; persist required follow-up work durably. Test scale-in, expired caller tokens, lost replies and failed snapshot writes under load. |
-| Availability and disaster recovery | Encrypted Aurora storage, deletion protection and seven-day backup retention in the template | Restore into an isolated environment and measure recovery time. Test writer failover and resume with the original IDs. Define regional recovery and backup retention for your business; this sample does not implement a cross-Region recovery plan. |
-| Observability and audit | Health checks, application traces, service correlation IDs, transactional action audit and best-effort turn summaries | Set alarms and owners for error rate, latency, throttling, lease age, snapshot failures and unresolved action outcomes. Correlate application records with native service logs. Define access, retention and immutable export requirements; administrator-editable rows alone are not tamper-proof evidence. |
+| Availability and disaster recovery | Encrypted Aurora storage, deletion protection, seven-day backup retention and a failover reader in a second Availability Zone in the template | Restore into an isolated environment and measure recovery time. Test writer failover and resume with the original IDs. Define regional recovery and backup retention for your business; this sample does not implement a cross-Region recovery plan. |
+| Observability and audit | Health checks, application traces, service correlation IDs, transactional action audit and best-effort turn summaries. An optional export copies the three audit tables every five minutes to an S3 bucket with Object Lock as a SHA-256 hash chain, through a read-only login, with alarms and a read-only verifier | Set alarms and owners for error rate, latency, throttling, lease age, snapshot failures and unresolved action outcomes. Correlate application records with native service logs. Deploy the export, choose its Object Lock mode and retention, keep the bucket in an account the database's administrators do not control, and record chain heads elsewhere. Rows changed before the next export window, master-user actions before export, a row that commits behind the watermark and removal of the newest objects are not covered; rows in Aurora alone are not tamper-proof evidence. |
+| Agent tool choice | The model picks read tools from their descriptions and the prompt; a write needs the traveler's confirmation and Cedar, and Phase 5 reaches a hold only with a typed recovery intent from the UI. An offline tool-choice evaluation set, with a recorded baseline, measures the picks | Run the offline set before you change a prompt or a tool description. In production, turn on AgentCore Evaluations' tool selection and parameter evaluators on sampled sessions and alarm on their scores. Treat the model's choice as probabilistic: authorization, not the prompt, decides what can happen. |
 | Safe releases | Hashed dependencies, CI, staged Runtime bundles, migration sequencing, deployment readback and failure proofs | Use separate environments, reviewed changes, a maintenance procedure and measured rollback criteria. Follow the 026-029 cutover order; old writer code is incompatible with the final revoked grants. |
 
 The current write path has deliberate serialization points: one active worker per workflow
@@ -362,9 +367,9 @@ The table excludes credits, free-tier allowances, discounts, taxes and support c
 | [App Runner](https://aws.amazon.com/apprunner/pricing/) and optional hosting | Provisioned memory, active CPU, S3 storage/requests, CloudFront traffic and container images | Local web serving avoids hosted web costs, but still uses AWS data and agent services. App Runner's provisioned memory can incur idle charges. See [S3](https://aws.amazon.com/s3/pricing/), [CloudFront](https://aws.amazon.com/cloudfront/pricing/) and [ECR](https://aws.amazon.com/ecr/pricing/). |
 | [CloudWatch](https://aws.amazon.com/cloudwatch/pricing/) and networking | Log/trace ingestion, retention, queries, alarms and data transfer | Set retention and sampling deliberately. Include NAT gateways, endpoints or cross-Region transfer only if your chosen topology adds them. |
 
-**Compute-only illustration:** one Aurora Standard writer in US East (N. Virginia), held at
-0.5 ACU for 730 hours, at the published $0.12/ACU-hour example rate, costs
-`0.5 x 730 x $0.12 = $43.80`. This is not the full application price or an upper bound: it
+**Compute-only illustration:** the template's Aurora Standard writer and reader in US East
+(N. Virginia), each held at its 1 ACU floor for 730 hours, at the published $0.12/ACU-hour
+example rate, cost `2 x 1 x 730 x $0.12 = $175.20`. This is not the full application price or an upper bound: it
 excludes scaling above the floor and every other row in the table.
 [Aurora pricing example](https://aws.amazon.com/rds/aurora/pricing/).
 

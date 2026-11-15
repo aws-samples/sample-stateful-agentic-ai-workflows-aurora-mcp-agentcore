@@ -69,6 +69,23 @@ the state keys it changed and the spans it emitted. Folding the saved node
 results rebuilds the workflow state in any process, so nothing lives on the
 microVM between runs.
 
+Only a request that declares a recovery can reach `prepare_hold`. The Recovery desk sends
+`intent: "recovery"` on the chat request, the backend forwards it in the Runtime payload, and a
+fresh run saves it in its inputs, so a resume keeps it and cannot set it. Words in the prompt never
+do: free text routes to the read steps only, and a canceled-flight sentence typed into the composer
+ends at `synthesize`. Only the launching actions send it: Start recovery, Run to saved step,
+Review recovery, the "Run this in Workflow" chip, and the two ladder prompts that tell the recovery
+story (the finale starter and "Continue in Workflow"). Only a recovery pauses after `search`, so a
+pause always means a hold is coming and the desk's "Resume and request hold" never appears for a
+read-only run. The declaration is a routing input, not an authorization: the traveler's
+confirmation, the Gateway's Cedar policy and Aurora still decide whether a hold is written.
+
+A run saved before the field existed has no `recovery` in its inputs. When it is resumed, and only
+then, the runner decides once from the saved query with the old keyword rule (kept as a private
+legacy function in `runner.py`) and saves nothing new. A saved `false` is final, and a new start
+without the intent never holds. Deploy order is in the
+[runbook](AGENTCORE_DEPLOY_RUNBOOK.md#deploy-order-for-the-typed-recovery-intent).
+
 A review gate pauses the Graph with an interrupt where the traveler must answer
 before work continues: after `search` when the request is a recovery or asks for
 review, and before `prepare_hold` on every route. A resume is the answer, and
@@ -273,6 +290,13 @@ code. Having the database verify a signed scope was evaluated and not shipped; s
   These controls do not turn package holds into airline ticket issuance.
 - Publish only when `MeridianWorkflow` is READY. `scripts/publish.py` refuses
   otherwise.
+- Export the audit rows. `agent_audit_log`, `traveler_access_audit` and `booking_action_audit`
+  are rows in Aurora, and the master login can edit or delete them. The optional audit export
+  (`infra/functions/audit_export`, [Operations](OPERATIONS.md#audit-export)) copies new rows every
+  five minutes to an S3 bucket with Object Lock, as a SHA-256 hash chain, through a read-only login,
+  and `scripts/verify_audit_export.py` finds edited or deleted rows and objects. Its limits: a row
+  changed before its export, and anything the master login did before then, is exported as it
+  stood, and removing the newest objects shows only against a chain head you recorded elsewhere.
 
 ## Verifying recovery
 

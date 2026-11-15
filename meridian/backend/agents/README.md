@@ -38,6 +38,51 @@ regardless of the selected ladder phase; Phase 5 automatic holds use the same Ga
 See the [code walkthrough](../../docs/CODE_WALKTHROUGH.md) for a guided tour of
 these modules.
 
+## Measuring tool choice
+
+The Concierge's model picks its tools from the Gateway's tool descriptions and the "Choose tools
+by the question" rules in `concierge_definition.py`. Changing either changes that choice, and
+nothing else in the test suite would notice. The same pattern runs at three points.
+
+**Before a change: the offline gate.** `scripts/tool_choice_eval/cases.jsonl` holds the versioned
+traveler prompts. Each case names the tools the model must call, the extra tools it may call, and
+the arguments that matter (`price_range.destination` contains `tokyo`). A write tool is forbidden
+unless the case expects or allows it, so a read question that ends in a hold fails. Unconfirmed
+turns that ask for a hold are cases too, with the write allowed, because the Runtime lets the model
+attempt it and the Gateway policy refuses. Confirmed turns give the model no tools, as the Runtime
+does.
+
+`scripts/run_tool_choice_eval.py` builds the Concierge agent the Runtime builds (the shared prompt,
+the turn instructions, the traveler pin hook and the Runtime's model settings) over stub tools.
+The stubs take their names and schemas from `meridian_agentcore/agentcore/gateway_targets/*/tool-schema.json`,
+so a changed description is what the model sees on the next run. They return canned catalog
+results and write nothing. It prints three numbers: selection accuracy, forbidden-call rate and
+argument accuracy, with hashes of the prompt, the tool specs and the cases so two runs can be
+compared. Run it before merging any change to the prompt, a tool description or an argument name,
+three times per case (`--repeats 3`), and compare with the recorded baseline.
+
+Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `fcad8613406f`, tools
+`f7102d25b38e`, cases `7b7437371d35`, 29 cases x 3: 87 runs, none errored, selection accuracy
+1.00, argument accuracy 1.00 over 93 checks, forbidden-call rate 0.00. The default thresholds are
+0.95, 0.95 and 0.00. A changed hash means the baseline no longer applies: run it again.
+
+It is a dry run unless given `--apply --i-understand-this-changes-aws`, because it invokes the
+model on Amazon Bedrock and bills the calling account; ask the account owner first. It refuses
+when `CI` is set, and no unit test calls Bedrock. `tests/test_tool_choice_eval.py` checks the case
+schema, the scorer, that every tool a case names exists in the Gateway schemas, that every read
+tool is expected by a case, and that each write has an allowing and a forbidding case.
+
+**In production: online sampling.** The sample measures tool choice offline only. In production,
+turn on AgentCore Evaluations for the Concierge Runtime: an online evaluation with the built-in
+`Builtin.ToolSelectionAccuracy` and `Builtin.ToolParameterAccuracy` evaluators scores a sample of
+real sessions with a judge model and publishes the scores to CloudWatch, where you alarm when they
+fall below the offline baseline. Give its execution role only the judge model you choose, the
+Runtime's log group and span log, and `aws:SourceAccount` and `aws:SourceArn` conditions in its
+trust policy. Add the prompts it flags to `cases.jsonl`.
+
+The pick never decides what is allowed: the identity pin, Cedar and row-level security do. A wrong
+pick costs answer quality, not safety.
+
 ## Environment
 
 | Variable | Effect |

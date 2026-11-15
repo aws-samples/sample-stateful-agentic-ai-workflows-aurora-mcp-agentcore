@@ -499,6 +499,22 @@ changed pin list first with `release_identity.py interceptor`.
 
 Replacing a target is a create and a delete. A target's name is the prefix of its tool names and of the Cedar action ids, so a rename changes both. Because a rule is validated against the tools that exist, a release that renames a target runs two deploys through `release_identity.py deploy`: the first adds the new target and any new tool and leaves the rules alone, the second changes the rules, removes the old target and updates the Runtimes. The plan gate (`scripts/identity_release/deploy_diff.py`) accepts a removal only for a target named in `RETIRED_TARGETS`.
 
+### Deploy order for the typed recovery intent
+
+The Phase 5 chat request now carries `intent: "recovery"`, and the backend forwards it to the
+`MeridianWorkflow` Runtime as an `intent` field. A Runtime that predates the change rejects any key
+outside its list (`parse_turn` answers an `unknown workflow_turn fields` request error), so every
+recovery start from a new backend would fail against it. Deploy in this order:
+
+1. Deploy the `MeridianWorkflow` Runtime (the AgentCore stack, step 4).
+2. Read `get-agent-runtime` for it. It must report the new code and platform version `V1`, as every
+   Runtime is pinned. Do not go on until it does.
+3. Deploy the backend and the web app.
+
+A run paused before step 1 has no `recovery` in its saved inputs. On resume the Runtime decides
+once, from the saved query, with the keyword rule the old code used, and saves nothing new. A saved
+`recovery` of `false` is never reconsidered, and a new start without the intent never holds.
+
 Publishing the web app checks that MeridianWorkflow is READY and that its ARN is
 set, and refuses otherwise.
 

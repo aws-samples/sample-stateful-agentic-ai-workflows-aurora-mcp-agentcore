@@ -21,7 +21,7 @@ from strands.storage import Storage
 from strands.telemetry.metrics import EventLoopMetrics
 
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
-from backend.agents.phase_05_workflow.routing import is_recovery_request, pauses_after_search
+from backend.agents.phase_05_workflow.routing import pauses_after_search
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,8 @@ class RunContext:
         traveler_confirmed: The traveler resumed after reviewing the plan.
         review_requested: The traveler asked to review the shortlist first
             (the request's ``review_only``).
+        legacy_recovery: For a run saved before the ``recovery`` input existed: whether its saved
+            query read as a recovery, decided once on resume. None for every other run.
         pause_after: Stop after this node, before the next one starts; used by
             the scripted proofs. Any node except ``synthesize``, which nothing
             follows.
@@ -73,6 +75,7 @@ class RunContext:
     traveler_confirmed: bool
     review_requested: bool
     pause_after: Optional[str] = None
+    legacy_recovery: Optional[bool] = None
 
     def __post_init__(self) -> None:
         pause_point(self.pause_after)
@@ -327,8 +330,10 @@ class ReviewGate(HookProvider):
         registry.add_callback(BeforeNodeCallEvent, self._before_node)
 
     def _wants_review(self, graph_state: GraphState) -> bool:
-        query = str(fold_state(graph_state).get("query") or "")
-        return pauses_after_search(query, self._run.review_requested)
+        state = fold_state(graph_state)
+        return pauses_after_search(
+            str(state.get("query") or ""), self._run.review_requested, bool(state.get("recovery"))
+        )
 
     def _before_node(self, event: BeforeNodeCallEvent) -> None:
         run = self._run
@@ -364,7 +369,10 @@ def build_graph(nodes: WorkflowNodes, run: RunContext, session_manager: Any) -> 
         return str(fold_state(state).get("intent") or "search")
 
     def recovery(state: GraphState) -> bool:
-        return is_recovery_request(str(fold_state(state).get("query") or ""))
+        inputs = fold_state(state)
+        if "recovery" not in inputs and run.legacy_recovery is not None:
+            return run.legacy_recovery
+        return bool(inputs.get("recovery"))
 
     steps = [Step(node_id, nodes, run) for node_id in NODE_IDS]
     builder = GraphBuilder()

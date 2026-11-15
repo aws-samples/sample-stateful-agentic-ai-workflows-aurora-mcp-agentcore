@@ -39,7 +39,7 @@ from backend.agents.phase_05_workflow.governed_tools import (
 )
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_intent
 from backend.agents.phase_05_workflow.packages import package_to_dict
-from backend.agents.phase_05_workflow.routing import classify_intent, is_recovery_request
+from backend.agents.phase_05_workflow.routing import classify_intent
 from backend.agents.phase_05_workflow.state import (
     HOLD_MINUTES,
     SNAPSHOT_STORE,
@@ -164,13 +164,15 @@ class WorkflowNodes:
     ) -> Dict[str, Any]:
         """Entry node: classify the query into an intent that drives routing.
 
-        Writes `intent` into state; the conditional edge out of this node reads
-        it to fan out to search / availability / memory_recall (or the 'plan'
-        path, which enters at search and chains into availability).
+        A request that carries the typed ``recovery`` input always takes the plan route, so
+        the hold path never depends on its wording. Writes `intent` into state; the
+        conditional edge out of this node reads it to fan out to search / availability /
+        memory_recall (or the 'plan' path, which enters at search and chains into
+        availability).
         """
         start = utc_now()
-        intent = classify_intent(state["query"])
-        recovery = is_recovery_request(state["query"])
+        recovery = bool(state.get("recovery"))
+        intent = "plan" if recovery else classify_intent(state["query"])
         elapsed = int((utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
@@ -985,7 +987,7 @@ class WorkflowNodes:
         if intent == "plan":
             response = (
                 ("Recovery plan: searched the catalog, then checked "
-                 if is_recovery_request(state.get("query", ""))
+                 if state.get("recovery")
                  else "Planned the extension: searched the catalog, then checked ") +
                 f"live duration options for the top {availability_checks} "
                 f"choices, {saved_step_clause}."
@@ -1063,7 +1065,7 @@ class WorkflowNodes:
                 f"\n\nNo courtesy hold was requested: {state['hold_unavailable']} "
                 "Choose another option or a smaller party."
             )
-        if is_recovery_request(state.get("query", "")):
+        if state.get("recovery"):
             return (
                 "\n\nNo courtesy hold was recorded by this workflow. "
                 "Review the hold decision before continuing."

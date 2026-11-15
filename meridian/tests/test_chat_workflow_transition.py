@@ -56,6 +56,41 @@ def test_concierge_review_request_reaches_the_workflow_without_resuming(monkeypa
     assert workflow.call_args.kwargs["travelers_count"] == 2
 
 
+def test_the_recovery_intent_reaches_the_workflow_and_words_alone_do_not(monkeypatch):
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock(return_value=(
+        [], [], "Shortlist ready for review.", "recovery-thread", "paused", False, None))
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
+    prompt = "My flight was canceled. Rework my Tokyo trip, then check availability."
+    asyncio.run(chat(ChatRequest(
+        message=prompt, phase=5, conversation_id="recovery-thread", intent="recovery",
+    ), PRINCIPAL))
+    assert workflow.call_args.kwargs["recovery"] is True
+    asyncio.run(chat(ChatRequest(
+        message=prompt, phase=5, conversation_id="recovery-thread",
+    ), PRINCIPAL))
+    assert workflow.call_args.kwargs.get("recovery", False) is False
+
+
+def test_an_intent_is_refused_on_any_other_phase_and_on_a_resume(monkeypatch):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock()
+    monkeypatch.setattr("backend.routers.chat.run_workflow_turn", workflow)
+    with pytest.raises(ValidationError):
+        ChatRequest(message="Rework my trip", phase=4, intent="recovery")
+    with pytest.raises(ValidationError):
+        ChatRequest(message="Rework my trip", phase=5, intent="hold")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(chat(ChatRequest(
+            message="Resume workflow from the saved step", phase=5, resume=True,
+            conversation_id="recovery-thread", intent="recovery",
+        ), PRINCIPAL))
+    assert error.value.status_code == 422
+    workflow.assert_not_called()
+
+
 def test_review_only_cannot_resume_into_an_inventory_action(monkeypatch):
     from fastapi import HTTPException
     from unittest.mock import AsyncMock

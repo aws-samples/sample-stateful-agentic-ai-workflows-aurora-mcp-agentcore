@@ -63,6 +63,7 @@ def test_lambdas_run_the_pinned_python():
     cdk_name = "PYTHON_" + python_minor().replace(".", "_")
     sources = {
         "infra/lib/meridian-identity-stack.ts": re.compile(r"Runtime\.(PYTHON_\d+_\d+)"),
+        "infra/lib/meridian-audit-export-stack.ts": re.compile(r"Runtime\.(PYTHON_\d+_\d+)"),
         "scripts/gateway_harness/resources.py": re.compile(r'"Runtime": "(python\d+\.\d+)"'),
         "scripts/identity_release/interceptor_lambda.py": re.compile(
             r'RUNTIME = "(python\d+\.\d+)"'

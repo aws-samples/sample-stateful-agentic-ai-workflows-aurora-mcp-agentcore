@@ -17,6 +17,7 @@ import {
 import type { ChatFilters } from '../hooks/useMeridianShowcase';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ladderStarters } from '../lib/ladderStarters';
+import { recoveryLaunch } from '../lib/recoveryLaunch';
 import { PHASE_QUERY_BOUNDARIES, SHOWCASE_PHASES, showcasePromptLabel } from '../lib/showcaseAdapters';
 
 type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
@@ -131,7 +132,12 @@ export function ChatComposer({
                 type="button"
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : proofMode ? ' is-works' : ''}`}
                 disabled={requestBusy}
-                onClick={() => void state.applyPhaseExample(prompt, true, conciergeMode ? 4 : undefined)}
+                onClick={() => {
+                  const phase = conciergeMode ? 4 : undefined;
+                  void state.applyPhaseExample(
+                    prompt, true, phase, recoveryLaunch(prompt, phase ?? state.selectedPhase),
+                  );
+                }}
                 aria-label={accessibleLabel}
                 title={
                   isStretch
@@ -160,7 +166,9 @@ export function ChatComposer({
           <p>{PHASE_QUERY_BOUNDARIES[state.selectedPhase]}</p>
           {boundaryReached && <button type="button" onClick={() => {
             state.setSelectedPhase(nextPhase.phase);
-            void state.applyPhaseExample(stretchPrompt, false, nextPhase.phase);
+            void state.applyPhaseExample(
+              stretchPrompt, false, nextPhase.phase, recoveryLaunch(stretchPrompt, nextPhase.phase),
+            );
             if (nextPhase.phase === 4) void state.setMemoryEnabled(true);
           }}>Continue in {nextPhase.label}<Navigation2 size={15} aria-hidden="true" /></button>}
         </div>

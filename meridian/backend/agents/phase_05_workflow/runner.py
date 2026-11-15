@@ -83,7 +83,11 @@ class WorkflowCommand:
         thread_id: The workflow thread, also the snapshot session.
         resume: The traveler resumed the saved plan; this confirms the hold.
         travelers_count: Party size for a fresh run; a resume keeps the saved one.
-        review_only: Pause after search for review.
+        review_only: Pause after search for review. Only a recovery pauses; a read-only run
+            finishes.
+        recovery: The request is a recovery, set by the UI action that launches one. Only a
+            recovery can reach the hold step; words in ``query`` never do. A fresh run saves it
+            in its inputs, so a resume keeps it and cannot set it.
         selected_package_id: The reviewed alternative the traveler chose, sent with the
             resume that answers the review. None keeps the saved choice, or the
             top-ranked package when nothing was chosen.
@@ -97,6 +101,7 @@ class WorkflowCommand:
     resume: bool = False
     travelers_count: int = 1
     review_only: bool = False
+    recovery: bool = False
     selected_package_id: Optional[str] = None
     caller_subject: Optional[str] = None
 
@@ -139,6 +144,10 @@ def _validate(command: WorkflowCommand) -> None:
             f"thread_id {command.thread_id!r} cannot be used: it must be a single path segment, "
             "not blank, '.', '..' or containing '/'"
         )
+    if command.recovery and command.resume:
+        raise WorkflowRequestError(
+            "A recovery is declared when starting one; a resume continues the saved intent."
+        )
     if command.selected_package_id is not None and not command.resume:
         raise WorkflowRequestError(
             "A package is chosen when resuming a reviewed recovery, not when starting one."
@@ -155,6 +164,34 @@ def _saved_inputs(prior: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     except ValueError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _legacy_keyword_recovery(query: str) -> bool:
+    """LEGACY: the keyword rule that decided the hold before the typed ``recovery`` input.
+
+    Used only by ``_legacy_recovery`` for a run saved before that input existed, so a recovery
+    paused across the deploy still holds when its traveler resumes it. A new run never calls it.
+    """
+    q = (query or "").lower()
+    disrupted = any(
+        m in q for m in ("cancelled", "canceled", "disrupt", "stranded", "rebook", "missed")
+    )
+    reworking = any(m in q for m in ("rework", "rebuild", "replan", "re-plan", "recover"))
+    return disrupted and reworking
+
+
+def _legacy_recovery(prior: Optional[Dict[str, Any]]) -> Optional[bool]:
+    """The recovery decision of a saved run with no ``recovery`` key, else None.
+
+    An absent key is a run saved by the keyword-era code. A saved ``False`` is a decision and is
+    never second-guessed.
+    """
+    if prior is None:
+        return None
+    inputs = _saved_inputs(prior)
+    if "recovery" in inputs:
+        return None
+    return _legacy_keyword_recovery(str(inputs.get("query") or ""))
 
 
 def _owner(prior: Optional[Dict[str, Any]]) -> str:
@@ -512,6 +549,7 @@ class WorkflowRunner:
             traveler_confirmed=_traveler_confirmed(prior, command),
             review_requested=command.review_only,
             pause_after=self._pause_after,
+            legacy_recovery=_legacy_recovery(prior) if command.resume else None,
         )
         graph = build_graph(self._nodes, run, session)
         completed_before = set(
@@ -580,6 +618,7 @@ class WorkflowRunner:
             conversation_id=command.thread_id,
             journey_id=journey_id,
             travelers_count=command.travelers_count,
+            recovery=command.recovery,
         )
 
     async def _compensate(

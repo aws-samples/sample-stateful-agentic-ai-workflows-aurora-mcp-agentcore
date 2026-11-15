@@ -791,3 +791,44 @@ def test_every_content_hash_is_one_the_fixture_module_derives():
     allowed = {hashlib.sha256(label.encode()).hexdigest() for label in fx.FAKE_HASH_LABELS}
     for name, text in fixture_texts():
         assert set(HEX_64.findall(text)) <= allowed, name
+
+
+# ------------------------------------------ the retired online evaluation (15 Nov 2026)
+
+EVAL_REMOVED = "\n".join([
+    "[-] AWS::BedrockAgentCore::OnlineEvaluationConfig Application/OnlineEvalConciergeToolChoice "
+    "ApplicationOnlineEvalConciergeToolChoice504E5AD4 destroy",
+    "[-] AWS::IAM::Role Application/OnlineEvalConciergeToolChoice/ExecutionRole "
+    "ApplicationOnlineEvalConciergeToolChoiceExecutionRole56359F10 destroy",
+    "[-] AWS::IAM::Policy Application/OnlineEvalConciergeToolChoice/ExecutionRole/DefaultPolicy "
+    "ApplicationOnlineEvalConciergeToolChoiceExecutionRoleDefaultPolicyE1DAD710 destroy",
+])
+
+
+def test_the_complete_stage_may_remove_only_the_retired_online_evaluation():
+    assert findings(plan(EVAL_REMOVED), stage=stages.COMPLETE, replacing=False) == []
+
+
+def test_the_retired_online_evaluation_may_go_with_a_runtime_update():
+    output = fx.plan(fx.CONCIERGE) + "\n" + EVAL_REMOVED
+
+    assert findings(output, stage=stages.COMPLETE, replacing=False) == []
+
+
+@pytest.mark.parametrize("stage", [stages.TARGETS, stages.GOVERNANCE])
+def test_the_retired_online_evaluation_may_not_go_in_an_earlier_stage(stage):
+    output = STAGE_PLANS[stage]() + "\n" + EVAL_REMOVED
+
+    found = findings(output, stage=stage, replacing=False)
+
+    assert any("OnlineEvalConciergeToolChoice" in line and "the plan deletes" in line
+               for line in found)
+
+
+def test_another_evaluation_or_role_removal_is_still_refused_at_the_complete_stage():
+    other = ("[-] AWS::IAM::Role Application/OnlineEvalConciergeToolChoiceV2/ExecutionRole "
+             "ApplicationOnlineEvalConciergeToolChoiceV2ExecutionRole1 destroy")
+
+    found = findings(plan(EVAL_REMOVED, other), stage=stages.COMPLETE, replacing=False)
+
+    assert any("ToolChoiceV2" in line and "the plan deletes" in line for line in found)

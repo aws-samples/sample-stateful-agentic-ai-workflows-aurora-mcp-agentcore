@@ -29,7 +29,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from fastapi.responses import StreamingResponse
 from backend.activity import ActivityEntry, Product, TraceTelemetry, create_activity
 from backend.chat_stream import chat_event_sink
@@ -94,8 +94,17 @@ class ChatRequest(BaseModel):
     memory_enabled: bool = True
     experience: Literal["capability", "concierge"] = "capability"
     review_only: bool = False
+    # Set by the UI action that launches a recovery. Only a Phase 5 start may carry it, and only
+    # a recovery can reach the hold: the words of ``message`` never do.
+    intent: Optional[Literal["recovery"]] = None
     # The reviewed alternative the traveler chose; sent only with the resume that answers it.
     selected_package_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _intent_belongs_to_phase_5(self) -> "ChatRequest":
+        if self.intent and self.phase != 5:
+            raise ValueError("intent is accepted only for phase 5")
+        return self
 
 
 class OrderItem(BaseModel):
@@ -1408,6 +1417,11 @@ def _refuse_unusable_workflow_request(request: ChatRequest, resume: bool) -> Non
         raise HTTPException(
             status_code=422, detail="A package is chosen when resuming a reviewed recovery."
         )
+    if request.intent and resume:
+        raise HTTPException(
+            status_code=422,
+            detail="A recovery is declared when it starts; a resume continues the saved one.",
+        )
 
 
 async def run_workflow_turn(
@@ -1418,6 +1432,7 @@ async def run_workflow_turn(
     resume: bool = False,
     travelers_count: int = 1,
     review_only: bool = False,
+    recovery: bool = False,
     selected_package_id: Optional[str] = None,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool, Optional[str]]:
     """Phase 5: the MeridianWorkflow AgentCore Runtime runs a Strands Graph.
@@ -1444,6 +1459,7 @@ async def run_workflow_turn(
         resume=resume,
         travelers_count=travelers_count,
         review_only=review_only,
+        recovery=recovery,
         selected_package_id=selected_package_id,
     )
     try:
@@ -1992,6 +2008,7 @@ async def chat(
                 resume=resume_workflow,
                 travelers_count=request.travelers_count,
                 **({"review_only": True} if request.review_only else {}),
+                **({"recovery": True} if request.intent == "recovery" else {}),
                 **(
                     {"selected_package_id": request.selected_package_id}
                     if request.selected_package_id else {}

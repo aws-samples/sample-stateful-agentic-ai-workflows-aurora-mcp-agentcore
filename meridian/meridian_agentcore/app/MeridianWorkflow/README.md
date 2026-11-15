@@ -16,6 +16,8 @@ list, is rejected with an `error` event.
   `authorization` error.
 - `travelers_count` is optional and defaults to 1.
 - `review_only` is optional and must be a boolean. It defaults to false.
+- `intent` is optional. The only value is `recovery`, accepted on `start` and refused on `resume`.
+  Only a run that started with it can reach the hold step; the words of `query` never do.
 
 The payload names no pause point. Only code that builds a runner can set one.
 

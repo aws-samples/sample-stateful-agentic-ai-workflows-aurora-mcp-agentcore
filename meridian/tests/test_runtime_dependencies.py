@@ -79,13 +79,23 @@ def test_runtime_pins_include_the_mcp_and_certificate_security_fixes(pyproject):
 
 
 @runtimes
-def test_opentelemetry_follows_its_stable_parent_and_is_never_overridden(pyproject):
-    # The 0.NNbN contrib packages are pre-releases, allowed only at the exact versions
-    # aws-opentelemetry-distro pins: an override would force them ahead of it.
+def test_opentelemetry_is_one_matched_release_set_until_the_distro_pins_it(pyproject):
+    # The 0.NNbN contrib packages are pre-releases, allowed only at the exact versions a stable
+    # parent pins. The owner's decision of 15 Nov 2026: opentelemetry-api 1.45.2 fixes
+    # GHSA-mf5v-w3w3-f6cg (CVE-2026-126360) and distro 0.22.0 still pins 1.45.1 / 0.66b1, so the
+    # whole set moves to the matched patch release 1.45.2 / 0.66b2 (stable opentelemetry-sdk
+    # 1.45.2 pins that line) and each moved package is overridden. When the distro moves, this
+    # test fails: take its pins and drop the OpenTelemetry overrides.
     project = _project(pyproject)
-    overrides = project["tool"]["uv"].get("override-dependencies", [])
-
-    assert [o for o in overrides if _name(o).startswith("opentelemetry")] == []
+    requirements = project["project"]["dependencies"] + project["tool"]["uv"][
+        "constraint-dependencies"]
+    independent = {"opentelemetry-propagator-aws-xray", "opentelemetry-sdk-extension-aws"}
+    otel = [r for r in requirements
+            if _name(r).startswith("opentelemetry") and _name(r) not in independent]
+    assert otel and all(r.split("==")[1] in ("1.45.2", "0.66b2") for r in otel), otel
+    overrides = [o for o in project["tool"]["uv"].get("override-dependencies", [])
+                 if _name(o).startswith("opentelemetry")]
+    assert sorted(overrides) == sorted(set(otel))
     assert "aws-opentelemetry-distro==0.22.0" in project["project"]["dependencies"]
 
 
