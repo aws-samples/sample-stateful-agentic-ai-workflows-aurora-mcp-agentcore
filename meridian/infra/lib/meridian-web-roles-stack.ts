@@ -1,6 +1,6 @@
 import { ArnFormat, CfnOutput, Stack, type StackProps, aws_iam as iam } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { backendModelStatements } from './bedrock-model-access';
+import { grantBackendAccess } from './meridian-web-backend-grants';
 import { API_TOKEN_SECRET_NAME } from './meridian-web-stack';
 
 export interface MeridianWebRolesStackProps extends StackProps {
@@ -51,55 +51,7 @@ export class MeridianWebRolesStack extends Stack {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Meridian backend on App Runner: Bedrock, Aurora Data API, the MeridianConcierge and MeridianWorkflow AgentCore Runtimes',
     });
-    for (const statement of backendModelStatements(environment, this)) {
-      this.instanceRole.addToPolicy(statement);
-    }
-    this.instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'rds-data:ExecuteStatement',
-          'rds-data:BatchExecuteStatement',
-          'rds-data:BeginTransaction',
-          'rds-data:CommitTransaction',
-          'rds-data:RollbackTransaction',
-        ],
-        resources: [environment.AURORA_CLUSTER_ARN],
-      }),
-    );
-    this.instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['secretsmanager:GetSecretValue'],
-        resources: secretGrants,
-      }),
-    );
-    // The meridian_backend login's own secret and Data API access, created by
-    // scripts/provision_service_logins.py. The key is written to meridian/.env only after that
-    // policy exists. The service keeps running as the master login until the cutover release
-    // points its AURORA_SECRET_ARN here and drops the master secret from the statement above.
-    if (environment.AURORA_BACKEND_SECRET_ARN) {
-      this.instanceRole.addManagedPolicy(
-        iam.ManagedPolicy.fromManagedPolicyArn(
-          this, 'BackendLoginAccess',
-          `arn:aws:iam::${this.account}:policy/MeridianBackendAuroraAccess`,
-        ),
-      );
-    }
-    this.instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['bedrock-agentcore:InvokeAgentRuntime'],
-        resources: [environment.AGENTCORE_RUNTIME_ARN, `${environment.AGENTCORE_RUNTIME_ARN}/runtime-endpoint/*`],
-      }),
-    );
-    // Phase 5 runs on the MeridianWorkflow Runtime: the backend invokes it and stops its sessions.
-    this.instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['bedrock-agentcore:InvokeAgentRuntime', 'bedrock-agentcore:StopRuntimeSession'],
-        resources: [
-          environment.AGENTCORE_WORKFLOW_RUNTIME_ARN,
-          `${environment.AGENTCORE_WORKFLOW_RUNTIME_ARN}/runtime-endpoint/*`,
-        ],
-      }),
-    );
+    grantBackendAccess(this.instanceRole, this, environment, secretGrants);
 
     this.accessRole = new iam.Role(this, 'BackendAccessRole', {
       assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),

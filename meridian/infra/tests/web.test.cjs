@@ -69,8 +69,10 @@ test('bin/meridian-web.ts forwards the trimmed hosted UI domain, or nothing when
   assert.equal(cognitoHostFromEnv(''), undefined);
   assert.equal(cognitoHostFromEnv('   '), undefined);
   assert.equal(cognitoHostFromEnv(undefined), undefined);
+  const app = fs.readFileSync(path.join(__dirname, '..', 'lib', 'meridian-web-app.ts'), 'utf8');
+  assert.match(app, /cognitoHost: cognitoHostFromEnv\(processEnv\.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN\)/);
   const bin = fs.readFileSync(path.join(__dirname, '..', 'bin', 'meridian-web.ts'), 'utf8');
-  assert.match(bin, /cognitoHost: cognitoHostFromEnv\(process\.env\.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN\)/);
+  assert.match(bin, /processEnv: process\.env/);
 });
 
 test('a mixed-case hosted UI domain is lowercased like the frontend reads it', () => {

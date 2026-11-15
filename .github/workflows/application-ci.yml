@@ -15,6 +15,7 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: meridian
@@ -41,6 +42,7 @@ jobs:
 
   runtime-contracts:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       matrix:
         runtime: [MeridianConcierge, MeridianWorkflow]
@@ -73,6 +75,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: meridian/frontend
@@ -94,6 +97,7 @@ jobs:
 
   backend-container:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build the production backend and locked MCP server
@@ -109,6 +113,7 @@ jobs:
 
   agentcore-cdk:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: meridian/meridian_agentcore/agentcore/cdk
@@ -134,6 +139,7 @@ jobs:
 
   web-infra:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: meridian/infra

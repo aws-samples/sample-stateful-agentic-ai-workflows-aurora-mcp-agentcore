@@ -5,6 +5,12 @@ tool and nothing outside the expected and allowed tools. The forbidden-call rate
 of runs that called a forbidden tool (a write nobody allowed, or any tool on a turn that gives
 the model none). Argument accuracy is the share of expected argument checks that the best single
 call of the tool met: every argument of an expected invocation is judged against one call.
+
+A fourth rule holds each case to a floor, because the averages can hide one bad case. A run
+passes when it called the right tools, met every argument check and called nothing forbidden. A
+case with N runs must pass at least a majority of them (N // 2 + 1): 1 of 1, 2 of 3, 3 of 4,
+3 of 5. Errored runs are not counted as failures, so a case misses the floor only when even
+counting its errored runs as passes it would fall short.
 """
 
 from __future__ import annotations
@@ -104,7 +110,8 @@ def _argument_checks(case: Case, calls: Iterable[ToolCall]) -> tuple[tuple[str, 
     for tool, arguments in case.expected_arguments.items():
         outcomes = [_call_results(arguments, call) for call in calls if call.name == tool]
         best = max(outcomes, key=sum, default=(False,) * len(arguments))
-        checks.extend((tool, argument, passed) for argument, passed in zip(arguments, best, strict=True))
+        checks.extend((tool, argument, passed)
+                      for argument, passed in zip(arguments, best, strict=True))
     return tuple(checks)
 
 
@@ -144,4 +151,36 @@ def summarize(scores: Iterable[CaseScore]) -> Summary:
         forbidden_call_rate=sum(bool(s.forbidden) for s in scored) / runs if runs else 0.0,
         argument_accuracy=sum(checks) / len(checks) if checks else None,
         argument_checks=len(checks),
+    )
+
+
+def run_passed(score: CaseScore) -> bool:
+    """Whether one run called the right tools, met every argument check and nothing forbidden."""
+    return (
+        score.error is None
+        and score.selected
+        and not score.forbidden
+        and all(passed for _, _, passed in score.argument_checks)
+    )
+
+
+def required_passes(runs: int) -> int:
+    """How many of a case's ``runs`` must pass: a majority, so 1 of 1, 2 of 3, 3 of 5."""
+    return runs // 2 + 1
+
+
+def failing_cases(scores: Iterable[CaseScore]) -> list[str]:
+    """Ids of the cases that passed too few runs, sorted.
+
+    Each case's runs are counted together, errored ones included in the total. A case fails when
+    its passing runs plus its errored runs are still below ``required_passes`` of its total.
+    """
+    runs: dict[str, list[CaseScore]] = {}
+    for score in scores:
+        runs.setdefault(score.case_id, []).append(score)
+    return sorted(
+        case_id
+        for case_id, case_runs in runs.items()
+        if sum(run_passed(r) or r.error is not None for r in case_runs)
+        < required_passes(len(case_runs))
     )

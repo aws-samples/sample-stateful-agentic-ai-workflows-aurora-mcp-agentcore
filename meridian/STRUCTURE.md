@@ -97,7 +97,7 @@ uses the governed Gateway path.
 | `meridian_agentcore/` | AgentCore CLI project: runtime code, gateway Lambda targets, configuration templates, CDK app |
 | `infra/bin/meridian-aurora.ts` | CDK app for an encrypted Aurora PostgreSQL cluster with the Data API |
 | `infra/bin/meridian-audit-export.ts`, `infra/functions/audit_export/` | CDK app and Lambda for the tamper-evident audit export: an Object Lock bucket, the exporter on a five-minute schedule and its alarms |
-| `infra/bin/meridian-web.ts` | CDK app for the hosted web app: S3 and CloudFront site, App Runner image and roles |
+| `infra/bin/meridian-web.ts` | CDK app for the hosted web app: S3 and CloudFront site, App Runner image and roles, and with `-c backendHost=express` the Amazon ECS Express Mode backend (`infra/lib/meridian-web-app.ts` defines the stacks) |
 | `Dockerfile` | Backend container with the locked PostgreSQL MCP server |
 
 ### Scripts

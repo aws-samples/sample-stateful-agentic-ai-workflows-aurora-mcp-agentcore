@@ -147,6 +147,12 @@ same session limits as 031 and TimeZone UTC, and adds one export-order index to 
 changes no existing policy or grant. Apply it only before provisioning that login; see
 [Audit export](#audit-export).
 
+**Migration 034:** creates `<login>_clone` for each of the six workload logins and the
+`meridian_rotator` role that sets their passwords, for
+[automatic rotation](#rotate-workload-passwords-automatically). The clones are members of their login
+and hold no grant of their own; no password is set and no running workload changes. Apply it only
+when you intend to use rotation.
+
 Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
 steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025
 drops the old column and the trigger. A new database applies both in sequence before deployment. An existing
@@ -220,7 +226,9 @@ set. It generates a new password, sends Postgres only its SCRAM-SHA-256
 verifier, stores the new credential in the same secret and checks that the login
 is `meridian_workflow` without BYPASSRLS. Between the `ALTER ROLE` and the secret
 update, anything holding the old secret fails, so rotate while no workflow runs.
-The same command repairs a half-finished run.
+The same command repairs a half-finished run. To rotate without that gap, use
+[automatic rotation with alternating users](#rotate-workload-passwords-automatically), which is
+built but not enabled on any live login.
 
 ### Stop a Runtime session
 
@@ -465,6 +473,8 @@ publishing the backend. Removing the setting also removes any old hosted overrid
    `--i-understand-this-changes-aws`: without it the script exits 3 and changes nothing, and so does an
    abbreviated flag. Running `--apply` again rotates the password. Between the `ALTER ROLE` and
    the secret update, anything holding the old secret fails.
+   [Automatic rotation](#rotate-workload-passwords-automatically) avoids that gap once it is
+   enabled for a login.
 
 3. Prove the grants against the live cluster, including what each login must
    not do:
@@ -785,6 +795,214 @@ Each step that calls AWS needs the owner's approval. Run from `meridian/`.
 To stop exporting, delete the schedule, or turn off termination protection and destroy the stack.
 The bucket and key stay. To retire the login, run `ALTER ROLE meridian_audit_export NOLOGIN PASSWORD
 NULL` as the master login and delete the secret and the managed policy.
+
+## Rotate workload passwords automatically
+
+Status: built and tested offline, **not enabled on any live login**. Nothing in this repository turns
+rotation on. Until you do, the manual rotation in
+[Rotate the workflow login password](#rotate-the-workflow-login-password) and
+[Create the logins](#create-the-logins) is the only rotation, and it has the gap those sections
+describe. Enable it as a planned change with its own rehearsal, never during a change freeze: it
+adds roles and a Lambda per login, and the first live rotation is the first live test of it.
+
+### How it works
+
+Secrets Manager rotates with the **alternating users** strategy
+([tutorial](https://docs.aws.amazon.com/secretsmanager/latest/userguide/tutorials_rotation-alternating.html),
+[strategy summary](https://docs.aws.amazon.com/help-panel/secretsmanager/latest/console/rotation-separate-creds-rds-pane.html)).
+Each login has two database users, `meridian_x` and `meridian_x_clone`. The login's secret names one
+of them. A rotation sets a new password on the other user and then makes the secret name that user.
+The user the secret named before keeps its old password, so a consumer that still holds the previous
+secret value keeps working. It stops working at the rotation after next, which changes that
+user's password. Every consumer must therefore read its secret again at least once per rotation
+interval (30 days by default). Every consumer in this repository passes the secret's ARN to the Data
+API on each call and never reads the value itself, so each call uses the current version.
+
+One rotation runs the four steps Secrets Manager calls on the rotation Lambda
+(`infra/functions/login_rotation/login_rotation.py`). Secrets Manager repeats a step after a failure
+or a timeout, so each step is safe to run twice.
+
+1. `createSecret`: puts a pending version of the secret naming the other user, with a new random
+   password. A retry finds the pending version and does nothing.
+2. `setSecret`: checks that the login and its clone are consistent, then runs
+   `ALTER ROLE <other user> LOGIN PASSWORD '<SCRAM-SHA-256 verifier>'` through the Data API. Postgres
+   receives the verifier, never the password. A retry sets the same password again.
+3. `testSecret`: checks the two roles again and that the other user can log in.
+4. `finishSecret`: moves `AWSCURRENT` to the new version, then connects through the Data API with the
+   secret as a consumer would. If that connection fails (three attempts, two seconds apart), it moves
+   `AWSCURRENT` back to the old version and fails the rotation. Moving back is safe because the old
+   user's password was never changed.
+
+The Lambda refuses to act when the secret names a user other than the login or its clone, when the
+clone is missing, or when either role has SUPERUSER, BYPASSRLS, CREATEROLE, CREATEDB or REPLICATION,
+a different connection limit, different role settings, or no membership of the login. A clone that
+has drifted fails the rotation before any password changes.
+
+### Constraints that shaped the design
+
+- **No VPC path.** The cluster is private and the Lambda runs outside a VPC, so the Lambda reaches
+  Postgres only through the RDS Data API. The AWS-provided PostgreSQL rotation functions connect over
+  the network and cannot be used here, so this Lambda is our own code.
+- **The Data API reads `AWSCURRENT` only.** It takes a secret ARN
+  ([access](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.access.html)) and has
+  no way to name a secret version, so `testSecret` cannot connect with the pending credential. The
+  connection test runs in `finishSecret`, after the promotion, and is undone on failure as above.
+  That leaves a short window, normally seconds, in which a consumer could read a version that does
+  not work. The alternating strategy is what makes undoing it safe.
+- **SCRAM only.** For Aurora PostgreSQL 14 and later the Data API supports only `scram-sha-256`
+  ([limits](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.limitations.html)).
+  The Lambda builds the SCRAM verifier itself, as `scripts/provision_service_logins.py` does, and a
+  test holds the two implementations to the same output.
+- **Utility statements take no parameters.** The role name is checked against the login and its
+  clone, and the verifier against its exact shape, before either is put in the statement.
+- **Role settings are not inherited.** The 031 timeouts are set per role, so migration 034 copies them
+  to each clone, and the Lambda refuses a clone whose settings differ.
+
+### Privileges
+
+The Lambda connects as `meridian_rotator` (migration 034), not as the master login.
+
+- It holds CREATEROLE and ADMIN OPTION on exactly the twelve roles it rotates (the six logins and
+  their clones), with INHERIT FALSE and SET FALSE: it can change their passwords and memberships, and
+  it holds none of their table privileges. On PostgreSQL 16 and later, ALTER ROLE ... PASSWORD on
+  another role needs CREATEROLE plus ADMIN OPTION on that role
+  ([CREATE ROLE](https://www.postgresql.org/docs/18/sql-createrole.html)), so this is the smallest
+  grant that works.
+- It cannot alter the master login or any role it holds no ADMIN OPTION on. It cannot give a role
+  SUPERUSER, REPLICATION or BYPASSRLS, because a CREATEROLE role cannot grant an attribute it lacks.
+  It does not bypass RLS and holds no table, sequence or function privilege.
+- It can still create new roles, and it could grant itself membership of a role it administers, so it
+  can act as any of the six logins. Changing their passwords already allows that. Treat the rotator
+  secret like the logins' secrets.
+- The master login would also work, but it would put the credential that bypasses RLS and owns every
+  object into six Lambdas. The rotator costs one more role and one more secret.
+
+Each Lambda can read and write its own login secret, read the rotator secret and call the Data API's
+`ExecuteStatement` on this cluster. It has no other secret, no delete or policy permission, and no
+IAM, S3 or KMS permission. Each login has its own Lambda, so a grant never spans two logins.
+
+### The clone
+
+`<login>_clone` is created by migration 034, not by the Lambda, so the Lambda needs no CREATE ROLE
+right and the clone is reviewed like any other migration.
+
+- Same attributes as the login: NOLOGIN until a rotation sets its password, NOBYPASSRLS,
+  NOINHERIT, NOCREATEDB, NOCREATEROLE, no replication, no connection limit.
+- It holds **no grant of its own**. It is a member of its login with INHERIT TRUE and SET TRUE, so
+  every table, sequence and function privilege, every row policy written `TO <login>` (a policy
+  applies to a member that inherits the role), and the path to `meridian_app` come through that
+  membership. A privilege added to the login later reaches the clone at once, so the two cannot
+  drift. The alternative, copying each grant and policy onto the clone, would break the first time
+  a migration grants the login something new.
+- It gets a copy of the login's role settings (statement, lock and idle-in-transaction timeouts, and
+  TimeZone for the audit login). The migration clears the clone's settings and copies them again each
+  time it runs. After changing a login's settings, run it again or apply the same `ALTER ROLE` to the
+  clone.
+- The migration refuses an existing clone with other attributes or other memberships.
+
+`tests/test_migration_034_contract.py` and `tests/test_login_rotation_clone_contract.py` check the
+migration's statements offline. `tests/test_migration_034_live.py` (marked `database`) compares each
+clone with its login in Aurora: attributes, role settings, the membership, SELECT, INSERT, UPDATE and
+DELETE on every public table, EXECUTE on every public function, and the SET ROLE path to
+`meridian_app`. Run it only with approval.
+
+### Turn it on for one login first
+
+Each step that calls AWS needs the owner's approval. Run from `meridian/`. Start with the `audit`
+login: one Lambda reads through it, it is read-only, and the export has a heartbeat alarm that
+reports a failure.
+
+1. Apply migration 034 alone. Dry-run it, read the result, then apply:
+
+   ```bash
+   python scripts/apply_migrations.py --pending
+   python scripts/apply_migrations.py --dry-run --only 034_login_rotation_clones.sql
+   python scripts/apply_migrations.py --only 034_login_rotation_clones.sql
+   ```
+
+   The migration changes no password and no running workload. It needs the migrations that create
+   the six logins (015, 018, 022 and 033) and PostgreSQL 16 or later.
+2. Check the clones against their logins: `python -m pytest -m database
+   tests/test_migration_034_live.py`.
+3. Give the rotator a password, in its own secret. Without `--apply` the script only reports:
+
+   ```bash
+   python scripts/provision_rotation_login.py
+   python scripts/provision_rotation_login.py --apply --i-understand-this-changes-aws --write-env
+   ```
+
+   This sets `AURORA_ROTATOR_SECRET_ARN` in `meridian/.env`. Nothing rotates this password; run the
+   script again to change it.
+4. Deploy the rotation stack for that one login. It is a separate CDK app, and it creates nothing
+   unless `rotateLogins` names a login:
+
+   ```bash
+   cd infra
+   npm run build
+   npx cdk deploy -a "node dist/bin/meridian-login-rotation.js" -c rotateLogins=audit
+   ```
+
+   Add `-c rotationDays=<days>` to change the 30 day interval. The schedule does not rotate when it
+   is created. `-c rotateLogins=audit,catalog` names several logins; each needs its
+   `AURORA_*_SECRET_ARN` in `.env`. Without `rotateLogins` the app prints that rotation is off and
+   creates no stack. No other stack in `infra/` refers to rotation, so their templates are the same
+   with or without it.
+5. Rotate once, on purpose, and verify before leaving it on a schedule:
+
+   ```bash
+   aws secretsmanager rotate-secret --secret-id meridian/aurora/audit-export-login
+   ```
+
+6. Only after that login has rotated twice (once to the clone, once back) and its consumer has run
+   cleanly in between, turn rotation on for the next login.
+
+### Verify
+
+- `aws secretsmanager describe-secret --secret-id <name>` shows `RotationEnabled` true, the
+  Lambda, `NextRotationDate`, and the stages `AWSCURRENT`, `AWSPREVIOUS` and no leftover
+  `AWSPENDING` once the rotation has finished.
+- The secret now names the other user. Print the name only, never the password:
+  `aws secretsmanager get-secret-value --secret-id <name> --query SecretString --output text | python -c 'import json,sys; print(json.load(sys.stdin)["username"])'`
+- The consumer works with the new credential. For the audit login, the next export run completes
+  (`RunsCompleted` in the heartbeat alarm's metric) and `scripts/verify_audit_export.py` still
+  verifies the chain. For the backend, run `scripts/prove_backend_login.py`.
+- The rotation Lambda's log group has one line per step and, on a failure, a fixed phrase and the AWS
+  error code, never a password or the service's own text.
+- Run `tests/test_migration_034_live.py` again after any later migration that grants a login
+  something or changes its settings.
+
+What to read when a rotation fails: the Lambda's log, then `describe-secret`. A failed `setSecret` or
+`testSecret` leaves `AWSCURRENT` where it was and nothing to undo. A failed `finishSecret` has already
+moved `AWSCURRENT` back. Secrets Manager shows the rotation as failed, and the next scheduled or
+manual rotation starts clean.
+
+### Roll back
+
+- **Stop rotating one login:** `aws secretsmanager cancel-rotate-secret --secret-id <name>`, then
+  remove that login from `rotateLogins` and deploy again, or delete the stack (turn off its
+  termination protection first). The secret keeps naming whichever user it names, and both users
+  keep working.
+- **Return the secret to the original user:** run `provision_service_logins.py --login <name> --apply
+  --i-understand-this-changes-aws` (or `provision_workflow_login.py` for the workflow login). It sets
+  the original user's password and writes the secret with the original user's name. Do not run it
+  while a rotation is in progress.
+- **Retire the clones and the rotator:** after the secrets name the originals again, run as the master
+  login `ALTER ROLE <login>_clone NOLOGIN PASSWORD NULL` for each clone, then `DROP ROLE` for each
+  clone and for `meridian_rotator`, and delete the rotator's secret and managed policy
+  (`MeridianRotatorAuroraAccess`). The clones own nothing, so the drop needs no reassignment.
+
+### What it does not cover
+
+- The master login's password and the Cognito users' passwords. The master secret is managed by
+  Amazon RDS, which rotates it.
+- A consumer that reads a secret once at start-up and keeps the value for longer than the rotation
+  interval. None does today, and a new one must be added to this list before its login rotates.
+- Whether Aurora accepts `ALTER ROLE ... PASSWORD` from a CREATEROLE login with ADMIN OPTION through
+  the Data API, whether the row policies apply to a clone through its membership, and how Secrets
+  Manager labels versions around `finishSecret` have been checked against the documentation and
+  with fakes, not against the live cluster. The first rotation of the audit login is that check.
+- A global database. A rotation changes the primary cluster's roles, which a secondary cluster
+  receives through replication; see [Recover in another Region](#recover-in-another-region).
 
 ## Sign-in and who is calling
 
@@ -1740,8 +1958,8 @@ user, because the verdict is for the default traveler). A network error part-way
 nothing. Confirm current asset hashes and image identity separately; the warm-up does not
 check them.
 [App Runner no longer accepts new customers](https://aws.amazon.com/apprunner/),
-so this path applies to accounts that already use it; a new account needs a
-different container host for the backend, such as Amazon ECS.
+so this path applies to accounts that already use it. A new account hosts the backend on
+Amazon ECS Express Mode: see [Host the backend on Amazon ECS Express Mode](#host-the-backend-on-amazon-ecs-express-mode).
 
 The App Runner instance role is a workload and needs its own grant to the sample
 traveler. Run this once after the `MeridianWebRoles` stack exists; without it,
@@ -1896,6 +2114,391 @@ service running as it was; run it only with approval. A failed import rolls back
 `IMPORT_ROLLBACK_COMPLETE` and leaves the service unmanaged, as before. Retain also means deleting
 the stack does not delete the service: to remove it, delete it in App Runner by hand.
 
+## Host the backend on Amazon ECS Express Mode
+
+App Runner no longer accepts new customers, so an account that never used it hosts the backend on
+[Amazon ECS Express Mode](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/express-service-getting-started.html).
+The backend is one stateless container. Express Mode runs it on AWS Fargate behind an Application
+Load Balancer it creates and manages, and CloudFront routes `/api/*` and `/health` to it, as it
+does for App Runner.
+
+This is a separate path. `scripts/publish.py` and the App Runner stacks are unchanged and remain the
+default: the Express stacks exist only when the CDK app gets `-c backendHost=express`, and no
+other stack's template changes with or without it (`infra/tests/express.test.cjs` proves that).
+`publish.py` does not manage the Express path; use the commands below.
+
+**What the switch adds.** `-c backendHost=express` adds two stacks and points the CloudFront
+origin of `MeridianWeb` at the Express service:
+
+| Stack | Holds |
+| --- | --- |
+| `MeridianWebExpressRoles` | The task role (the same grants as the App Runner instance role, less the master login and shared-token secrets), the task execution role and the infrastructure role Express Mode requires. Kept apart so IAM settles before the service exists, as `MeridianWebRoles` is for App Runner |
+| `MeridianWebExpress` | The `AWS::ECS::ExpressGatewayService` `meridian-web-express` and its CloudWatch log group |
+| `MeridianWeb` | As before, with the API origin set to the service's host (`ServiceHost`, the `Endpoint` URL without `https://`). It is an error to also set `MERIDIAN_BACKEND_HOST`, which names an App Runner host |
+
+The service runs the same image as the App Runner path (both build `meridian/Dockerfile` for
+linux/amd64 with the same asset properties, so the tag is the same) with the same environment and
+secret references. `LEGACY_LIVE_ENVIRONMENT` is App Runner only and is not carried over. It is pinned
+to 1 vCPU and 2 GB, container port 8000, health check path `/health` (the backend's public
+liveness route), 1 to 4 tasks scaling on 60 percent average CPU, and a log group kept 30 days.
+
+**Prerequisites.** Everything the App Runner path needs, except the App Runner service: the
+Aurora cluster, the AgentCore Runtimes, the identity stack (`jwt` release), a complete
+`meridian/.env`, a bootstrapped CDK environment and a container engine. Also, in the target Region:
+
+- A default VPC with at least two public subnets in two Availability Zones, each with at least 8
+  free IP addresses. Express Mode uses them for an internet-facing load balancer and for the tasks,
+  which get public IP addresses. This is the simplest correct choice for a new account, which has
+  a default VPC unless someone deleted it; the stacks set no subnets or security groups. An
+  account without one must create a default VPC first, or the stack needs explicit subnets, which
+  it does not support today. Private subnets would make the load balancer internal, and CloudFront
+  could not reach it.
+- No `MERIDIAN_BACKEND_HOST` in the shell or `.env`.
+
+**Deploy order.** Run from `infra/`. Read the account and Region from the credentials you use,
+and set the Region the rest of the release uses:
+
+```bash
+export MERIDIAN_WEB_REGION=<region> MERIDIAN_AGENTCORE_AUTH=jwt
+export MERIDIAN_COGNITO_HOSTED_UI_DOMAIN=<HostedUiDomain output of MeridianIdentity>
+unset MERIDIAN_BACKEND_HOST
+npm ci && npm run build
+
+# 1. Build the signed-in site. The values are the MeridianIdentity outputs; keep them out of files.
+(cd ../frontend && npm ci && VITE_API_BASE_URL= VITE_API_ORIGIN= VITE_REQUIRE_SIGN_IN=1 \
+  VITE_COGNITO_DOMAIN=<HostedUiDomain> VITE_COGNITO_CLIENT_ID=<AppClientId> npm run build)
+
+# 2. Read what would be created. No AWS resource changes.
+npx cdk diff MeridianWebExpressRoles MeridianWebExpress -c backendHost=express --exclusively
+
+# 3. The roles. Wait a minute for IAM to settle before the service.
+npx cdk deploy MeridianWebExpressRoles -c backendHost=express --exclusively
+sleep 60
+
+# 4. The image and the service. Express Mode creates the load balancer, certificate and
+#    security groups, so this takes several minutes.
+npx cdk deploy MeridianWebExpress -c backendHost=express --exclusively \
+  --outputs-file ../.local/MeridianWebExpress-outputs.json
+```
+
+Bind the task role to each seeded traveler, the same step as for App Runner, against the Express
+roles stack. Both releases need it: before the backend sets a traveler scope, Aurora checks its role
+in `traveler_identity_bindings`, and an unbound role gets 403 on every traveler route (the first
+trial deploy, 15 Nov 2026, showed exactly that):
+`python scripts/bind_web_backend_role.py --stack MeridianWebExpressRoles --apply`, then again with
+`--traveler trv_demo_decoy`. In the `iam` release also add
+`-c apiTokenSecretArn=<ARN of meridian/web/api-token>` to every command above.
+
+**Validate before any traffic moves.** The service answers at its own HTTPS endpoint, the
+`ServiceEndpoint` output, a URL such as `https://<name>.ecs.<region>.on.aws` (the `ServiceHost`
+output is the same without the scheme; the CloudFront origin uses that). In the `jwt` release that
+endpoint refuses callers without a token, so a direct probe is safe. Run the warm-up against it as
+a seeded user ([Run the smoke scripts as a seeded user](#run-the-smoke-scripts-as-a-seeded-user)):
+
+```bash
+cd ..    # meridian/
+python scripts/warm_demo.py --base-url <ServiceEndpoint>
+```
+
+It must end with `Warm.`, with every step `ok`. This writes nothing and changes no data.
+If the service is not healthy, read the log group `/aws/ecs/meridian-web-express` and the service's
+events in the Amazon ECS console. The task starts slowly (see the gaps below); allow up to five
+minutes after the stack reports success before treating a failed health step as a failure.
+
+**Cut CloudFront over.** From `infra/`, with the same environment variables:
+
+```bash
+npx cdk diff MeridianWeb -c backendHost=express --exclusively
+npx cdk deploy MeridianWeb -c backendHost=express --exclusively \
+  --outputs-file ../.local/MeridianWeb-outputs.json
+```
+
+The diff must show only the API origin domain (and the stack description) changing when the account
+already has `MeridianWeb`; in a new account it is the first deploy of the site. CloudFront finishes
+the update in a few minutes. Requests in flight on the old origin complete there. The backend is
+stateless, so no data moves.
+
+`publish.py` writes the release record that `warm_demo.py --hosted` reads. For this path, write it
+from the outputs. In an account that already has a record from an App Runner release, copy
+`.local/hosted-release.json` aside first, because this replaces it:
+
+```bash
+cd ..    # meridian/
+jq '{status: "deployed_pending_verification", site: .MeridianWeb, backend: "ecs-express"}' \
+  .local/MeridianWeb-outputs.json > .local/hosted-release.json && chmod 600 .local/hosted-release.json
+python scripts/warm_demo.py --hosted --verify
+```
+
+The record is local and git-ignored. `--verify` then adds `verified` and the checks, as in
+[Publish the web app](#publish-the-web-app). In the `jwt` release the script signs in as the
+seeded user; in the `iam` release set `MERIDIAN_HOSTED_AUTH` to the site's credentials for the call,
+as there.
+
+**Update the service.** Rebuild with the same switch and deploy `MeridianWebExpress`. A new image
+tag, or changed environment, becomes a new service revision, which Express Mode rolls out with a
+canary deployment and rolls back on 5XX alarms. Deploy `MeridianWebExpressRoles` first when
+`meridian/.env` changes an ARN the task role grants.
+
+**Roll back.** Deploy `MeridianWeb` again without the switch, with the App Runner host, then restore the
+release record you copied aside:
+
+```bash
+cd infra
+MERIDIAN_BACKEND_HOST=<App Runner service URL, host only> npx cdk deploy MeridianWeb --exclusively
+```
+
+CloudFront returns to the App Runner service within minutes; App Runner was never changed. To
+remove the Express path, first switch `MeridianWeb` away from it (CloudFormation refuses to delete
+an export `MeridianWeb` still imports), then run
+`npx cdk destroy MeridianWebExpress MeridianWebExpressRoles -c backendHost=express`. Deleting the
+stack deletes the service, and Express Mode deletes the load balancer, security groups and
+certificate it created when no other Express service shares them. The log group is removed with the
+stack. The image stays in the CDK assets repository.
+
+**What Express Mode cannot set, compared with App Runner.** These are limits of the
+`AWS::ECS::ExpressGatewayService` resource at the pinned `aws-cdk-lib`, not omissions:
+
+| App Runner setting | On Express Mode |
+| --- | --- |
+| TCP health check, 5 second interval, 1 healthy check to pass | An HTTP check of `/health` on the target group: 30 second interval, 5 healthy checks to pass, 2 failures to remove. Only the path is settable. A new task takes about 2.5 minutes to take traffic, after a 300 second grace period for slow starts |
+| CPU architecture | Not a CloudFormation property. Express Mode defaults to X86_64, which matches the linux/amd64 image. Confirm with the task definition's `runtimePlatform` after the first deploy |
+| Default VPC and a managed network | The same default, but the account needs the default VPC described above; subnets and security groups are not set by these stacks |
+| Auto scaling configuration with request concurrency | Scales on average CPU (60 percent, 1 to 4 tasks). Request count per target is available through the Express API, not set here |
+| Provisioned instance with pause | No pause and no scale to zero. One task and one Application Load Balancer run all the time, so an idle service costs more than App Runner |
+| 120 second request limit | None. The load balancer idle timeout is 60 seconds, and the backend sends a keepalive every 10 seconds on streams, so streams stay open. The browser's 110 second ceiling is unchanged |
+| Cluster, platform version, deployment strategy | The `default` cluster is created if absent, Fargate platform version LATEST, canary deployments. None is set by these stacks |
+| Public endpoint | Also public, as App Runner's was: the endpoint can be called without CloudFront. In the `jwt` release the API routes need a verified token and only `/health` answers without one. Attach AWS WAF to the load balancer to restrict it further |
+
+Work that outlives a request (the turn-summary audit row, a Memory unit) has the same guarantee as
+on App Runner: none. A deploy or scale-in stops tasks after a 30 second `SIGTERM` window.
+
+## Recover in another Region
+
+This is a plan, not a feature. **The repository implements nothing cross-Region.** Every resource it
+deploys (the Aurora cluster, the audit export bucket and key, the Cognito pool, App Runner, the
+Lambdas, the AgentCore Runtimes, Gateway, Memory and Cedar policy engine, and the secrets) lives in
+one Region, and the publish and deploy tools pin that Region. What follows is what an operator would
+build and rehearse to recover the application in a second Region, and what they would find missing.
+Nothing here has been run. Numbers are AWS's published figures with a link; they describe the
+services, not a measurement of this application.
+
+### What lives where
+
+| State | Where it lives | Survives a Region loss only if |
+| --- | --- | --- |
+| Travelers, preferences, conversations, bookings, holds, journeys, snapshots, identity bindings, workload grants, audit tables | Aurora | the cluster is in a global database, or restored from a copied snapshot or backup |
+| Logins, their passwords, row policies and functions | Aurora (roles and grants are database objects) | same as above |
+| Login secrets, the master secret | Secrets Manager, per Region | the secrets are replicated to the second Region |
+| Audit export objects and the hash chain | S3 bucket with Object Lock, and its KMS key, per Region | the bucket is replicated and the replica's key exists |
+| Sign-in: users, pool, app client | Amazon Cognito user pool, per Region | the pool uses multi-Region replication |
+| Runtimes, Gateway and its targets, Cedar policy engine | AgentCore, per Region | they are deployed again from the repository in the second Region |
+| Memory (session and semantic context) | AgentCore Memory, per Region | nothing preserves it by default; treat it as lost |
+| The site and the API host | S3 and CloudFront (global), App Runner (per Region) | the backend is deployed in the second Region and CloudFront is pointed at it |
+
+Aurora holds every record the application reads back. The Memory store is a second copy of a
+conversation (the conversation text itself is in `conversation_messages`), so losing it degrades what
+the Concierge recalls and does not lose a record. The deploy artifacts (code, templates, migrations)
+are in Git.
+
+### Aurora
+
+Use an Aurora global database
+([overview and failover paths](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database-disaster-recovery.html)).
+
+- **What AWS documents.** Replication is asynchronous from the primary to read-only secondary
+  clusters. RTO for Aurora Global Database "can be in the order of minutes". RPO is "typically
+  measured in seconds" and depends on replication lag when the failure happens. On Aurora
+  PostgreSQL, `rds.global_db_rpo` sets and tracks an upper bound on RPO, and AWS warns that it might
+  slow commits on the primary's writer. AWS Database Blog posts state tighter figures (RPO under 5
+  seconds, RTO under one minute); use the documentation's wording for planning.
+- **Switchover** (planned): the previous term was "managed planned failover". It synchronizes the
+  secondary with the primary first, so RPO is 0, and the database is unavailable for a short time
+  while the two clusters swap roles. Use it for a planned move or a rehearsal, and to move back
+  after a failover
+  ([AWS Resilience Hub and ARC block](https://docs.aws.amazon.com/r53recovery/latest/dg/aurora-global-database-block.html),
+  [switchover-global-cluster](https://docs.aws.amazon.com/cli/v1/reference/rds/switchover-global-cluster.html)).
+- **Failover** (unplanned): detach the chosen secondary from the global database. That stops
+  replication at once and promotes it to a standalone cluster with a writer. Writes that had not
+  replicated are lost, and the old primary must not be re-attached as it was, to avoid split-brain.
+  After the old Region returns, build a new secondary from the promoted cluster
+  ([manual failover steps](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database-disaster-recovery.html)).
+  Choose the secondary with the least lag when there is more than one.
+- **The Data API on a secondary.** Data API can be enabled on both clusters, but a secondary has
+  no writer until it is promoted, and Data API needs the writer for every query, reads included, so
+  every application call fails against a secondary
+  ([Data API limits](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.limitations.html)).
+  The application cannot read from the secondary Region before promotion. Enable the Data API on
+  the secondary cluster before an incident, and use the promoted cluster's ARN afterwards.
+- **What the repository does today that blocks this.** `infra/lib/meridian-aurora-stack.ts` creates
+  the cluster with `manageMasterUserPassword: true`, and AWS documents that an RDS-managed master
+  secret is not supported for a cluster that is part of a global database
+  ([limitations](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/rds-secrets-manager.html)).
+  The master password would have to become self-managed (and stored in a replicated secret) before the
+  cluster joins one. The cluster is encrypted with `alias/aws/rds`; the secondary needs a KMS key in its
+  own Region. Check the engine version (18.6) and Serverless v2 against the
+  [supported Regions and engines](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.configuration.requirements.html)
+  before planning.
+- **Secondary sizing.** A secondary with no readers costs storage only ("headless") and a longer
+  recovery, because instances must be created after promotion. A secondary with a reader recovers
+  sooner.
+- **Rotation.** A password rotation (see
+  [Rotate workload passwords automatically](#rotate-workload-passwords-automatically)) changes roles
+  in the primary and reaches the secondary through replication, and the rotating secret replicates
+  too (below), so the pair stays usable after a failover.
+
+### Secrets Manager
+
+Replicate each secret the workloads read to the second Region (`ReplicaRegions`, or
+`replicate-secret-to-regions`). The replica has the same ARN apart from the Region. When rotation is
+on for the primary secret, Secrets Manager rotates it in the primary Region and propagates the new
+value to the replicas. A replica can be promoted to a standalone secret
+([replication](https://docs.aws.amazon.com/secretsmanager/latest/userguide/replicate-secrets.html)).
+
+What an operator must still do: every `AURORA_*_SECRET_ARN` that the tools and stacks read from
+`meridian/.env` names the primary Region, and the web stack checks that the backend secret ARN is in
+the deploy Region. A second Region needs its own `.env` with the replica ARNs, and each login's
+managed policy (`scripts/provision_service_logins.py`) must name the replica. The secrets hold the
+cluster-independent credentials, so they work against the promoted cluster; the cluster ARN is what
+changes.
+
+### Audit export bucket
+
+The bucket has Object Lock, versioning, SSE-KMS with a single-Region customer-managed key, and a
+policy that denies deletes and unconditional writes
+([Audit export](#audit-export)). To keep the evidence in the second Region, replicate it with S3
+Replication.
+
+- Both buckets need Object Lock and versioning. S3 replicates the objects with their retention, and
+  the replica takes the source's retention, overriding the destination bucket's default
+  ([Object Lock and replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock-managing.html),
+  [what is replicated](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication-what-is-isnot-replicated.html)).
+  The replication role needs `s3:GetObjectRetention` and `s3:GetObjectLegalHold` on the source in
+  addition to the usual permissions. Put the same governance or compliance mode on the destination
+  bucket, because a replica is only as protected as its own bucket policy.
+- The objects are SSE-KMS, so the replication rule must opt in to replicate encrypted objects and name
+  a KMS key in the destination Region. The bucket's key is not a multi-Region key.
+- **Lag.** Replication is asynchronous. With S3 Replication Time Control, S3 replicates 99.99 percent
+  of new objects within 15 minutes, backed by an SLA
+  ([features](https://aws.amazon.com/s3/features/replication/)). Without it, most objects replicate
+  within 15 minutes and some take longer
+  ([knowledge center](https://repost.aws/knowledge-center/s3-crr-replication-time)). The exporter
+  writes an object every five minutes at most, so the replica can trail by several objects.
+- **Interaction with the hash chain.** The chain's state is only the bucket: the latest object names
+  the last exported row and gives the hash the next object carries. If the destination holds the
+  chain up to sequence N, an exporter started in the second Region against the destination
+  continues at N+1 from the promoted Aurora's rows after the watermark, which is correct if the
+  promoted cluster has those rows. Two gaps remain. Rows exported to the source but not yet
+  replicated by S3 are re-exported with the same sequence numbers the lost source objects had, so the
+  chain stays valid but its bytes differ from the lost source objects. Rows that Aurora did not
+  replicate before the failure are in the source bucket (if it survives) but not in the promoted
+  cluster, so a verifier that compares the bucket with Aurora reports them. Record chain heads
+  outside both buckets, as the verifier expects, and keep the heads from before the failure.
+- **Object Lock cost.** Replicas keep their retention, so a failover that leaves two buckets doubles
+  the locked storage until the dates pass. Under `COMPLIANCE` the replica cannot be deleted early
+  either.
+- The destination bucket's policy must deny deletes the same way. The `If-None-Match` condition in
+  the source policy applies to `s3:PutObject`, which the exporter uses; check that the replication
+  role's `s3:ReplicateObject` writes are not blocked by the destination's copy of that policy before
+  relying on the replica.
+- The exporter Lambda, its schedule and its alarms are deployed again in the second Region by the
+  audit export stack, pointed at the replica bucket (`AUDIT_EXPORT_BUCKET`) and the promoted cluster.
+  The stack as written creates a new bucket and key, so reusing the replica needs a change to it.
+
+### Amazon Cognito
+
+A user pool is Regional. A new pool in the second Region has different user pool and app client IDs,
+a different issuer and different `sub` values, so every user would sign up again and every row in
+`traveler_identity_bindings` (keyed by `subject_id`) would need replacing. The practical path is
+multi-Region replication for user pools: a replica pool with the same user pool ID, replicated user
+profiles, credentials, app clients and configuration, one-way from the primary, and access and
+refresh tokens accepted in both Regions
+([user guide](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-multi-region.html),
+[AWS Security Blog](https://aws.amazon.com/blogs/security/architecting-resilient-authentication-with-amazon-cognito-multi-region-replication/)).
+
+- It needs the Essentials or Plus feature plan (the identity stack uses Essentials) and a user pool
+  encrypted with a **multi-Region customer managed KMS key**, which is a change to the existing pool.
+  It has its own cost.
+- The replica is read-only for configuration and user attributes. Sign-in, token issue and
+  revocation work; sign-up and profile updates do not until the primary returns. Replication is
+  eventually consistent.
+- Lambda triggers are configured per replica. The pre-token-generation Lambda
+  (`infra/functions/pre_token_generation`) must be deployed in the second Region, reading Aurora
+  through the Data API with the identity login's replica secret, and attached to the replica pool.
+  Without it, the access token lacks the `traveler_id` claim and the Runtimes and Gateway refuse
+  the caller.
+- The Gateway, both Runtimes and the backend verify tokens against the pool's issuer. With a
+  replica, check which issuer the tokens carry (the documentation recommends configuring the
+  updated issuer for consistent validation) and that the second Region's Gateway authorizer accepts
+  it. This is the part of the plan with the most unknowns for this application.
+
+### Amazon Bedrock AgentCore
+
+AgentCore Runtime, Gateway, Memory and Policy are Regional, and across Regions "you own the
+deployment, the health detection, the routing, and the failover decision"
+([AgentCore disaster recovery](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/disaster-recovery-resiliency.html)).
+That page lists for each component what the customer owns. For Meridian:
+
+| Component | In the second Region |
+| --- | --- |
+| Runtimes `MeridianConcierge` and `MeridianWorkflow` | Deploy from `meridian_agentcore` to the second Region (the CLI target names the Region). New Runtime ARNs and endpoints. Check the Runtime's quotas and set the platform version explicitly, as the [AgentCore deploy runbook](AGENTCORE_DEPLOY_RUNBOOK.md) describes |
+| Gateway `meridian-aurora`, targets `MeridianHolds` and `MeridianCatalog`, inbound authorizer | Deploy again. A new Gateway has a new ID and URL. The Lambda targets, their roles, and the SSM parameters that carry the cluster and secret ARNs are Regional too |
+| Cedar policy engine `MeridianGovernance` | Create an equivalent engine and attach it to the new Gateway in `ENFORCE` mode. The repository renders the policies from a template, so this is a deploy, and `scripts/verify_agentcore.py` checks the result |
+| Memory `meridian_session` | Create it again. It starts empty. AgentCore documents Memory replication as the customer's job, not a feature; export what you need or accept a cold start |
+| Workload grants | They name IAM principals and live in Aurora. New Runtime roles in the second Region need new bindings with the `bind_*` scripts |
+| Observability | Set up log delivery, Transaction Search and alarms in the second Region |
+
+Cross-Region inference for the model (`global.anthropic.claude-sonnet-5-5`) is not disaster recovery:
+it changes where an inference request runs, not where data is stored
+([same page](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/disaster-recovery-resiliency.html)).
+Confirm that every AgentCore component the project uses is available in both Regions of the pair
+before choosing them.
+
+### CloudFront and the backend host
+
+CloudFront is a global service, but its origins are not. The site is a Vite build on S3 and the API is
+the FastAPI backend on App Runner, both in the primary Region (`MERIDIAN_WEB_REGION`).
+
+- The site can be rebuilt and published from Git into a bucket in the second Region, or the bucket
+  replicated.
+- The backend is deployed again in the second Region (`MeridianWebRoles`, `MeridianWebBackend`,
+  `MeridianWebService`) with the second Region's Runtime ARNs, Gateway URL, Cognito settings and
+  login secret ARN.
+- CloudFront origin groups fail over only for GET, HEAD and OPTIONS requests
+  ([origin groups](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistS3AndCustomOrigins.html),
+  [networking blog](https://aws.amazon.com/blogs/networking-and-content-delivery/building-multi-region-active-active-architectures-with-cloudfront-vpc-origins-and-advanced-routing/)).
+  The API takes POST requests, so an origin group alone does not move it. Change the API origin's
+  domain, or put a Route 53 failover record in front of it, as part of the runbook.
+- The Cognito app client's callback and logout URLs name the CloudFront domain. They stay valid when
+  the distribution does not change.
+
+### Order of a recovery
+
+1. Decide it is a Region event and stop writes to the old primary (a failover has no clean stop if
+   the Region is gone).
+2. Aurora: detach and promote the secondary, or switch over if both Regions are healthy. Enable the
+   Data API on the promoted cluster if it was not. Note the time and the replication lag from
+   CloudWatch to state the RPO actually lost.
+3. Check the logins on the promoted cluster: the secrets (replicas), `tests/test_migration_031_live.py`,
+   `tests/test_migration_033_live.py` and, if rotation is on, `tests/test_migration_034_live.py`.
+4. Cognito: direct sign-in to the replica pool (or the new pool and its bindings).
+5. AgentCore: deploy the Gateway, targets, Cedar engine and both Runtimes; run
+   `scripts/verify_agentcore.py` and the smoke scripts with approval.
+6. Backend and CloudFront: deploy the backend in the second Region and move the API origin.
+7. Audit export: deploy the exporter against the promoted cluster and the replica bucket, and run
+   `scripts/verify_audit_export.py` with `--compare-aurora`.
+8. Rehearse: every step above is untested in this repository. Do a switchover to the second Region
+   and back on a non-production global database before relying on the plan, and time each step.
+
+### What this plan does not cover
+
+- Recovering from corruption or a bad migration, which a global database replicates. Use point-in-time
+  restore and snapshots for that, in the same Region or copied across.
+- Bedrock model availability and quotas in the second Region, and the Cohere models the retrieval
+  phases use.
+- Cost. A second Region holds a cluster (or storage), a replica bucket, replica secrets and replica
+  pool, and idle Runtimes if you keep them warm.
+- Any AWS figure that changed after this was written; read the linked pages when you plan.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -1977,3 +2580,70 @@ browser. Receipts come from authenticated, RLS-scoped reads from Aurora. If
 browser storage is blocked, the app does not send a new direct hold. Do not
 clear browser storage to work around an uncertain hold; open its journey and
 booking first.
+
+## Load test
+
+`scripts/load_test.py` sends a small, steady stream of read-only requests to the hosted site and
+reports how long they took. Use it to get measured latency and error numbers for your own
+deployment. This repository does not publish any: results depend on your Region, Aurora size and
+Bedrock quotas.
+
+What it measures:
+
+| Scenario | Calls | Model cost |
+| --- | --- | --- |
+| `catalog` | `/api/health`, `/api/me`, `/api/products`, `/api/packages`, `/api/memory/{traveler}`, `/api/journeys` | None |
+| `retrieval` | Phase 3 chat turns, which run the hybrid search (vector and keyword) over Aurora | Bedrock |
+| `chat` | One read-only turn each for Phases 1, 2 and 3 | Bedrock |
+
+What it deliberately does not do: create, confirm or release a hold or booking, start a Phase 5
+workflow, or write a preference. Every request passes an allowlist of methods and paths before it
+is sent, and a test fails if a write route in the application becomes reachable. Chat turns still
+write their normal audit rows, so a run adds rows to the traveler's audit trail.
+
+Arrivals are open loop: requests start at `--rate` per second whether or not earlier ones have
+finished, so a slow stack shows up as high latency, not a lower rate. `--concurrency` caps the
+requests in flight; an arrival that finds every slot busy is counted as `shed` and not sent. The
+run stops early, exits 1 and says why when the error rate passes `--max-error-rate` (default 5%,
+judged after 10 requests) or `--max-streak` (default 3) requests in a row fail with 429, 5xx, an
+authorization error or no answer. Defaults are 2 requests per second for 60 seconds with 4 in
+flight. Rates above 20 per second, durations above 600 seconds, more than 16 in flight or more
+than 200 turns need `--allow-high-load`.
+
+Run it from `meridian/` with the seeded traveler's sign-in available, as for `warm_demo.py`. The
+first command is a dry run that prints the plan and sends nothing:
+
+```sh
+venv/bin/python scripts/load_test.py --hosted --scenario catalog
+venv/bin/python scripts/load_test.py --hosted --scenario catalog \
+  --apply --i-understand-this-changes-aws
+```
+
+Chat turns invoke Amazon Bedrock and are billed to the account, and each turn takes seconds, so
+`retrieval` and `chat` require `--max-turns` and are best run slowly, for example
+`--rate 0.2 --duration 100 --max-turns 20 --concurrency 2`. The script refuses to run when `CI`
+is set.
+
+Reading the result: the table and the JSON report in `.local/load-test-<scenario>-<time>.json`
+give, for each endpoint and in total, the request count, errors by status (`network` is no
+answer, `bad_reply` is a chat reply with a failed step or no text), the p50, p95 and p99 latency
+in seconds, and the achieved rate. Percentiles use nearest rank over the successful (2xx)
+requests only; errors are counted separately. The report also records the Git commit, the target
+host with any account id masked, the scenario, the rate, the duration and the concurrency. A run
+that stopped early has partial numbers: do not compare it with a full run. Run the same scenario
+at a few rates, and wait for the previous run to finish, before reading anything into a trend.
+
+First runs, 15 Nov 2026, against the hosted `jwt` stack (App Runner, 1 vCPU and 2 GB; Aurora
+serverless with a 1 ACU floor and a reader; Runtimes on platform V1). They are a latency baseline
+at low rates, not a capacity test: nothing here says how many travelers the stack can serve.
+
+| Scenario | Rate and duration | Requests | Errors | p50 | p95 | p99 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `catalog` (7 read endpoints) | 2 per second, 60 s, 4 in flight | 120 | 0 | 0.22 s | 0.46 s | 0.54 s |
+| `retrieval` (Phase 3 turns) | 0.2 per second, 100 s, 2 in flight | 20 | 0 | 3.62 s | 4.02 s | 4.04 s |
+| `chat` (Phases 1 to 3) | 0.2 per second, 100 s, 2 in flight | 20 | 0 | 1.45 s | 3.97 s | 4.49 s |
+
+In the `chat` run, Phase 1 turns took 0.17 s at the median, Phase 2 1.45 s and Phase 3 3.51 s,
+which follows the work each phase does for a turn. To find a ceiling, raise the rate step by
+step on a stack no one else is using, and watch Aurora ACU use, Data API throttling, Lambda
+concurrency and the AgentCore quotas while it runs.

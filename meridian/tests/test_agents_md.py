@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
@@ -27,8 +28,8 @@ UNTRACKED_FILES = (
 )
 VALIDATION_BLOCK = re.compile(r"^```validation\n(.*?)^```", re.MULTILINE | re.DOTALL)
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
-CI_RUN = re.compile(r"^\s*-\s*run:\s*(.+?)\s*$", re.MULTILINE)
-DIRECTORY = re.compile(r"^#\s*in\s+(\S+)\s*$")
+CONTINUATION = re.compile(r"\\\n\s*")
+DIRECTORY = re.compile(r"^#\s*in\s+(\S.*?)\s*$")
 
 
 def is_untracked(path: str) -> bool:
@@ -41,25 +42,43 @@ def agents_text() -> str:
     return AGENTS.read_text()
 
 
+def logical_lines(script: str) -> list[str]:
+    """The commands in a shell script, with backslash continuations joined and blanks dropped."""
+    joined = CONTINUATION.sub(" ", script)
+    return [" ".join(line.split()) for line in joined.splitlines() if line.strip()]
+
+
 def validation_commands() -> list[tuple[str, str]]:
     """(directory, command) pairs from the block labelled validation."""
     blocks = VALIDATION_BLOCK.findall(agents_text())
     assert len(blocks) == 1, "expected exactly one fenced block labelled validation"
     directory, found = ".", []
-    for line in blocks[0].splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    for line in logical_lines(blocks[0]):
         match = DIRECTORY.match(line)
         if match:
             directory = match.group(1)
         elif not line.startswith("#"):
-            found.append((directory, line))
+            found.append((directory, line.removeprefix("venv/bin/")))
     return found
 
 
-def ci_commands() -> set[str]:
-    return {command.strip("'\"") for command in CI_RUN.findall(CI.read_text())}
+def ci_jobs() -> dict[str, dict]:
+    return yaml.safe_load(CI.read_text())["jobs"]
+
+
+def ci_commands() -> set[tuple[str, str]]:
+    """(directory, command) for every run step, the directory relative to meridian/."""
+    found = set()
+    for job in ci_jobs().values():
+        default = job.get("defaults", {}).get("run", {}).get("working-directory", "")
+        for step in job["steps"]:
+            if "run" not in step:
+                continue
+            workdir = step.get("working-directory", default)
+            directory = workdir.removeprefix("meridian").lstrip("/") or (
+                "." if workdir else "..")
+            found.update((directory, line) for line in logical_lines(step["run"]))
+    return found
 
 
 def named_paths() -> list[str]:
@@ -107,16 +126,19 @@ def test_every_named_path_exists():
     assert not missing, f"AGENTS.md names paths that do not exist: {missing}"
 
 
-def test_the_validation_block_quotes_only_ci_commands():
+def test_the_validation_block_is_exactly_the_ci_run_commands():
+    block = set(validation_commands())
     commands = ci_commands()
-    stale = []
-    for _, line in validation_commands():
-        bare = line.removeprefix("venv/bin/")
-        if bare not in commands:
-            stale.append(line)
 
-    assert validation_commands(), "the validation block is empty"
-    assert not stale, f"not run by application-ci.yml: {stale}"
+    assert block, "the validation block is empty"
+    assert not block - commands, f"not run by application-ci.yml: {sorted(block - commands)}"
+    assert not commands - block, f"run by CI, missing from AGENTS.md: {sorted(commands - block)}"
+
+
+def test_every_ci_job_has_a_timeout():
+    missing = [name for name, job in ci_jobs().items() if "timeout-minutes" not in job]
+
+    assert not missing, f"jobs without timeout-minutes: {missing}"
 
 
 def test_every_quoted_npm_script_exists_in_its_package():
@@ -140,7 +162,7 @@ def test_every_quoted_npm_script_exists_in_its_package():
 def test_the_block_covers_every_ci_job_directory():
     directories = {directory for directory, _ in validation_commands()}
 
-    assert {".", "frontend", "infra", "meridian_agentcore/agentcore/cdk"} <= directories
+    assert {".", "..", "frontend", "infra", "meridian_agentcore/agentcore/cdk"} <= directories
 
 
 @pytest.mark.parametrize("name,character", FORBIDDEN.items())

@@ -274,8 +274,10 @@ create that service; the opt-in `MeridianWebService` stack describes it so an ac
 runs it can import it into CloudFormation
 ([Operations](meridian/docs/OPERATIONS.md#bring-the-app-runner-service-under-cloudformation)).
 App Runner stopped accepting new customers on 30 April 2026, so a new deployment hosts the backend,
-one stateless container, on Amazon ECS with AWS Fargate or a similar service. Hosting is optional;
-AWS data and agent services are required for the corresponding local application features.
+one stateless container, on Amazon ECS Express Mode. The CDK app adds that path when it gets
+`-c backendHost=express`, and the App Runner path is unchanged without it
+([Operations](meridian/docs/OPERATIONS.md#host-the-backend-on-amazon-ecs-express-mode)). Hosting is
+optional; AWS data and agent services are required for the corresponding local application features.
 
 ## Tests and evidence
 

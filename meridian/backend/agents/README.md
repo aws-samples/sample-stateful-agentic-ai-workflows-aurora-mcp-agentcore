@@ -65,10 +65,17 @@ invocation passes its argument checks only when one call of the tool meets them 
 merging any change to the prompt, a tool description or an argument name, three times per case
 (`--repeats 3`), and compare with the recorded baseline.
 
+The averages alone can hide one bad case, so each case also has a floor. A run passes when it
+calls the right tools, meets every argument check and calls nothing forbidden. A case must pass a
+majority of its runs: 1 of 1 with one repeat, 2 of 3 with three, 3 of 4, 3 of 5. The script prints
+the ids of the cases below the floor and exits 1 (a missed threshold), even when the averages pass.
+A run that errored is not counted as a failure; it makes the result inconclusive (exit 2) unless a
+case or an average already missed.
+
 Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `d4c88f717866`, tools
 `f7102d25b38e`, cases `1458d7689217`, 29 cases x 3: 87 runs, none errored, selection accuracy
 1.00, argument accuracy 1.00 over 93 checks (each judged against one call), forbidden-call rate
-0.00. The default thresholds are 0.95, 0.95 and 0.00. A changed hash means the baseline no longer
+0.00, and every case passed all 3 of its runs, so it meets the per-case floor. The default thresholds are 0.95, 0.95 and 0.00. A changed hash means the baseline no longer
 applies: run it again.
 
 It is a dry run unless given `--apply --i-understand-this-changes-aws`, because it invokes the

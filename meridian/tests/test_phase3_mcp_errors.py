@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +34,12 @@ from tests.test_phase3_agent import RecordingModel, tool_results, tool_turn
 
 SERVER = Path(__file__).parent / "fixtures" / "phase3_stdio_server.py"
 LEAK_TEXT = ("hunter2", "123456789012", "Error executing tool")
+# Strands waits on a tool call with no limit of its own, and a turn waits on its model and tools.
+# These bounds are several times a run under heavy CPU load, so only a real hang reaches them.
+CALL_TIMEOUT_SECONDS = 60
+TURN_TIMEOUT_SECONDS = 120
+# The fixture server imports MCP and botocore before it answers; under load that took over 20 s.
+FIXTURE_START_TIMEOUT_SECONDS = 60
 
 
 def server_parameters(mode="catalog"):
@@ -40,7 +47,8 @@ def server_parameters(mode="catalog"):
 
 
 def fixture_client():
-    return MCPClient(lambda: stdio_client(server_parameters()), startup_timeout=20)
+    return MCPClient(
+        lambda: stdio_client(server_parameters()), startup_timeout=FIXTURE_START_TIMEOUT_SECONDS)
 
 
 @contextmanager
@@ -54,7 +62,9 @@ def started_client():
 
 
 def call(client, name, **arguments):
-    return client.call_tool_sync(tool_use_id="t1", name=name, arguments=arguments)
+    return client.call_tool_sync(
+        tool_use_id="t1", name=name, arguments=arguments,
+        read_timeout_seconds=timedelta(seconds=CALL_TIMEOUT_SECONDS))
 
 
 def test_a_server_side_tool_failure_has_the_text_the_hook_calls_server_reported():
@@ -113,8 +123,9 @@ def run_on_real_server(name, arguments, final="Done."):
     pool, model = RecordingPool(), RecordingModel([tool_turn(name, arguments),
                                                    {"kind": "text", "text": final}])
     try:
-        turn = asyncio.run(phase3.run_retrieval_turn(
-            "Prices please", traveler_id="trv_pinned", model=model, pool=pool))
+        turn = asyncio.run(asyncio.wait_for(phase3.run_retrieval_turn(
+            "Prices please", traveler_id="trv_pinned", model=model, pool=pool),
+            TURN_TIMEOUT_SECONDS))
     finally:
         pool.close()
     return turn, model, pool
@@ -229,8 +240,9 @@ def run_loyalty(program):
         {"kind": "text", "text": "I could not check that."}])
     try:
         with pytest.raises(phase3.RetrievalTurnError) as stopped:
-            asyncio.run(phase3.run_retrieval_turn(
-                "My points", traveler_id="trv_pinned", model=model, pool=pool))
+            asyncio.run(asyncio.wait_for(phase3.run_retrieval_turn(
+                "My points", traveler_id="trv_pinned", model=model, pool=pool),
+                TURN_TIMEOUT_SECONDS))
     finally:
         pool.close()
     return stopped.value, model, pool

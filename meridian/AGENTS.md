@@ -30,18 +30,36 @@ The Python version is 3.13 (the `Dockerfile` and CI). The local environment is `
 ## 2. Validation
 
 The block below is what `.github/workflows/application-ci.yml` runs. A test
-(`tests/test_agents_md.py`) fails when a line here is no longer a CI command or a package script.
+(`tests/test_agents_md.py`) fails when a line here is not a CI command, when a CI command is
+missing here, or when a package script is missing.
 Prefix Python tools with `venv/bin/` when running them locally.
 
 ```validation
 # in .
+python -m pip install pip==26.2.1
+python -m pip install --require-hashes -r requirements-ci.txt
+python -m pip install --require-hashes -r requirements.txt
 python -m pip install --require-hashes --no-deps -r requirements-runtime-tests.txt
+python -m pip install --require-hashes -r examples/langgraph/requirements.txt
 ruff check backend scripts tests examples meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets meridian_agentcore/agentcore/interceptors infra/functions
 python -m pytest -m "not database" tests examples/langgraph/tests
 python -m pip_audit -r requirements.txt
 python -m pip_audit -r requirements.txt -r requirements-runtime-tests.txt
 python -m pip_audit -r examples/langgraph/requirements.txt
+python -m pip_audit -r requirements-ci.txt
 python scripts/audit_runtime_dependencies.py
+# Runtime contracts: CI runs the next block once per Runtime, ${{ matrix.runtime }} being
+# MeridianConcierge, then MeridianWorkflow. Install uv 0.13.6 first (astral-sh/setup-uv).
+python scripts/stage_concierge_runtime.py
+python scripts/stage_workflow_runtime.py
+uv venv .local/runtime-contract
+uv pip install --python .local/runtime-contract/bin/python --no-deps --require-hashes -r meridian_agentcore/runtime-locks/${{ matrix.runtime }}.requirements.lock
+.local/runtime-contract/bin/python scripts/check_runtime_contract.py ${{ matrix.runtime }}
+# in meridian_agentcore/app/${{ matrix.runtime }}
+uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.13 \
+  --only-binary :all: \
+  --output-file ../../runtime-locks/${{ matrix.runtime }}.requirements.lock
+git diff --exit-code -- ../../runtime-locks/${{ matrix.runtime }}.requirements.lock
 # in frontend
 npm ci
 npm run lint
@@ -49,6 +67,7 @@ npm run typecheck
 npm run test:run
 npm run build
 npm audit --audit-level=high
+npx playwright install --with-deps chromium
 npm run test:accessibility
 # in infra
 npm ci
@@ -60,10 +79,20 @@ npm run build
 npm test -- --runInBand
 npm run format:check
 npm audit --audit-level=high
+# in ..
+docker build --tag meridian-ci ./meridian
+docker run --rm --network none --entrypoint python meridian-ci -m awslabs.postgres_mcp_server.server --help
+test "$(docker run --rm --network none --entrypoint python meridian-ci -c 'import platform; print(platform.python_version())')" = "$(cat meridian/.python-version)"
 ```
 
-- One more CI job: the `Dockerfile` build, with a network-less MCP server check and a check
-  that the image runs the Python in `.python-version`.
+- The `docker` lines at the end are the `Dockerfile` build job: a network-less MCP server check
+  and a check that the image runs the Python in `.python-version`. They run from the Git root.
+- The Runtime contracts job runs once per Runtime with the staged copies, a lock check (a
+  recompile with the pinned uv that must leave `meridian_agentcore/runtime-locks/` unchanged), a
+  hashed install of that lock, and `scripts/check_runtime_contract.py`. To run it by hand, set
+  `${{ matrix.runtime }}` to `MeridianConcierge`, then `MeridianWorkflow`; the lock check runs in
+  the Runtime's folder under `meridian_agentcore/app/`.
+- Every CI job sets `timeout-minutes`; the test fails when one does not.
 - Dependencies: `requirements.in` is the source, `requirements.txt` the hashed lock. Update with
   `uv pip compile --generate-hashes --upgrade-package <name> --output-file requirements.txt
   requirements.in`. Run `venv/bin/pip check` after installing.

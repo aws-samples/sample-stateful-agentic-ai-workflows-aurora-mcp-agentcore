@@ -17,6 +17,10 @@ Thresholds apply to the whole run: selection accuracy and argument accuracy must
 minimums and the forbidden-call rate must not pass its maximum. Set them from a recorded
 baseline of the current prompt and tool descriptions, then hold changes to that baseline.
 
+Each case also has a floor, because averages can hide one bad case: it must pass (right tools,
+every argument check, no forbidden call) in a majority of its runs, N // 2 + 1 of N. That is 1
+of 1, 2 of 3 and 3 of 5. The failing case ids are printed, and a miss exits 1.
+
 It refuses to run when ``CI`` is set, so it cannot run in a pipeline by accident. The report
 file, if asked for, must be inside .local (git-ignored).
 
@@ -39,7 +43,13 @@ sys.path.insert(0, str(MERIDIAN_DIR))
 from scripts.identity_release.settings import CONFIRM_FLAG  # noqa: E402
 from scripts.tool_choice_eval import runner  # noqa: E402
 from scripts.tool_choice_eval.cases import CaseError, load_cases  # noqa: E402
-from scripts.tool_choice_eval.scoring import CaseScore, Summary, summarize  # noqa: E402
+from scripts.tool_choice_eval.scoring import (  # noqa: E402
+    CaseScore,
+    Summary,
+    failing_cases,
+    required_passes,
+    summarize,
+)
 
 LOCAL_DIR = MERIDIAN_DIR / ".local"
 EXIT_PASS, EXIT_MISSED, EXIT_INCONCLUSIVE, EXIT_REFUSED = 0, 1, 2, 3
@@ -133,6 +143,18 @@ def verdict(summary: Summary, args: argparse.Namespace) -> list[str]:
     return missed
 
 
+def case_floor_misses(scores: list[CaseScore]) -> list[str]:
+    """One sentence for each case that passed too few of its runs."""
+    totals: dict[str, int] = {}
+    for score in scores:
+        totals[score.case_id] = totals.get(score.case_id, 0) + 1
+    return [
+        f"case {case_id} passed too few runs (needs {required_passes(totals[case_id])} "
+        f"of {totals[case_id]})"
+        for case_id in failing_cases(scores)
+    ]
+
+
 def describe(score: CaseScore) -> str:
     """One line for a run."""
     if score.error:
@@ -182,7 +204,7 @@ def live_run(cases: list, runtime: runner.Runtime, args: argparse.Namespace) -> 
         write_report(args.report, summary, scores, runner.fingerprint(runtime, cases), model_id)
     if summary.runs == 0:
         return EXIT_INCONCLUSIVE
-    missed = verdict(summary, args)
+    missed = verdict(summary, args) + case_floor_misses(scores)
     for line in missed:
         print(f"MISSED: {line}")
     if missed:

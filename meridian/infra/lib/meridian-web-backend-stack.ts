@@ -11,6 +11,21 @@ export interface MeridianWebBackendStackProps extends StackProps {
 }
 
 /**
+ * The backend image asset, built from meridian/Dockerfile for linux/amd64.
+ *
+ * Every hosting path builds it here, with these exact properties, so the asset hash (and so the
+ * image tag in the CDK assets repository) is the same image whichever service runs it.
+ */
+export function backendImageAsset(scope: Construct): ecrAssets.DockerImageAsset {
+  return new ecrAssets.DockerImageAsset(scope, 'BackendImage', {
+    directory: meridianDir,
+    file: 'Dockerfile',
+    platform: ecrAssets.Platform.LINUX_AMD64,
+    ignoreMode: IgnoreMode.DOCKER,
+  });
+}
+
+/**
  * The backend image, built from meridian/Dockerfile and pushed to the CDK
  * assets repository.
  *
@@ -23,12 +38,7 @@ export class MeridianWebBackendStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebBackendStackProps) {
     super(scope, id, props);
 
-    const image = new ecrAssets.DockerImageAsset(this, 'BackendImage', {
-      directory: meridianDir,
-      file: 'Dockerfile',
-      platform: ecrAssets.Platform.LINUX_AMD64,
-      ignoreMode: IgnoreMode.DOCKER,
-    });
+    const image = backendImageAsset(this);
 
     new CfnOutput(this, 'ImageUri', { value: image.imageUri });
     new CfnOutput(this, 'ServiceEnvironment', { value: JSON.stringify(props.environment) });

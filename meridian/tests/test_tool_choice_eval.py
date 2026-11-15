@@ -6,6 +6,7 @@ and refuses when ``CI`` is set; the last tests pin that.
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,15 @@ from backend.agents.concierge_definition import (
 from scripts import run_tool_choice_eval as cli
 from scripts.tool_choice_eval import runner, surface
 from scripts.tool_choice_eval.cases import CaseError, load_cases, parse_case
-from scripts.tool_choice_eval.scoring import ToolCall, errored, matches, score_case, summarize
+from scripts.tool_choice_eval.scoring import (
+    ToolCall,
+    errored,
+    failing_cases,
+    matches,
+    required_passes,
+    score_case,
+    summarize,
+)
 from scripts.tool_choice_eval.stubs import CallRecorder, canned_result
 from tests.scripted_model import ScriptedModel
 
@@ -299,6 +308,64 @@ def test_the_summary_rates_exclude_errored_runs_and_report_them():
     assert summarize([]).selection_accuracy == 0.0 and summarize([]).argument_accuracy is None
 
 
+# -- the per-case floor ------------------------------------------------------------------------
+
+CONVERT_ARGS = {"amount": 2400, "from_currency": "USD", "to_currency": "EUR"}
+
+
+def convert_case():
+    return case_with(
+        id="convert", expected_tools=["currency_convert"],
+        expected_arguments={"currency_convert": {
+            "amount": {"equals": 2400}, "from_currency": {"equals_ci": "USD"},
+            "to_currency": {"equals_ci": "EUR"}}})
+
+
+def run_of(case, kind):
+    if kind == "pass":
+        return score_case(case, [ToolCall("currency_convert", CONVERT_ARGS)])
+    if kind == "split":
+        return score_case(case, [
+            ToolCall("currency_convert", {**CONVERT_ARGS, "to_currency": "JPY"}),
+            ToolCall("currency_convert", {**CONVERT_ARGS, "amount": 1})])
+    if kind == "forbidden":
+        return score_case(case, [ToolCall("currency_convert", CONVERT_ARGS),
+                                 ToolCall("create_courtesy_hold", {})])
+    if kind == "error":
+        return errored(case, "ThrottlingException")
+    return score_case(case, [])
+
+
+@pytest.mark.parametrize("repeats, needed", [(1, 1), (2, 2), (3, 2), (4, 3), (5, 3), (6, 4)])
+def test_a_case_needs_a_majority_of_its_runs_to_pass(repeats, needed):
+    assert required_passes(repeats) == needed
+
+
+@pytest.mark.parametrize("kinds, failing", [
+    (["pass"], []),
+    (["split"], ["convert"]),
+    (["pass", "pass", "pass"], []),
+    (["pass", "pass", "split"], []),
+    (["pass", "split", "split"], ["convert"]),
+    (["pass", "pass", "forbidden"], []),
+    (["pass", "forbidden", "miss"], ["convert"]),
+    (["pass", "pass", "error"], []),
+    (["pass", "error", "error"], []),
+    (["error", "error", "error"], []),
+    (["split", "split", "error"], ["convert"]),
+])
+def test_a_case_that_passes_too_few_runs_is_reported_by_id(kinds, failing):
+    case = convert_case()
+    assert failing_cases([run_of(case, kind) for kind in kinds]) == failing
+
+
+def test_the_floor_is_judged_per_case_and_lists_ids_in_order():
+    one, two = convert_case(), case_with(id="alpha", expected_tools=["currency_convert"])
+    scores = [run_of(one, "split"), run_of(two, "pass"), run_of(two, "miss"),
+              run_of(one, "split"), run_of(two, "miss"), run_of(one, "pass")]
+    assert failing_cases(scores) == ["alpha", "convert"]
+
+
 # -- the agent the runner builds ---------------------------------------------------------------
 
 
@@ -517,3 +584,21 @@ def test_a_live_run_returns_the_exit_code_for_its_thresholds(monkeypatch, capsys
         monkeypatch.setattr(runner, "run_cases", lambda *a, _s=scores, **k: _s)
         assert cli.main(argv, {}) == code
     capsys.readouterr()
+
+
+def test_one_case_below_the_floor_is_a_miss_even_when_the_averages_pass(monkeypatch, capsys):
+    cases = [c for c in load_cases() if c.id == "currency_usd_to_eur"]
+    monkeypatch.setattr(cli, "load_cases", lambda: cases)
+    monkeypatch.setattr(runner, "load_runtime_model", lambda: object())
+    good = score_case(cases[0], [ToolCall("currency_convert", CONVERT_ARGS)])
+    split = score_case(cases[0], [
+        ToolCall("currency_convert", {**CONVERT_ARGS, "to_currency": "JPY"}),
+        ToolCall("currency_convert", {**CONVERT_ARGS, "amount": 1})])
+    others = [replace(good, case_id=f"other_{n}") for n in range(30)]
+    scores = [good, split, split, *others]
+    monkeypatch.setattr(runner, "run_cases", lambda *a, **k: scores)
+    assert summarize(scores).argument_accuracy >= cli.DEFAULT_MIN_ARGUMENTS
+    argv = ["--apply", "--i-understand-this-changes-aws", "--repeats", "3"]
+    assert cli.main(argv, {}) == cli.EXIT_MISSED
+    out = capsys.readouterr().out
+    assert "MISSED" in out and "currency_usd_to_eur" in out and "other_0" not in out
