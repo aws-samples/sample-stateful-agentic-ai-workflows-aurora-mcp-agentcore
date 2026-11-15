@@ -2,13 +2,14 @@
 
 Dry run by default: it prints the plan and sends nothing. A live run needs
 ``--apply --i-understand-this-changes-aws``, never runs when ``CI`` is set, and calls only the
-read endpoints in ``ALLOWED_READS`` plus read-only chat turns for Phases 1 to 3. It never creates,
+read endpoints in ``ALLOWED_READS`` plus chat turns for Phases 1 to 3. It never creates,
 confirms or releases a hold or booking, starts a Phase 5 workflow or writes a preference: every
-request passes ``guard`` first, which refuses anything else.
+request passes ``guard`` first, which refuses anything else. Phase 2 and 3 turns can still write
+a ``traveler_access_audit`` row when the model calls ``loyalty_balance``.
 
-Scenarios: ``catalog`` (read endpoints, no model calls), ``retrieval`` (Phase 3 chat turns, which
-run the hybrid search) and ``chat`` (turns for Phases 1 to 3). The last two invoke Amazon Bedrock
-and bill the account, so they need ``--max-turns``.
+Scenarios: ``catalog`` (read endpoints that write nothing, no model calls), ``retrieval``
+(Phase 3 chat turns, which run the hybrid search) and ``chat`` (turns for Phases 1 to 3). The
+last two invoke Amazon Bedrock and bill the account, so they need ``--max-turns``.
 
 Hosted:  MERIDIAN_AGENTCORE_AUTH=jwt python scripts/load_test.py --hosted --scenario catalog \
              --apply --i-understand-this-changes-aws
@@ -62,9 +63,7 @@ ALLOWED_READS = (
     re.compile(r"/api/health"),
     re.compile(r"/api/products"),
     re.compile(r"/api/packages"),
-    re.compile(r"/api/journeys"),
     re.compile(r"/api/me"),
-    re.compile(r"/api/memory/[A-Za-z0-9_]+"),
 )
 SCENARIOS = ("catalog", "retrieval", "chat")
 MODEL_SCENARIOS = frozenset({"retrieval", "chat"})
@@ -187,8 +186,6 @@ def build_requests(scenario: str, traveler: str) -> list[Req]:
             Req("GET /api/products", "GET", "/api/products?limit=50"),
             Req("GET /api/packages", "GET", "/api/packages?limit=20"),
             Req("GET /api/packages featured", "GET", "/api/packages?featured=true&limit=6"),
-            Req("GET /api/memory/{traveler}", "GET", f"/api/memory/{traveler}"),
-            Req("GET /api/journeys", "GET", "/api/journeys?limit=5"),
         ]
     elif scenario == "retrieval":
         requests = [turn(3, prompt, traveler) for prompt in PROMPT_LADDER[3].works]
@@ -295,6 +292,22 @@ def make_sender(base: str, headers: dict[str, str]) -> Callable[[Req], int]:
             return BAD_REPLY
         return 200
     return send
+
+
+def base_url_problem(base: str) -> str | None:
+    """Why ``base`` is not a bare scheme, host and optional port, or None.
+
+    The guard checks each request's path, but the sender posts to ``base`` plus that path. A
+    path, query, fragment or user info in ``base`` could send the guarded POST to another route.
+    """
+    parts = urlparse(base)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return "the base URL must start with http:// or https:// and name a host"
+    if any(mark in base for mark in "?#@\\") or any(c.isspace() for c in base):
+        return "the base URL must be only a scheme, host and optional port"
+    if parts.path.strip("/") or parts.params:
+        return "the base URL must be only a scheme, host and optional port, with no path"
+    return None
 
 
 def redact_host(base: str) -> str:
@@ -435,6 +448,10 @@ def main(argv: list[str] | None = None, environ: dict[str, str] | None = None) -
         return EXIT_REFUSED
     base = published.release_url(published.load_record()).rstrip("/") if args.hosted \
         else args.base_url.rstrip("/")
+    problem = base_url_problem(base)
+    if problem:
+        print(f"Refused: {problem}", file=sys.stderr)
+        return EXIT_REFUSED
     plan = Plan(args.scenario, build_requests(args.scenario, traveler_for_user(args.as_user)),
                 args.rate, args.duration, args.concurrency, args.max_turns)
     if not args.apply:

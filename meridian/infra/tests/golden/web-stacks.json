@@ -1,0 +1,24 @@
+{
+  "generatedFrom": "c3fc27a9",
+  "note": "sha256 of each stack template as built at that commit, with every 64-hex string replaced by <sha256>, synthesized with the fake context of express.test.cjs (IMPORT_CONTEXT, App Runner host set). Regenerate only for an intended change to these stacks.",
+  "scenarios": {
+    "iam": {
+      "MeridianWeb": "67acce84e40d5b1b18dba6b40b203f48b37ef91f8bc4e217929467c12bdb285c",
+      "MeridianWebBackend": "f0b20061028dd9c86a042a85f84dbe26f7aa9f288b4d5e2a463adc9202207207",
+      "MeridianWebRoles": "f8cd16be1b7600221ea947a6795cfa08db2d6723c94c1a439402db11e583b769",
+      "MeridianWebService": "04210f8944d446356f59b10285d3a006fe9a5d1782b6e6a0e64d3da5a5b42e7a"
+    },
+    "jwt": {
+      "MeridianWeb": "a84525081e9b6bda17bb3a0b5c54709436ed36fa86466103cc7803e2247944ea",
+      "MeridianWebBackend": "d58c011de8107d4f17e55f8b48fb85b166506debce213e576cb783c09f419edd",
+      "MeridianWebRoles": "1aec5187d44d7e1b8c5277dcc24139c0cc2cb406caff924c1161b29208f0ce09",
+      "MeridianWebService": "b76039f7382c0744faa7a4fcd121a4c6d1fe9973867787d522ff4561a5903409"
+    },
+    "jwt-tightened": {
+      "MeridianWeb": "a84525081e9b6bda17bb3a0b5c54709436ed36fa86466103cc7803e2247944ea",
+      "MeridianWebBackend": "d58c011de8107d4f17e55f8b48fb85b166506debce213e576cb783c09f419edd",
+      "MeridianWebRoles": "422c586536ad76304234257f95f8b4fb5073f06b8fb43182d1e024d72af6e5d8",
+      "MeridianWebService": "b76039f7382c0744faa7a4fcd121a4c6d1fe9973867787d522ff4561a5903409"
+    }
+  }
+}

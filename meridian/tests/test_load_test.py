@@ -54,7 +54,7 @@ def test_arrivals_follow_the_rate_not_the_reply_time():
 
 def test_requests_cycle_through_the_whole_scenario():
     seen = []
-    run(plan(rate=7, duration=1), lambda req: seen.append(req.name) or 200)
+    run(plan(rate=5, duration=1), lambda req: seen.append(req.name) or 200)
 
     assert sorted(seen) == sorted(r.name for r in plan().requests)
 
@@ -181,6 +181,7 @@ def test_every_other_write_route_in_the_app_is_refused():
     "/api/chat/book", "/api/chat/order", "/api/chat/order/stream", "/api/chat/book/stream",
     "/api/chat/stream", "/api/chat/holds", "/api/chat/bookings/b1", "/api/journeys/j1",
     "/api/memory/trv_x/facts", "/api/diagnostics/rls-probe", "/api/packages/p1",
+    "/api/memory/trv_x", "/api/journeys",
 ])
 def test_paths_beyond_the_allowlist_are_refused(path):
     for method in ("GET", "POST", "DELETE", "PATCH"):
@@ -237,6 +238,10 @@ def test_the_sender_maps_outcomes_to_statuses(monkeypatch):
     monkeypatch.setattr(warm_demo, "call", lambda *a: {"status": "healthy"})
     assert send(req) == 200
     monkeypatch.setattr(warm_demo, "call", lambda *a: {"message": ""})
+    assert send(chat) == load_test.BAD_REPLY
+    monkeypatch.setattr(warm_demo, "call", lambda *a: {
+        "message": "I encountered an error. Please try again.",
+        "activities": [{"title": "Error", "activity_type": "error"}]})
     assert send(chat) == load_test.BAD_REPLY
 
 
@@ -332,3 +337,31 @@ def test_an_aborted_live_run_exits_one(monkeypatch, tmp_path):
             "--duration", "1", *LIVE]
 
     assert load_test.main(argv, environ={}) == 1
+
+
+@pytest.mark.parametrize("base", [
+    "http://127.0.0.1:9/api/chat/book?", "http://127.0.0.1:9?", "http://127.0.0.1:9#x",
+    "http://127.0.0.1:9/prefix", "http://user:pw@127.0.0.1:9", "http://user@127.0.0.1:9",
+    "http://127.0.0.1:9/;x", "ftp://127.0.0.1:9", "127.0.0.1:9", "http://",
+    "http://127.0.0.1:9\\@evil.example", "http://127.0.0.1:9 /x",
+])
+def test_a_base_url_with_more_than_scheme_host_and_port_is_refused(base, no_traffic, capsys):
+    argv = ["--base-url", base, "--scenario", "catalog", *LIVE]
+
+    assert load_test.main(argv, environ={}) == 3
+    assert "Refused" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("base", [
+    "http://127.0.0.1:8000", "https://svc.example.com/", "https://svc.example.com:8443",
+    "http://[::1]:8000",
+])
+def test_a_bare_scheme_host_and_port_is_accepted(base):
+    assert load_test.base_url_problem(base.rstrip("/")) is None
+
+
+def test_a_hosted_record_url_with_a_path_is_refused_too(monkeypatch, no_traffic):
+    monkeypatch.setattr(published, "load_record", lambda: {})
+    monkeypatch.setattr(published, "release_url", lambda _r: "https://svc.example.com/x?y=1")
+
+    assert load_test.main(["--hosted", "--scenario", "catalog", *LIVE], environ={}) == 3

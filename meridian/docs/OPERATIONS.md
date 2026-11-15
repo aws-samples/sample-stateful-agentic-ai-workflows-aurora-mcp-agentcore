@@ -72,7 +72,7 @@ aws cloudformation update-termination-protection --region <region> \
   --stack-name MeridianAurora --no-enable-termination-protection
 aws rds modify-db-cluster --region <region> --db-cluster-identifier <cluster-name> \
   --no-deletion-protection --apply-immediately
-npx cdk destroy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
+npx cdk destroy --exclusively --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 ```
 
 The stack takes a final snapshot of the cluster, then deletes the cluster and
@@ -895,9 +895,9 @@ right and the clone is reviewed like any other migration.
   drift. The alternative, copying each grant and policy onto the clone, would break the first time
   a migration grants the login something new.
 - It gets a copy of the login's role settings (statement, lock and idle-in-transaction timeouts, and
-  TimeZone for the audit login). The migration clears the clone's settings and copies them again each
-  time it runs. After changing a login's settings, run it again or apply the same `ALTER ROLE` to the
-  clone.
+  TimeZone for the audit login). The migration clears the clone's settings and copies them when it
+  runs. `scripts/apply_migrations.py` records an applied migration and does not run it again, so
+  after changing a login's settings, apply the same `ALTER ROLE` to the clone in a new migration.
 - The migration refuses an existing clone with other attributes or other memberships.
 
 `tests/test_migration_034_contract.py` and `tests/test_login_rotation_clone_contract.py` check the
@@ -961,11 +961,13 @@ reports a failure.
 - `aws secretsmanager describe-secret --secret-id <name>` shows `RotationEnabled` true, the
   Lambda, `NextRotationDate`, and the stages `AWSCURRENT`, `AWSPREVIOUS` and no leftover
   `AWSPENDING` once the rotation has finished.
-- The secret now names the other user. Print the name only, never the password:
+- The secret now names the other user: the login after an even number of rotations, `<login>_clone`
+  after an odd number. Print the name only, never the password:
   `aws secretsmanager get-secret-value --secret-id <name> --query SecretString --output text | python -c 'import json,sys; print(json.load(sys.stdin)["username"])'`
 - The consumer works with the new credential. For the audit login, the next export run completes
   (`RunsCompleted` in the heartbeat alarm's metric) and `scripts/verify_audit_export.py` still
-  verifies the chain. For the backend, run `scripts/prove_backend_login.py`.
+  verifies the chain. For the backend, run `scripts/prove_backend_login.py`, which accepts either `meridian_backend` or
+  `meridian_backend_clone` (as `release_identity.py` preflight and `kill_and_resume_proof.py` do for their logins).
 - The rotation Lambda's log group has one line per step and, on a failure, a fixed phrase and the AWS
   error code, never a password or the service's own text.
 - Run `tests/test_migration_034_live.py` again after any later migration that grants a login
@@ -973,8 +975,13 @@ reports a failure.
 
 What to read when a rotation fails: the Lambda's log, then `describe-secret`. A failed `setSecret` or
 `testSecret` leaves `AWSCURRENT` where it was and nothing to undo. A failed `finishSecret` has already
-moved `AWSCURRENT` back. Secrets Manager shows the rotation as failed, and the next scheduled or
-manual rotation starts clean.
+moved `AWSCURRENT` back. Secrets Manager shows the rotation as failed. It does not clean up for you:
+the `RotateSecret` API documents that when `AWSPENDING` is present on a version other than
+`AWSCURRENT`, a later `RotateSecret` call assumes a rotation is still in progress and returns an
+error. After a failed rotation, check `describe-secret` for a leftover `AWSPENDING`, read the
+Lambda log for the cause, fix it, then remove the label with `aws secretsmanager
+update-secret-version-stage --secret-id <name> --remove-from-version-id <id> --version-stage
+AWSPENDING` before rotating again.
 
 ### Roll back
 
@@ -1214,7 +1221,7 @@ Undo in the reverse of the order above and stop at the step you need.
    you deployed with, then remove the settings it wrote:
 
    ```bash
-   node_modules/.bin/cdk destroy -a "node dist/bin/meridian-identity.js" \
+   node_modules/.bin/cdk destroy --exclusively -a "node dist/bin/meridian-identity.js" \
      -c domainPrefix=<unique-prefix> -c callbackUrls=<urls> --force
    sed -i '' '/^MERIDIAN_COGNITO_/d' .env   # macOS; on Linux: sed -i '/^MERIDIAN_COGNITO_/d' .env
    rm frontend/.env.development.local
@@ -2017,9 +2024,9 @@ only its own records. Against a hosted backend it needs
 basic-auth credentials at run time. Resolve that value from Secrets Manager
 when you run the command; do not store it in a file.
 
-To tear down the hosted app, run `npx cdk destroy MeridianWeb` from `infra/`,
+To tear down the hosted app, run `npx cdk destroy MeridianWeb --exclusively` from `infra/`,
 delete the App Runner service, then run
-`npx cdk destroy MeridianWebBackend MeridianWebRoles`. Delete the
+`npx cdk destroy MeridianWebBackend MeridianWebRoles --exclusively`. Delete the
 `meridian/web/api-token` secret if you created one. The backend images CDK pushed stay in the
 bootstrap stack's Amazon ECR repository; delete the `CDKToolkit` stack only if nothing else in the
 account and Region deploys with CDK, and empty its S3 bucket and ECR repository first if the delete
@@ -2132,7 +2139,7 @@ origin of `MeridianWeb` at the Express service:
 
 | Stack | Holds |
 | --- | --- |
-| `MeridianWebExpressRoles` | The task role (the same grants as the App Runner instance role, less the master login and shared-token secrets), the task execution role and the infrastructure role Express Mode requires. Kept apart so IAM settles before the service exists, as `MeridianWebRoles` is for App Runner |
+| `MeridianWebExpressRoles` | The task role (the same grants as the App Runner instance role, less the separate master-login and shared-token grants. Its one secret grant is the container's own Aurora login: the `meridian_backend` secret in the `jwt` release, and the master login in the `iam` release, where the container connects as the master), the task execution role and the infrastructure role Express Mode requires. Kept apart so IAM settles before the service exists, as `MeridianWebRoles` is for App Runner |
 | `MeridianWebExpress` | The `AWS::ECS::ExpressGatewayService` `meridian-web-express` and its CloudWatch log group |
 | `MeridianWeb` | As before, with the API origin set to the service's host (`ServiceHost`, the `Endpoint` URL without `https://`). It is an error to also set `MERIDIAN_BACKEND_HOST`, which names an App Runner host |
 
@@ -2244,13 +2251,21 @@ release record you copied aside:
 
 ```bash
 cd infra
-MERIDIAN_BACKEND_HOST=<App Runner service URL, host only> npx cdk deploy MeridianWeb --exclusively
+MERIDIAN_BACKEND_HOST=<App Runner service URL, host only> \
+MERIDIAN_COGNITO_HOSTED_UI_DOMAIN=<HostedUiDomain output of MeridianIdentity> \
+npx cdk deploy MeridianWeb --exclusively
 ```
+
+Keep the hosted UI domain set: `MeridianWeb` builds its Content-Security-Policy from it, so a
+rollback without it would drop the Cognito host from the policy and break sign-in.
 
 CloudFront returns to the App Runner service within minutes; App Runner was never changed. To
 remove the Express path, first switch `MeridianWeb` away from it (CloudFormation refuses to delete
 an export `MeridianWeb` still imports), then run
-`npx cdk destroy MeridianWebExpress MeridianWebExpressRoles -c backendHost=express`. Deleting the
+`npx cdk destroy MeridianWebExpress MeridianWebExpressRoles -c backendHost=express --exclusively`.
+Keep `--exclusively`: without it the CDK CLI also destroys every stack that depends on the ones you
+name, and `MeridianWeb` depends on the Express stacks, so the command would delete the live site
+(this happened on 15 November). Deleting the
 stack deletes the service, and Express Mode deletes the load balancer, security groups and
 certificate it created when no other Express service shares them. The log group is removed with the
 stack. The image stays in the CDK assets repository.
@@ -2583,23 +2598,28 @@ booking first.
 
 ## Load test
 
-`scripts/load_test.py` sends a small, steady stream of read-only requests to the hosted site and
-reports how long they took. Use it to get measured latency and error numbers for your own
-deployment. This repository does not publish any: results depend on your Region, Aurora size and
-Bedrock quotas.
+`scripts/load_test.py` sends a small, steady stream of requests that change no hold, booking or
+preference to the hosted site and reports how long they took. Use it to get measured latency and
+error numbers for your own deployment. This repository publishes only the low-rate baseline below,
+not a capacity figure: results depend on your Region, Aurora size and Bedrock quotas.
 
 What it measures:
 
 | Scenario | Calls | Model cost |
 | --- | --- | --- |
-| `catalog` | `/api/health`, `/api/me`, `/api/products`, `/api/packages`, `/api/memory/{traveler}`, `/api/journeys` | None |
+| `catalog` | `/api/health`, `/api/me`, `/api/products`, `/api/packages` (two requests). It writes no rows | None |
 | `retrieval` | Phase 3 chat turns, which run the hybrid search (vector and keyword) over Aurora | Bedrock |
 | `chat` | One read-only turn each for Phases 1, 2 and 3 | Bedrock |
 
 What it deliberately does not do: create, confirm or release a hold or booking, start a Phase 5
 workflow, or write a preference. Every request passes an allowlist of methods and paths before it
 is sent, and a test fails if a write route in the application becomes reachable. Chat turns still
-write their normal audit rows, so a run adds rows to the traveler's audit trail.
+write audit rows only in one case. A Phase 1 turn writes none. A Phase 2 or Phase 3 turn writes one
+`traveler_access_audit` row each time the model calls the `loyalty_balance` tool, which opens a
+traveler-scoped session (Phase 2 runs that tool in the MCP server's child process). The `catalog`
+scenario writes none. It once also called `/api/memory/{traveler}` and `/api/journeys`, which
+open a traveler-scoped session and commit an access-audit row on each call, so a default run
+added about 34 rows; those two requests were removed.
 
 Arrivals are open loop: requests start at `--rate` per second whether or not earlier ones have
 finished, so a slow stack shows up as high latency, not a lower rate. `--concurrency` caps the
@@ -2639,9 +2659,13 @@ at low rates, not a capacity test: nothing here says how many travelers the stac
 
 | Scenario | Rate and duration | Requests | Errors | p50 | p95 | p99 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `catalog` (7 read endpoints) | 2 per second, 60 s, 4 in flight | 120 | 0 | 0.22 s | 0.46 s | 0.54 s |
+| `catalog` (7 endpoints, including `/api/memory/{traveler}` and `/api/journeys`) | 2 per second, 60 s, 4 in flight | 120 | 0 | 0.22 s | 0.46 s | 0.54 s |
 | `retrieval` (Phase 3 turns) | 0.2 per second, 100 s, 2 in flight | 20 | 0 | 3.62 s | 4.02 s | 4.04 s |
 | `chat` (Phases 1 to 3) | 0.2 per second, 100 s, 2 in flight | 20 | 0 | 1.45 s | 3.97 s | 4.49 s |
+
+The `catalog` numbers come from the run that still included `/api/memory/{traveler}` and
+`/api/journeys`, which write audit rows and are not in the scenario now, so a new `catalog` run is
+not comparable with that row.
 
 In the `chat` run, Phase 1 turns took 0.17 s at the median, Phase 2 1.45 s and Phase 3 3.51 s,
 which follows the work each phase does for a turn. To find a ceiling, raise the rate step by

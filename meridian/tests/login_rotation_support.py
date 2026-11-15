@@ -22,7 +22,8 @@ LOGIN = "meridian_backend"
 CLONE = "meridian_backend_clone"
 CONFIG = "idle_in_transaction_session_timeout=120s,lock_timeout=10s,statement_timeout=30s"
 COLUMNS = ["rolname", "rolcanlogin", "rolsuper", "rolbypassrls", "rolcreaterole", "rolcreatedb",
-           "rolreplication", "rolinherit", "rolconnlimit", "config", "clone_is_member"]
+           "rolreplication", "rolinherit", "rolconnlimit", "config", "clone_can_use",
+           "clone_can_set"]
 
 
 def client_error(code, operation="Op"):
@@ -104,7 +105,8 @@ def verifier_matches(password, verifier):
 def role_row(name, **overrides):
     row = {"rolname": name, "rolcanlogin": False, "rolsuper": False, "rolbypassrls": False,
            "rolcreaterole": False, "rolcreatedb": False, "rolreplication": False,
-           "rolinherit": False, "rolconnlimit": -1, "config": CONFIG, "clone_is_member": True}
+           "rolinherit": False, "rolconnlimit": -1, "config": CONFIG,
+           "clone_can_use": True, "clone_can_set": True}
     return {**row, **overrides}
 
 

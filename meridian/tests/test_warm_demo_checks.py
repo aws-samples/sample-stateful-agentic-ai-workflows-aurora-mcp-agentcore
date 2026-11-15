@@ -24,3 +24,37 @@ def test_every_step_has_a_check():
 ])
 def test_the_data_checks_judge_the_shape_of_the_reply(check, reply, passes):
     assert (check(reply) is None) is passes
+
+
+ERROR_REPLY = {
+    "message": "I encountered an error in Production mode. Please try again.",
+    "activities": [{"title": "Concierge error", "activity_type": "error", "telemetry": None}],
+}
+
+
+def test_a_turn_that_fell_back_to_the_error_reply_fails_the_check():
+    assert warm_demo.check_turn(ERROR_REPLY) == "failed steps: Concierge error"
+
+
+def test_a_turn_with_ordinary_activities_and_a_message_passes():
+    reply = {"message": "Here are three trips.",
+             "activities": [{"title": "Search", "activity_type": "database", "telemetry": None}]}
+
+    assert warm_demo.check_turn(reply) is None
+
+
+def test_a_failed_telemetry_status_and_an_empty_reply_still_fail():
+    failed = {"message": "x", "activities": [{"title": "T", "telemetry": {"status": "failed"}}]}
+
+    assert warm_demo.check_turn(failed) == "failed steps: T"
+    assert warm_demo.check_turn({"message": "", "activities": []}) == "empty reply"
+
+
+def test_the_warm_up_fails_a_step_whose_reply_is_the_error_fallback(monkeypatch):
+    monkeypatch.setattr(warm_demo, "steps", lambda traveler: [
+        ("Phase 1 SQL", "/api/chat", {"message": "m"}, warm_demo.check_turn)])
+    monkeypatch.setattr(warm_demo, "call", lambda *args: ERROR_REPLY)
+
+    passed, failed = warm_demo.run_steps("http://testserver", {}, "trv_meridian_demo")
+
+    assert passed == [] and failed == ["Phase 1 SQL"]

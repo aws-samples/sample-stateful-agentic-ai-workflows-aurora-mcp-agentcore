@@ -271,6 +271,11 @@ def test_a_recent_passing_receipt_bound_to_this_release_has_no_findings(tmp_path
     assert proof_findings(write_proof(tmp_path)) == []
 
 
+def test_a_receipt_from_the_rotation_clone_has_no_findings(tmp_path):
+    assert proof_findings(write_proof(tmp_path, login="meridian_backend_clone")) == []
+    assert proof_findings(write_proof(tmp_path, login="meridian_workflow_clone")) != []
+
+
 def test_the_receipt_schema_is_the_documented_one():
     assert tuple(settings.PROOF_FIELDS) == (
         "ok", "at", "account", "region", "user_pool_id", "git_sha", "login", "checks")

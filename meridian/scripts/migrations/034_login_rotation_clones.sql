@@ -14,7 +14,9 @@
 -- it with SET TRUE) reach the clone through the membership. A privilege added to <login> later
 -- reaches the clone with it, so the two cannot drift apart. Role settings are not inherited, so the
 -- clone gets a copy of the login's role settings (the 031 timeouts, and TimeZone for the audit
--- export login); this migration re-copies them each time it runs. The clone has the same
+-- export login); the migration copies them when it runs. scripts/apply_migrations.py records an
+-- applied migration and never runs it again, so a later change to a login's role settings needs
+-- the same ALTER ROLE on the clone, in a new migration. The clone has the same
 -- attributes as the login: NOLOGIN until rotation sets a password, NOBYPASSRLS, NOINHERIT (the
 -- attribute only sets the default for new grants; the membership above names INHERIT TRUE),
 -- NOCREATEDB, NOCREATEROLE, and no role of its own besides <login>.

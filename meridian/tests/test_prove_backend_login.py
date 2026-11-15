@@ -1150,3 +1150,31 @@ def test_the_real_http_call_adds_the_authorization_header(monkeypatch):
 
     assert proof._http("GET", "/api/health", None, {"Authorization": "Bearer x"})[0] == 200
     assert captured["Authorization"] == "Bearer x"
+
+
+CLONE_LOGIN = "meridian_backend_clone"
+
+
+def test_after_a_rotation_the_clone_login_passes_the_proof_and_its_receipt(tmp_path):
+    harness = Harness(tmp_path, login=CLONE_LOGIN, db_user=CLONE_LOGIN)
+
+    assert run(harness) == 0
+    assert preflight.check_backend_login_proof(harness.path, target(), SHA, NOW) == []
+
+
+@pytest.mark.parametrize(("user", "passes"), [
+    ("meridian_backend", True), (CLONE_LOGIN, True),
+    ("meridian_gateway_clone", False), ("meridian_backend_clone_clone", False), (None, False),
+])
+def test_the_health_check_accepts_the_login_or_its_rotation_clone(user, passes):
+    found = proof.check_login(200, {"database_user": user})
+
+    assert (found is None) is passes
+
+
+@pytest.mark.parametrize(("login", "passes"), [
+    ("meridian_backend", True), (CLONE_LOGIN, True), ("meridian_admin", False)])
+def test_the_secret_check_accepts_the_login_or_its_rotation_clone(login, passes):
+    who = {"login": login, "bypass_rls": False, "superuser": False, "master_member": False}
+
+    assert (proof._login_problem(who) is None) is passes

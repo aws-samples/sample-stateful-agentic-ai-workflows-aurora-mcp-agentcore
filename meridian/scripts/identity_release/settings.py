@@ -28,6 +28,9 @@ GATEWAY_LOGICAL_NAMES = {IAM: "meridian-aurora", JWT: "meridian-aurora-jwt"}
 HOLDS_TARGET = "MeridianHolds"
 
 CONFIRM_FLAG = "--i-understand-this-changes-aws"
+# The login rotation alternates a secret between a workload login and its clone, so a secret
+# connects as either name. Keep in step with CLONE_SUFFIX in infra/functions/login_rotation.
+LOGIN_CLONE_SUFFIX = "_clone"
 INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
 MERIDIAN_DIR = Path(__file__).resolve().parents[2]
 AGENTCORE_DIR = MERIDIAN_DIR / "meridian_agentcore"
@@ -249,3 +252,8 @@ def working_tree_changes(repo: Path = MERIDIAN_DIR) -> list[str]:
     output = _git(repo, "status", "--porcelain", "--untracked-files=all", "--", ".",
                   ":(exclude).local", what="the git status")
     return [line for line in output.splitlines() if line.strip()]
+
+
+def login_names(login: str) -> frozenset[str]:
+    """The names a secret may connect as for ``login``: the login and its rotation clone."""
+    return frozenset({login, login + LOGIN_CLONE_SUFFIX})

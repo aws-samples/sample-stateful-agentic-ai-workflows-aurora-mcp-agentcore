@@ -292,8 +292,9 @@ def check_login(status: int, body: Any) -> str | None:
     if status != 200 or not isinstance(body, dict):
         return f"/api/health answered HTTP {status}"
     user = body.get("database_user")
-    if user != BACKEND_LOGIN:
-        return f"/api/health says the backend runs as {user!r}, not {BACKEND_LOGIN}"
+    if user not in settings.login_names(BACKEND_LOGIN):
+        return (f"/api/health says the backend runs as {user!r}, not {BACKEND_LOGIN} "
+                f"or its rotation clone")
     return None
 
 
@@ -518,8 +519,9 @@ def guard_deployment(deps: Dependencies) -> tuple[str, str]:
 
 
 def _login_problem(who: Mapping[str, Any]) -> str | None:
-    if who.get("login") != BACKEND_LOGIN:
-        return f"the secret connects as {who.get('login')!r}, not as {BACKEND_LOGIN}"
+    if who.get("login") not in settings.login_names(BACKEND_LOGIN):
+        return (f"the secret connects as {who.get('login')!r}, not as {BACKEND_LOGIN} "
+                f"or its rotation clone")
     flags = [name for name, key in (("BYPASSRLS", "bypass_rls"), ("superuser", "superuser"),
                                     (f"a member of {MASTER_LOGIN}", "master_member"))
              if who.get(key)]

@@ -53,10 +53,9 @@ from scripts.tool_choice_eval.scoring import (  # noqa: E402
 
 LOCAL_DIR = MERIDIAN_DIR / ".local"
 EXIT_PASS, EXIT_MISSED, EXIT_INCONCLUSIVE, EXIT_REFUSED = 0, 1, 2, 3
-# Set from the baseline of 15 Nov 2026 (prompt d4c88f717866, tools f7102d25b38e, cases
-# 1458d7689217, global.anthropic.claude-sonnet-5-5, 29 cases x 3): selection 1.00, argument
-# accuracy 1.00 over 93 checks, forbidden-call rate 0.00. The minimums leave room for one or
-# two nondeterministic misses; a forbidden call is never accepted.
+# Set from the baseline of 15 Nov 2026 (``runner.BASELINE`` holds its fingerprint, 29 cases x 3):
+# selection 1.00, argument accuracy 1.00 over 93 checks, forbidden-call rate 0.00. The minimums
+# leave room for one or two nondeterministic misses; a forbidden call is never accepted.
 DEFAULT_MIN_SELECTION = 0.95
 DEFAULT_MIN_ARGUMENTS = 0.95
 DEFAULT_MAX_FORBIDDEN = 0.0
@@ -118,7 +117,7 @@ def print_plan(cases: list, runtime: runner.Runtime, repeats: int) -> None:
     marks = runner.fingerprint(runtime, cases)
     print(f"model id (BEDROCK_MODEL_ID or the Runtime default): {runner.resolved_model_id()}")
     print(f"cases: {len(cases)} x {repeats} run(s); prompt {marks.prompt}, "
-          f"tools {marks.tools}, cases {marks.cases}")
+          f"tools {marks.tools}, cases {marks.cases}, settings {marks.settings}")
     print("tools the model sees:")
     for name in marks.tool_names:
         print(f"  {name}")
@@ -158,7 +157,9 @@ def case_floor_misses(scores: list[CaseScore]) -> list[str]:
 def describe(score: CaseScore) -> str:
     """One line for a run."""
     if score.error:
-        return f"ERROR   {score.case_id}: {score.error}"
+        forbidden = ", ".join(score.forbidden)
+        after = f" (after forbidden call: {forbidden})" if forbidden else ""
+        return f"ERROR   {score.case_id}: {score.error}{after}"
     bad_args = [f"{t}.{a}" for t, a, ok in score.argument_checks if not ok]
     status = "PASS" if score.selected and not score.forbidden and not bad_args else "FAIL"
     detail = []
@@ -180,6 +181,7 @@ def write_report(
     body = {
         "model_id": model_id,
         "prompt": marks.prompt, "tools": marks.tools, "cases": marks.cases,
+        "settings": marks.settings,
         "summary": summary.__dict__,
         "runs": [score.__dict__ for score in scores],
     }
@@ -202,7 +204,7 @@ def live_run(cases: list, runtime: runner.Runtime, args: argparse.Namespace) -> 
           f"argument accuracy {arguments} over {summary.argument_checks} checks")
     if args.report:
         write_report(args.report, summary, scores, runner.fingerprint(runtime, cases), model_id)
-    if summary.runs == 0:
+    if summary.runs == 0 and not summary.forbidden_call_rate:
         return EXIT_INCONCLUSIVE
     missed = verdict(summary, args) + case_floor_misses(scores)
     for line in missed:

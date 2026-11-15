@@ -60,6 +60,7 @@ from backend.db.journey_store import (  # noqa: E402
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
+from scripts.identity_release.settings import login_names  # noqa: E402
 
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 # A cold worker spends several seconds in the search and availability nodes
@@ -106,9 +107,10 @@ def worker_env(worker_login: bool, environ: Mapping[str, str] | None = None) -> 
 
 def require_worker_login(current_user: str | None) -> None:
     """Fail unless the worker really ran as the workflow login, not the master role."""
-    if current_user != WORKFLOW_LOGIN:
+    if current_user not in login_names(WORKFLOW_LOGIN):
         raise AssertionError(
-            f"The worker must run as {WORKFLOW_LOGIN}, but it reported {current_user!r}"
+            f"The worker must run as {WORKFLOW_LOGIN} or its rotation clone, "
+            f"but it reported {current_user!r}"
         )
 
 

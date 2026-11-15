@@ -115,12 +115,16 @@ def _argument_checks(case: Case, calls: Iterable[ToolCall]) -> tuple[tuple[str, 
     return tuple(checks)
 
 
+def _forbidden_calls(case: Case, called: set[str]) -> set[str]:
+    return called if not case.offers_tools else called & case.forbidden()
+
+
 def score_case(case: Case, calls: Iterable[ToolCall]) -> CaseScore:
     """Score the calls one run made on ``case``."""
     calls = list(calls)
     called = {call.name for call in calls}
     expected, allowed = set(case.expected_tools), set(case.allowed_tools)
-    forbidden = called if not case.offers_tools else called & case.forbidden()
+    forbidden = _forbidden_calls(case, called)
     missing = expected - called
     unexpected = called - expected - allowed
     return CaseScore(
@@ -133,22 +137,34 @@ def score_case(case: Case, calls: Iterable[ToolCall]) -> CaseScore:
     )
 
 
-def errored(case: Case, message: str) -> CaseScore:
-    """The score of a run that failed before the model finished, for example a Bedrock error."""
-    return CaseScore(case.id, False, (), (), (), (), error=message)
+def errored(case: Case, message: str, calls: Iterable[ToolCall] = ()) -> CaseScore:
+    """The score of a run that failed before the model finished, for example a Bedrock error.
+
+    ``calls`` are the calls recorded before the failure. A forbidden one among them still counts
+    against the run, since the error does not undo it.
+    """
+    forbidden = _forbidden_calls(case, {call.name for call in calls})
+    return CaseScore(case.id, False, (), (), tuple(sorted(forbidden)), (), error=message)
 
 
 def summarize(scores: Iterable[CaseScore]) -> Summary:
-    """The metrics over ``scores``. Errored runs count in ``errors``, not in the rates."""
+    """The metrics over ``scores``. Errored runs count in ``errors``, not in the rates.
+
+    The forbidden-call rate is the exception: an errored run that made a forbidden call before it
+    failed counts in it, in the numerator and the denominator.
+    """
     scores = list(scores)
     scored = [score for score in scores if score.error is None]
     checks = [passed for score in scored for _, _, passed in score.argument_checks]
     runs = len(scored)
+    forbidden_errors = sum(1 for s in scores if s.error is not None and s.forbidden)
+    forbidden_runs = sum(bool(s.forbidden) for s in scored) + forbidden_errors
     return Summary(
         runs=runs,
         errors=len(scores) - runs,
         selection_accuracy=sum(s.selected for s in scored) / runs if runs else 0.0,
-        forbidden_call_rate=sum(bool(s.forbidden) for s in scored) / runs if runs else 0.0,
+        forbidden_call_rate=(
+            forbidden_runs / (runs + forbidden_errors) if runs + forbidden_errors else 0.0),
         argument_accuracy=sum(checks) / len(checks) if checks else None,
         argument_checks=len(checks),
     )
@@ -181,6 +197,6 @@ def failing_cases(scores: Iterable[CaseScore]) -> list[str]:
     return sorted(
         case_id
         for case_id, case_runs in runs.items()
-        if sum(run_passed(r) or r.error is not None for r in case_runs)
+        if sum(run_passed(r) or (r.error is not None and not r.forbidden) for r in case_runs)
         < required_passes(len(case_runs))
     )

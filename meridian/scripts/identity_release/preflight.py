@@ -483,8 +483,8 @@ def _receipt_problems(proof: Any, target: Target, git_sha: str, now: datetime) -
     if not isinstance(proof, dict) or proof.get("ok") is not True:
         return ["the last run did not pass"]
     problems = []
-    if proof.get("login") != PROOF_LOGIN:
-        problems.append(f"it ran as {proof.get('login')!r}, not {PROOF_LOGIN}")
+    if proof.get("login") not in settings.login_names(PROOF_LOGIN):
+        problems.append(f"it ran as {proof.get('login')!r}, not {PROOF_LOGIN} or its clone")
     problems += _timestamp_problems(proof.get("at"), now)
     bound = (("account", target.account), ("region", target.region),
              ("user_pool_id", target.cognito.pool_id), ("git_sha", git_sha))

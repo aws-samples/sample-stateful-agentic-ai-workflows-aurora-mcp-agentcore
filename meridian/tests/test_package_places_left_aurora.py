@@ -121,8 +121,9 @@ async def test_only_the_service_roles_may_call_it():
         (),
     )
     allowed = {row["role"] for row in rows if row["allowed"]}
+    clones = {f"{caller}_clone" for caller in CALLERS}
     assert set(CALLERS) <= allowed
-    assert allowed - set(CALLERS) <= {"meridian_admin"}, "the owner, and nobody else"
+    assert allowed - set(CALLERS) - clones <= {"meridian_admin"}, "the owner, and nobody else"
     public = await client.execute(
         "SELECT bool_or(a.grantee = 0) AS public_execute FROM pg_proc p, "
         "aclexplode(p.proacl) a WHERE p.proname = 'package_places_left'",

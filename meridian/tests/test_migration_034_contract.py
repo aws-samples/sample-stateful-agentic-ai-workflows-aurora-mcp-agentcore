@@ -101,3 +101,11 @@ def test_the_migration_number_is_unique_and_follows_033():
 
 def test_the_file_is_one_statement_for_the_runner():
     assert len(split_sql(MIGRATION.read_text())) == 1
+
+
+def test_the_header_and_docs_do_not_promise_a_rerun_the_runner_never_does():
+    header = " ".join(MIGRATION.read_text().split("\nDO $$")[0].replace("-- ", "").split())
+    ops = (MIGRATION.parents[2] / "docs" / "OPERATIONS.md").read_text()
+
+    assert "each time it runs" not in header and "never runs it again" in header
+    assert "copies them again each time it runs" not in ops

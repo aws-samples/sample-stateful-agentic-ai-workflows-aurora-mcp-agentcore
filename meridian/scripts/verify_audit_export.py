@@ -118,10 +118,18 @@ def list_versions(s3, bucket: str, prefix: str) -> Tuple[Dict[str, List[str]], L
 def parse_object(body: bytes) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Split an object into its header and its row lines; a malformed one raises ValueError."""
     parsed = [json.loads(line) for line in body.decode().splitlines()]
+    if any(not isinstance(line, dict) for line in parsed):
+        raise ValueError("a line is not a JSON object")
     if not parsed or parsed[0].get("type") != "header":
         raise ValueError("no header line")
     if any(line.get("type") != "row" for line in parsed[1:]):
         raise ValueError("a line after the header is not a row")
+    for name in ("first", "last"):
+        mark = parsed[0].get(name)
+        if not isinstance(mark, dict) or not {"ts", "id"} <= set(mark):
+            raise ValueError(f"the header has no {name} with ts and id")
+    if any(not {"id", "ts", "row"} <= set(line) for line in parsed[1:]):
+        raise ValueError("a row line lacks id, ts or row")
     return parsed[0], parsed[1:]
 
 
@@ -169,7 +177,12 @@ def walk_chain(s3, bucket: str, table: str, prefix: str) -> Walk:
     _check_key_state(walk, versions, markers)
     previous, expected = "0" * 64, 1
     for key in sorted(versions):
-        seq = int(SEQ_IN_KEY.search(key).group(1))
+        named = SEQ_IN_KEY.search(key)
+        if named is None:
+            walk.findings.append(Finding(
+                table, "object-malformed", f"{key}: the key does not end in a sequence number"))
+            continue
+        seq = int(named.group(1))
         if seq != expected:
             walk.findings.append(Finding(
                 table, "chain-gap", f"expected seq {expected}, found {seq}"))

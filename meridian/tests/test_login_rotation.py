@@ -227,7 +227,8 @@ def test_set_secret_refuses_a_clone_or_login_with_a_forbidden_attribute(world, c
     {"config": ""},
     {"rolconnlimit": 5},
     {"rolinherit": True},
-    {"clone_is_member": False},
+    {"clone_can_use": False},
+    {"clone_can_set": False},
 ])
 def test_set_secret_refuses_a_clone_that_differs_from_the_login(world, change):
     start(world)
@@ -263,6 +264,28 @@ def test_test_secret_passes_after_set_secret(world):
     world.step("setSecret")
     world.step("testSecret")
     world.step("testSecret")
+
+
+def test_a_standalone_test_secret_checks_only_the_pair(world):
+    # CloudFormation with RotateImmediatelyOnUpdate false runs testSecret with no createSecret.
+    world.step("testSecret")
+    world.data.roles[CLONE]["config"] = ""
+    with pytest.raises(world.lr.RotationError, match="differ or are missing"):
+        world.step("testSecret", token="t2")
+
+
+def test_test_secret_with_a_pending_copy_of_the_current_value_checks_only_the_pair(world):
+    world.sm.versions["t1"] = {"value": world.sm.versions["v1"]["value"], "stages": {"AWSPENDING"}}
+
+    world.step("testSecret", staged=False)
+
+
+def test_the_role_query_tests_both_roles_exist_before_asking_pg_has_role(lr):
+    query = lr.ROLE_QUERY
+
+    assert query.count("to_regrole(") == 4
+    assert query.index("to_regrole(") < query.index("pg_has_role(")
+    assert "'USAGE'" in query and "'SET'" in query and "'MEMBER'" not in query
 
 
 def test_test_secret_fails_when_the_pending_user_cannot_log_in(world):
@@ -423,3 +446,10 @@ def test_the_handler_logs_a_fixed_phrase_and_never_the_service_text(lr, monkeypa
 def test_require_consistent_pair_accepts_matching_rows(lr):
     settings = lr.Settings(CLUSTER, "meridian", ROTATOR_SECRET, LOGIN)
     lr.require_consistent_pair({LOGIN: role_row(LOGIN), CLONE: role_row(CLONE)}, settings)
+
+
+def test_the_proof_tools_name_the_clone_the_rotation_creates(lr):
+    from scripts.identity_release import settings
+
+    assert settings.LOGIN_CLONE_SUFFIX == lr.CLONE_SUFFIX
+    assert settings.login_names(LOGIN) == {LOGIN, CLONE}

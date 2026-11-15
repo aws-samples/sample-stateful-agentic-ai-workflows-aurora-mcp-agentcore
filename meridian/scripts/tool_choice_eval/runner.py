@@ -21,11 +21,42 @@ from scripts import stage_concierge_runtime
 from scripts.tool_choice_eval import surface
 from scripts.tool_choice_eval.cases import Case
 from scripts.tool_choice_eval.scoring import CaseScore, errored, score_case
-from scripts.tool_choice_eval.stubs import CallRecorder, StubTool
+from scripts.tool_choice_eval.stubs import (
+    MAX_CALLS_PER_TURN,
+    SHORTLIST,
+    CallRecorder,
+    StubTool,
+    canned_result,
+)
 
 RUNTIME_DIR = stage_concierge_runtime.RUNTIME_DIR
 EVAL_TRAVELER = "trv_eval_traveler"
 CONFIRMED_ACTIONS = {"confirmed_hold": "hold", "confirmed_booking": "booking"}
+# The fingerprint of the baseline run of 15 Nov 2026 (29 cases x 3, selection 1.00, argument
+# accuracy 1.00, forbidden-call rate 0.00), the one place these values are held.
+# tests/test_tool_choice_eval.py fails when the code no longer produces them, and
+# backend/agents/README.md names them. "tools" and "settings" were added to the fingerprint after
+# that run (the tools hash now also covers the stub results): they were computed offline, and the
+# live baseline must be re-run to confirm them.
+BASELINE = {
+    "model_id": "global.anthropic.claude-sonnet-5-5",
+    "prompt": "d4c88f717866",
+    "tools": "3cea07db6de6",
+    "cases": "1458d7689217",
+    "settings": "88ef970c933a",
+}
+# Arguments that make every canned stub answer, so the fingerprint covers what the model reads.
+SAMPLE_ARGUMENTS = {
+    "search_trips": {"query": "quiet beach", "max_price_per_person": 3000},
+    "hybrid_trip_search": {"query": "quiet beach", "trip_type": "Beach"},
+    "compare_packages": {"package_ids": ["CTY-002", "BCH-001"]},
+    "price_range": {"destination": "Tokyo"},
+    "region_inventory": {"region": "Asia", "trip_type": "City"},
+    "currency_convert": {"amount": 10, "from_currency": "USD", "to_currency": "EUR"},
+    "get_package_details": {"packageId": "CTY-002"},
+    "loyalty_balance": {"program": "Sample"},
+    "create_courtesy_hold": {},
+}
 
 
 @dataclass(frozen=True)
@@ -119,7 +150,7 @@ def run_case(case: Case, model: Any, runtime: Runtime) -> CaseScore:
         agent = build_eval_agent(case, model, runtime, recorder)
         agent(turn_prompt_for(case, runtime))
     except Exception as error:  # noqa: BLE001 - reported as an inconclusive run, never swallowed
-        return errored(case, f"{type(error).__name__}: {_one_line(error)}")
+        return errored(case, f"{type(error).__name__}: {_one_line(error)}", recorder.calls)
     return score_case(case, recorder.calls)
 
 
@@ -176,6 +207,27 @@ def _turn_templates(runtime: Runtime) -> str:
     return "\n".join(parts)
 
 
+def _stub_results() -> str:
+    """What each stub returns for a fixed argument set, and for the call limit it enforces."""
+    results = [
+        json.dumps([name, *canned_result(name, args)], sort_keys=True)
+        for name, args in sorted(SAMPLE_ARGUMENTS.items())
+    ]
+    return "\n".join([*results, f"limit {MAX_CALLS_PER_TURN} shortlist {SHORTLIST}"])
+
+
+def _model_settings() -> str:
+    """The model id and the request settings the Runtime's own ``load_model`` applies."""
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
+    from model.load import MIN_MAX_TOKENS, REQUEST_FIELDS  # noqa: PLC0415
+
+    max_tokens = os.getenv("BEDROCK_MAX_TOKENS", "16000")
+    return json.dumps({"model_id": resolved_model_id(), "request_fields": REQUEST_FIELDS,
+                       "max_tokens": max_tokens, "min_max_tokens": MIN_MAX_TOKENS},
+                      sort_keys=True)
+
+
 def fingerprint(runtime: Runtime, cases: Iterable[Case]) -> SimpleNamespace:
     """What a result was measured against: hashes of the prompt, the tool specs and the cases.
 
@@ -187,11 +239,12 @@ def fingerprint(runtime: Runtime, cases: Iterable[Case]) -> SimpleNamespace:
     cases = list(cases)
     specs = "".join(
         f"{tool.tool_name}|{tool.tool_spec['description']}|{tool.tool_spec['inputSchema']}"
-        for tool in stub_tools(runtime))
+        for tool in stub_tools(runtime)) + _stub_results()
     prompt = runtime.definition.system_prompt(4) + _turn_templates(runtime)
     case_text = "\n".join(
         f"{_canonical(case)}\n{_case_inputs(case, runtime)}" for case in cases)
     return SimpleNamespace(
         prompt=_digest(prompt), tools=_digest(specs), cases=_digest(case_text),
+        settings=_digest(_model_settings()),
         tool_names=sorted(tool.tool_name for tool in stub_tools(runtime)),
     )

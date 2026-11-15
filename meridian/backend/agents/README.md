@@ -70,13 +70,19 @@ calls the right tools, meets every argument check and calls nothing forbidden. A
 majority of its runs: 1 of 1 with one repeat, 2 of 3 with three, 3 of 4, 3 of 5. The script prints
 the ids of the cases below the floor and exits 1 (a missed threshold), even when the averages pass.
 A run that errored is not counted as a failure; it makes the result inconclusive (exit 2) unless a
-case or an average already missed.
+case or an average already missed. The exception is a forbidden call: one made before the error
+still counts in the forbidden-call rate and fails the case.
 
-Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `d4c88f717866`, tools
-`f7102d25b38e`, cases `1458d7689217`, 29 cases x 3: 87 runs, none errored, selection accuracy
-1.00, argument accuracy 1.00 over 93 checks (each judged against one call), forbidden-call rate
-0.00, and every case passed all 3 of its runs, so it meets the per-case floor. The default thresholds are 0.95, 0.95 and 0.00. A changed hash means the baseline no longer
-applies: run it again.
+Baseline, 15 Nov 2026: `global.anthropic.claude-sonnet-5-5`, prompt `d4c88f717866`, cases
+`1458d7689217`, 29 cases x 3: 87 runs, none errored, selection accuracy 1.00, argument accuracy
+1.00 over 93 checks (each judged against one call), forbidden-call rate 0.00, and every case
+passed all 3 of its runs, so it meets the per-case floor. The default thresholds are 0.95, 0.95
+and 0.00. The fingerprint also covers the stub results (in the tools hash, `3cea07db6de6`) and the
+model id and request settings (`88ef970c933a`). `BASELINE` in
+`scripts/tool_choice_eval/runner.py` holds all of these values, and a test fails when the code
+stops producing them. The tools and settings hashes were added after the live run and computed
+offline, so the live baseline must be run again to confirm them. A changed hash means the baseline
+no longer applies: run it again.
 
 It is a dry run unless given `--apply --i-understand-this-changes-aws`, because it invokes the
 model on Amazon Bedrock and bills the calling account; ask the account owner first. It refuses

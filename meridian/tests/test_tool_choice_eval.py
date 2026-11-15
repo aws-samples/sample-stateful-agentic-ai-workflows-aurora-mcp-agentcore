@@ -18,7 +18,7 @@ from backend.agents.concierge_definition import (
     WRITE_TOOLS,
 )
 from scripts import run_tool_choice_eval as cli
-from scripts.tool_choice_eval import runner, surface
+from scripts.tool_choice_eval import runner, stubs, surface
 from scripts.tool_choice_eval.cases import CaseError, load_cases, parse_case
 from scripts.tool_choice_eval.scoring import (
     ToolCall,
@@ -457,6 +457,70 @@ def test_a_failing_model_is_an_errored_run_with_a_masked_one_line_reason(runtime
     assert score.error and "\n" not in score.error and "123456789012" not in score.error
 
 
+HOLD_CALL = ToolCall("create_courtesy_hold", {})
+
+
+def test_a_forbidden_call_made_before_an_error_still_counts_against_the_run(runtime):
+    # One forbidden tool call, then the script runs out and the run errors.
+    model = ScriptedModel([{"kind": "tool", "id": "t1", "name": "create_courtesy_hold",
+                            "input": {}}])
+
+    score = runner.run_case(case_with(), model, runtime)
+
+    assert score.error and score.forbidden == ("create_courtesy_hold",)
+    assert summarize([score]).forbidden_call_rate == 1.0
+
+
+def test_errored_runs_without_a_forbidden_call_stay_out_of_every_rate():
+    case = case_with(expected_tools=["currency_convert"])
+    good = score_case(case, [ToolCall("currency_convert", {})])
+    summary = summarize([good, errored(case, "boom", [ToolCall("price_range", {})]),
+                         errored(case, "boom")])
+
+    assert summary.forbidden_call_rate == 0.0 and (summary.runs, summary.errors) == (1, 2)
+
+
+def test_a_forbidden_errored_run_counts_in_the_rate_and_fails_its_case():
+    case = case_with(expected_tools=["currency_convert"])
+    good = score_case(case, [ToolCall("currency_convert", {})])
+    bad = errored(case, "boom", [HOLD_CALL])
+
+    assert summarize([good, bad]).forbidden_call_rate == 0.5
+    assert failing_cases([good, bad]) == [case.id]
+    assert failing_cases([good, errored(case, "boom")]) == []
+
+
+def test_the_fingerprint_changes_when_a_stub_result_or_a_model_setting_changes(
+    runtime, monkeypatch
+):
+    cases = load_cases()
+    before = runner.fingerprint(runtime, cases)
+    monkeypatch.setitem(stubs.LOYALTY, "tier", "Silver")
+    assert runner.fingerprint(runtime, cases).tools != before.tools
+    monkeypatch.undo()
+    monkeypatch.setenv("BEDROCK_MAX_TOKENS", "8000")
+    assert runner.fingerprint(runtime, cases).settings != before.settings
+    monkeypatch.undo()
+    monkeypatch.setenv("BEDROCK_MODEL_ID", "another.model")
+    assert runner.fingerprint(runtime, cases).settings != before.settings
+
+
+def test_the_recorded_baseline_is_what_the_code_fingerprints_and_the_readme_names(
+    runtime, monkeypatch
+):
+    monkeypatch.delenv("BEDROCK_MODEL_ID", raising=False)
+    monkeypatch.delenv("BEDROCK_MAX_TOKENS", raising=False)
+    marks = runner.fingerprint(runtime, load_cases())
+    baseline = runner.BASELINE
+    readme = (Path(__file__).resolve().parents[1] / "backend" / "agents" / "README.md").read_text()
+
+    assert runner.resolved_model_id() == baseline["model_id"]
+    for name in ("prompt", "tools", "cases", "settings"):
+        assert getattr(marks, name) == baseline[name], name
+        assert baseline[name] in readme, name
+    assert "scripts/tool_choice_eval/runner.py" in readme
+
+
 def test_the_fingerprint_changes_when_the_prompt_text_changes(runtime, monkeypatch):
     cases = load_cases()
     before = runner.fingerprint(runtime, cases)
@@ -580,7 +644,9 @@ def test_a_live_run_returns_the_exit_code_for_its_thresholds(monkeypatch, capsys
     for scores, code in [([good], cli.EXIT_PASS),
                          ([score_case(cases[0], [])], cli.EXIT_MISSED),
                          ([good, errored(cases[0], "boom")], cli.EXIT_INCONCLUSIVE),
-                         ([errored(cases[0], "boom")], cli.EXIT_INCONCLUSIVE)]:
+                         ([errored(cases[0], "boom")], cli.EXIT_INCONCLUSIVE),
+                         ([errored(cases[0], "boom", [ToolCall("create_courtesy_hold", {})])],
+                          cli.EXIT_MISSED)]:
         monkeypatch.setattr(runner, "run_cases", lambda *a, _s=scores, **k: _s)
         assert cli.main(argv, {}) == code
     capsys.readouterr()

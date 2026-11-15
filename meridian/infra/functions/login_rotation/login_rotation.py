@@ -59,7 +59,12 @@ ROLE_QUERY = (
     "SELECT r.rolname, r.rolcanlogin, r.rolsuper, r.rolbypassrls, r.rolcreaterole, "
     "r.rolcreatedb, r.rolreplication, r.rolinherit, r.rolconnlimit, "
     "coalesce((SELECT string_agg(c, ',' ORDER BY c) FROM unnest(r.rolconfig) c), '') AS config, "
-    "pg_has_role(CAST(:clone AS name), CAST(:login AS name), 'MEMBER') AS clone_is_member "
+    "coalesce(CASE WHEN to_regrole(:clone) IS NOT NULL AND to_regrole(:login) IS NOT NULL "
+    "THEN pg_has_role(CAST(:clone AS name), CAST(:login AS name), 'USAGE') END, false) "
+    "AS clone_can_use, "
+    "coalesce(CASE WHEN to_regrole(:clone) IS NOT NULL AND to_regrole(:login) IS NOT NULL "
+    "THEN pg_has_role(CAST(:clone AS name), CAST(:login AS name), 'SET') END, false) "
+    "AS clone_can_set "
     "FROM pg_roles r WHERE r.rolname IN (:login, :clone)"
 )
 CONNECT_QUERY = (
@@ -179,7 +184,7 @@ def _rows(response: Dict[str, Any], names: List[str]) -> List[Dict[str, Any]]:
 
 ROLE_COLUMNS = [
     "rolname", "rolcanlogin", "rolsuper", "rolbypassrls", "rolcreaterole", "rolcreatedb",
-    "rolreplication", "rolinherit", "rolconnlimit", "config", "clone_is_member",
+    "rolreplication", "rolinherit", "rolconnlimit", "config", "clone_can_use", "clone_can_set",
 ]
 
 
@@ -207,7 +212,7 @@ def require_consistent_pair(roles: Dict[str, Dict[str, Any]], settings: Settings
             raise RotationError(PHRASE_PAIR)
     if any(login[name] != clone[name] for name in SAME_ATTRIBUTES):
         raise RotationError(PHRASE_PAIR)
-    if not clone["clone_is_member"]:
+    if not clone["clone_can_use"] or not clone["clone_can_set"]:
         raise RotationError(PHRASE_PAIR)
 
 
@@ -242,13 +247,31 @@ def set_secret(sm, data, secret_id: str, token: str, settings: Settings) -> None
     )
 
 
+def _read_pending(sm, secret_id: str, token: str) -> Optional[Dict[str, Any]]:
+    """Return the pending version's value, or None when no version holds a value for the token."""
+    try:
+        return _read_secret(sm, secret_id, VersionId=token, VersionStage=PENDING)
+    except ClientError as err:
+        if err.response["Error"]["Code"] == "ResourceNotFoundException":
+            return None
+        raise
+
+
 def check_secret(sm, data, secret_id: str, token: str, settings: Settings) -> None:
-    """Check the pair and that the pending user can log in; the Data API cannot test a version."""
-    pending = _read_secret(sm, secret_id, VersionId=token, VersionStage=PENDING)
+    """Check the pair and that the pending user can log in; the Data API cannot test a version.
+
+    CloudFormation with ``RotateImmediatelyOnUpdate`` false runs ``testSecret`` alone, on a pending
+    version that is absent or a copy of the current one. There is no new credential to check then,
+    so only the pair is checked.
+    """
+    pending = _read_pending(sm, secret_id, token)
     current = _read_secret(sm, secret_id, VersionStage=CURRENT)
+    roles = _read_roles(data, settings)
+    if pending is None or pending == current:
+        require_consistent_pair(roles, settings)
+        return
     if pending["username"] != alternate_role(current["username"], settings):
         raise RotationError(PHRASE_ROLE)
-    roles = _read_roles(data, settings)
     require_consistent_pair(roles, settings)
     if not roles[pending["username"]]["rolcanlogin"]:
         raise RotationError(PHRASE_PAIR)

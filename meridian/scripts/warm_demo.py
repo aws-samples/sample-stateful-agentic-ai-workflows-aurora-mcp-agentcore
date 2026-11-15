@@ -94,9 +94,15 @@ def check_health(result: dict) -> str | None:
 
 
 def check_turn(result: dict) -> str | None:
+    """Fail a chat turn when a step failed or the route fell back to its error reply.
+
+    The backend answers HTTP 200 with an "I encountered an error" message and an activity of
+    type ``error`` when a route hits its catch-all, so the status alone does not prove success.
+    """
     failed = [
         a.get("title", "?") for a in result.get("activities", [])
-        if (a.get("telemetry") or {}).get("status") in {"error", "failed"}
+        if a.get("activity_type") == "error"
+        or (a.get("telemetry") or {}).get("status") in {"error", "failed"}
     ]
     if failed:
         return "failed steps: " + ", ".join(failed)

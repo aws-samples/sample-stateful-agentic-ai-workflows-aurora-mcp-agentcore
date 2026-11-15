@@ -133,6 +133,31 @@ def test_a_malformed_object_is_reported_not_a_crash(world, capsys):
     assert code == 1 and "object-malformed" in codes(out)
 
 
+def test_a_stray_key_under_the_table_prefix_is_reported_and_the_walk_continues(world, capsys):
+    _aurora, bucket = world
+    bucket.objects[f"audit-export/v1/{TABLE}/notes.txt"] = b"hello"
+    code, out = run(capsys)
+    assert code == 1 and codes(out) == ["object-malformed"]
+    assert f"{TABLE}: 3 objects, 3 rows" in out.out
+
+
+HEADER = b'{"type": "header", "first": {"ts": "x", "id": "y"}, "last": {"ts": "x", "id": "y"}}\n'
+
+
+@pytest.mark.parametrize("body", [
+    b'{"type": "header", "table": "agent_audit_log", "seq": 4}\n',
+    b'{"type": "header", "table": "agent_audit_log", "seq": 4, "first": {}, "last": {}}\n',
+    b"[1, 2]\n",
+    HEADER + b'{"type": "row"}\n',
+])
+def test_an_object_that_is_json_but_lacks_header_or_row_fields_is_reported(world, capsys, body):
+    _aurora, bucket = world
+    bucket.objects[f"audit-export/v1/{TABLE}/00000000/000000000004.jsonl"] = body
+    code, out = run(capsys)
+    assert code == 1 and "object-malformed" in codes(out)
+    assert f"{TABLE}: 4 objects" in out.out
+
+
 def test_an_exported_row_edited_in_aurora_is_named_by_column_not_value(world, capsys):
     aurora, _bucket = world
     aurora.tables[TABLE][1]["doc"]["agent"] = "attacker-chosen-value"

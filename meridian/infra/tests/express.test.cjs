@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -107,6 +108,27 @@ for (const mode of ['iam', 'jwt']) {
       }
     });
   }
+}
+
+const GOLDEN = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'golden', 'web-stacks.json'), 'utf8'),
+);
+const normalize = (template) => JSON.stringify(template).replace(/[0-9a-f]{64}/g, '<sha256>');
+const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
+
+for (const [scenario, mode, tighten] of [
+  ['iam', 'iam', false], ['jwt', 'jwt', false], ['jwt-tightened', 'jwt', true],
+]) {
+  test(`the existing stacks match the templates recorded at ${GOLDEN.generatedFrom} (${scenario})`, (t) => {
+    stubSite(t);
+    const processEnv = { ...absent, ...(tighten ? { MERIDIAN_TIGHTEN_ROLE: '1' } : {}) };
+    const actual = synthesize(IMPORT_CONTEXT, { mode, processEnv });
+    const recorded = GOLDEN.scenarios[scenario];
+    assert.deepEqual(Object.keys(recorded).sort(), Object.keys(actual).sort());
+    for (const name of Object.keys(recorded)) {
+      assert.equal(sha256(normalize(actual[name])), recorded[name], `${scenario} ${name}`);
+    }
+  });
 }
 
 test('an empty switch value is the same as no switch', (t) => {

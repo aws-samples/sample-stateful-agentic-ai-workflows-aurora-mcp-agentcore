@@ -51,6 +51,12 @@ def test_the_worker_must_report_the_workflow_login():
             require_worker_login(seen)
 
 
+def test_the_worker_may_report_the_workflow_logins_rotation_clone():
+    require_worker_login(f"{WORKFLOW_LOGIN}_clone")
+    with pytest.raises(AssertionError, match=WORKFLOW_LOGIN):
+        require_worker_login("meridian_backend_clone")
+
+
 def test_lost_response_reads_the_identity_event_only_when_asked():
     events = [{"event": "identity", "current_user": WORKFLOW_LOGIN}, {"event": "reply_lost"}]
     check_worker_identity(events, True)

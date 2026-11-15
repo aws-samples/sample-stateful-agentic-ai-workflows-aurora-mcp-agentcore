@@ -360,7 +360,7 @@ The table excludes credits, free-tier allowances, discounts, taxes and support c
 
 | Component | Usage to budget | Estimate and cost control |
 | --- | --- | --- |
-| [Aurora Serverless v2](https://aws.amazon.com/rds/aurora/pricing/) | ACU-hours for every instance, storage, backup storage and applicable I/O | Sum average ACUs x hours x the regional ACU rate. The template's nonzero 0.5-ACU floor does not auto-pause. Account separately for retained snapshots and any added readers. |
+| [Aurora Serverless v2](https://aws.amazon.com/rds/aurora/pricing/) | ACU-hours for every instance, storage, backup storage and applicable I/O | Sum average ACUs x hours x the regional ACU rate. The template's nonzero 1-ACU floor does not auto-pause. Account separately for retained snapshots and any added readers. |
 | [Bedrock models](https://aws.amazon.com/bedrock/pricing/) | Input/output tokens, embedding input and rerank queries/chunks | Measure actual model calls per journey, including retries and catalog seeding. Apply the selected model and inference-tier rates; a user turn can cause several model calls. |
 | [AgentCore Runtime](https://aws.amazon.com/bedrock/agentcore/pricing/) | Metered CPU and memory consumption for both Runtimes | Use the rate for the deployed compute generation and observed session usage. Include review pauses and memory retention in measurements rather than pricing only model latency. |
 | [AgentCore Gateway, Policy and Memory](https://aws.amazon.com/bedrock/agentcore/pricing/) | Tool discovery/calls, policy evaluations, conversation events and memory operations | Count each metered operation, including retries and discovery. Workflow snapshots live in Aurora; Concierge conversation memory is a separate AgentCore cost. |
