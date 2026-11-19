@@ -45,7 +45,8 @@ RUNTIME_EVENT_LIMIT = 60
 CONCIERGE_EVENT_LIMIT = 5000
 TRAVELERS = (JORDAN_TRAVELER, DECOY_TRAVELER)
 AUDIT_RESIDUE = (
-    "audit rows (traveler_access_audit, the agent audit log) are append-only and stay")
+    "audit rows (traveler_access_audit, the agent audit log, booking_action_audit) are "
+    "append-only and stay, with the run's booking, hold request and journey rows")
 MEMORY_RESIDUE = (
     f"AgentCore Memory events written for actor {JORDAN_TRAVELER} by the Concierge turn are not "
     "deleted by this command; they expire with the memory's 30-day event expiry")
@@ -94,7 +95,8 @@ class Context:
         run_id: Eight hex characters that make this run's threads unique.
         design: The Gateway enforcement that shipped (``both``, ``cedar`` or ``interceptor``).
         package: The package details Jordan read, used to build catalog-true holds.
-        threads: Every journey or thread name the run may have created, for the purge.
+        threads: Every journey or thread name the run may have created, whose holds are
+            released afterwards.
         owned_bookings: ``(traveler, booking)`` pairs the run provably made, for the release.
         baseline: Each traveler's booking ids before the first probe, for the leftover check.
         memory_sessions: Concierge session ids sent, whose Memory events stay behind.
@@ -109,7 +111,7 @@ class Context:
     memory_sessions: list[str] = field(default_factory=list)
 
     def thread(self, label: str) -> str:
-        """A thread name unique to this run, remembered for the purge."""
+        """A thread name unique to this run, remembered for the release of its holds."""
         name = f"{THREAD_PREFIX}{self.run_id}{label}"
         if name in self.threads:
             raise ValueError(f"the thread label {label!r} was used twice in one run")
@@ -414,7 +416,7 @@ PLAN: tuple[ProbeSpec, ...] = (
     ProbeSpec("runtime.jordan_pings_workflow", "runtime", JORDAN, ALLOWED,
               "MeridianWorkflow ping with Jordan's token", _runtime(JORDAN, WORKFLOW, "ping", "p")),
     ProbeSpec("runtime.jordan_runs_workflow", "runtime", JORDAN, ALLOWED,
-              "MeridianWorkflow review-only start with Jordan's token (purged afterwards)",
+              "MeridianWorkflow review-only start with Jordan's token (holds released after)",
               _runtime(JORDAN, WORKFLOW, "turn", "wj")),
     ProbeSpec("runtime.jordan_opens_concierge", "runtime", JORDAN, ALLOWED,
               "MeridianConcierge turn with Jordan's token, read to its result",

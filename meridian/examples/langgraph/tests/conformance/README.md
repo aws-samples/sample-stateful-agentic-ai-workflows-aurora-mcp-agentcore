@@ -35,7 +35,10 @@ rather than a bare fixture swap:
   `FakeCluster` first, which was worse than no test at all: the fake accepted
   a text parameter for the JSONB `checkpoint` column, so the suite was green
   while the saver could not write a single checkpoint to Aurora. The fake is
-  gone; each test clears its own threads before and after.
+  gone; each test clears its own generated threads before and after.
+- **Thread ids**: upstream's literal `thread-1`, `thread-2` and `t1` are replaced by ids
+  generated per run and per pytest-xdist worker (`thread_ids.py`). The fixture clears only those,
+  so a checkpoint thread somebody else owns under a common name is never deleted.
 - **Sync -> async call sites**: tests that called `.put()`/`.get_tuple()`
   synchronously were converted to `await saver.aput(...)` /
   `await saver.aget_tuple(...)` inside `async def` tests. The assertions are

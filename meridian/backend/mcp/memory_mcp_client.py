@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 
 import asyncio
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,31 @@ from mcp.client.stdio import stdio_client
 
 from backend.mcp.concierge_mcp_client import _decode
 from backend.mcp.subprocess_env import aws_subprocess_env
+
+
+# The refusal ``TravelerAuthorizationError`` carries when the workload has no active binding for
+# the requested traveler. FastMCP prefixes it with "Error executing tool <name>: ".
+BINDING_DENIAL = re.compile(r"subject is not authorized for traveler (\S+)")
+
+
+class MemoryToolError(RuntimeError):
+    """A memory tool failed for a reason other than the traveler-binding denial."""
+
+
+class TravelerNotAuthorized(PermissionError):
+    """The server refused the traveler claim because the workload has no binding for it."""
+
+    def __init__(self, traveler_id: str, message: str) -> None:
+        super().__init__(message)
+        self.traveler_id = traveler_id
+
+
+def tool_error(message: str) -> Exception:
+    """The exception for a tool error text: a binding denial, or any other failure."""
+    denial = BINDING_DENIAL.search(message)
+    if denial:
+        return TravelerNotAuthorized(denial.group(1).rstrip(".,;:)"), message)
+    return MemoryToolError(message)
 
 
 def _server_params() -> StdioServerParameters:
@@ -79,7 +105,7 @@ class MeridianMemoryMCPClient:
         )
         decoded = _decode(result)
         if getattr(result, "isError", False):
-            raise PermissionError(str(decoded))
+            raise tool_error(str(decoded))
         return decoded
 
     @property

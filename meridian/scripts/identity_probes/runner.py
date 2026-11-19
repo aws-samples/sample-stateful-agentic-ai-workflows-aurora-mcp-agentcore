@@ -19,16 +19,16 @@ from scripts.identity_probes.receipt import FULL, Receipt, scrub
 
 
 class Cleanup(Protocol):
-    """What the run removes when it is done."""
+    """What the run gives back when it is done: holds are released, no row is deleted."""
 
-    def purge_thread(self, thread: str) -> None:
-        """Remove a journey or thread the run created, and its snapshots and executions."""
+    def release_thread(self, thread: str) -> None:
+        """Give back the active holds of a thread the run created; delete nothing."""
 
     def release_bookings(self, bookings: list[BookingRef]) -> int:
-        """Remove ``(traveler, booking)`` pairs (with lines and hold requests); return how many."""
+        """Give back ``(traveler, booking)`` pairs through the Gateway; return how many."""
 
     def leftovers(self, prefix: str, baseline: Mapping[str, frozenset[str]]) -> list[str]:
-        """Describe what remains: threads with the prefix and bookings not in ``baseline``."""
+        """Describe the holds still held: threads with the prefix, bookings not in ``baseline``."""
 
 
 @dataclass(frozen=True)
@@ -62,22 +62,22 @@ def _attempt(problems: list[str], what: str, step: Callable[[], Any], default: A
 
 
 def tidy(cleanup: Cleanup, ctx: Context) -> dict[str, Any]:
-    """Release the run's bookings, purge its threads and list what remains.
+    """Give back the run's holds through the Gateway and list the holds still held.
 
-    Bookings go first, by exact id, because purging a thread removes the hold requests that
-    tie a booking to the run. Every step runs even when an earlier one failed or was
-    interrupted. A step that cannot run is reported as a problem. A check that cannot run
-    counts as one leftover, because an unknown state is not a clean one.
+    Bookings go first, by exact id, then the holds of each thread. Nothing is deleted: the
+    bookings, hold requests, journeys and action audit rows stay. Every step runs even when an
+    earlier one failed or was interrupted. A step that cannot run is reported as a problem. A
+    check that cannot run counts as one leftover, because an unknown state is not a clean one.
     """
     problems: list[str] = []
     owned = sorted(ctx.owned_bookings)
     released = _attempt(
         problems, "release", lambda: cleanup.release_bookings(owned) if owned else 0, 0)
-    purged = 0
+    threads = 0  # threads whose holds were read back as inactive, whether or not they had any
     for thread in dict.fromkeys(ctx.threads):
-        purged += _attempt(problems, thread, lambda t=thread: _purge(cleanup, t), 0)
+        threads += _attempt(problems, thread, lambda t=thread: _release_thread(cleanup, t), 0)
     items = _leftover_items(cleanup, ctx, problems)
-    return {"threads_purged": purged, "bookings_released": released, "leftovers": len(items),
+    return {"threads_checked": threads, "bookings_released": released, "leftovers": len(items),
             "leftover_items": [scrub(item) for item in items], "problems": problems}
 
 
@@ -92,8 +92,8 @@ def _leftover_items(cleanup: Cleanup, ctx: Context, problems: list[str]) -> list
     return listed
 
 
-def _purge(cleanup: Cleanup, thread: str) -> int:
-    cleanup.purge_thread(thread)
+def _release_thread(cleanup: Cleanup, thread: str) -> int:
+    cleanup.release_thread(thread)
     return 1
 
 
@@ -126,5 +126,6 @@ def run_proof(
 def describe_cleanup(notes: dict[str, Any]) -> str:
     """One line saying what the cleanup removed and what it could not account for."""
     problems = "; ".join(notes["problems"]) or "none"
-    return (f"cleanup: {notes['threads_purged']} thread(s) purged, {notes['bookings_released']} "
+    return (f"cleanup: {notes['threads_checked']} thread(s) checked, "
+            f"{notes['bookings_released']} "
             f"booking(s) released, {notes['leftovers']} leftover(s), problems: {problems}")

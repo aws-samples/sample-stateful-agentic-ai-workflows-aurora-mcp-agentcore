@@ -12,6 +12,7 @@ import pytest
 import pytest_asyncio
 
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import delete_unaudited_fixture
 
 pytestmark = pytest.mark.database
 
@@ -47,9 +48,9 @@ async def booked():
         return booking_id
 
     yield client, book
-    for booking_id in made:
-        await client.execute("DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,))
-        await client.execute("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+    # Plain-SQL fixtures: no hold request, no Lambda, no action audit row. The helper refuses
+    # to delete a booking such a row references.
+    await delete_unaudited_fixture(client, booking_ids=made)
 
 
 async def _places_left(client, package_id):

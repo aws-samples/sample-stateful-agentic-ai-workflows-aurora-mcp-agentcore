@@ -100,14 +100,17 @@ Capture the rows you need before cleanup. The reset lists records by default:
 python scripts/release_demo_bookings.py --booking-id <selected-booking>
 ```
 
-After inspecting the selected row and approving the deletion:
+After inspecting the selected row and approving the change, a held booking goes back through the
+Gateway and no row is deleted:
 
 ```bash
 python scripts/release_demo_bookings.py --booking-id <selected-booking> \
   --apply --i-understand-this-changes-aws
 ```
 
-This deletes the selected booking, lines, hold identity and associated action audit rows in one
-administrative transaction. It is not the user-facing `release_hold` action. Saved journey and
+To delete a booking, including a confirmed one, on a database you are willing to discard, add
+`--delete-from-disposable-database`. That deletes the selected booking, lines, hold identity and
+associated action audit rows in one administrative transaction, so it removes audit evidence. It
+is not the user-facing `release_hold` action. Saved journey and
 snapshot history remains, so start a new conversation after resetting. Never resume an old saved
 workflow whose business records were administratively deleted.

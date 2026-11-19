@@ -5,6 +5,7 @@ import re
 
 import pytest
 
+from scripts import governed_release
 from scripts import stop_and_resume_proof as proof
 
 
@@ -126,194 +127,6 @@ def test_a_waiting_hold_must_carry_a_captured_intent_id():
         GOOD, HELD, "waiting", saved_hold_request_id="hr-other"))
 
 
-class FakeClient:
-    def __init__(self, thread_count):
-        self.thread_count = thread_count
-        self.statements = []
-
-    async def execute(self, sql, params=(), **_kwargs):
-        self.statements.append(sql)
-        if "FROM journey_threads WHERE thread_id" in sql:
-            return [{"journey_id": "jrn-1"}]
-        if "COUNT(*) AS n FROM journey_threads" in sql:
-            return [{"n": self.thread_count}]
-        return []
-
-
-async def test_the_clean_up_refuses_to_purge_a_journey_that_has_other_threads():
-    client = FakeClient(thread_count=2)
-
-    with pytest.raises(RuntimeError, match="other threads"):
-        await proof._purge_run(client, "phase5-proof-abcd1234")
-
-    assert not any(sql.lstrip().startswith("DELETE") for sql in client.statements)
-
-
-async def test_the_clean_up_refuses_a_thread_the_proof_did_not_create():
-    client = FakeClient(thread_count=1)
-
-    with pytest.raises(RuntimeError, match="not created by this proof"):
-        await proof._purge_run(client, "jordan-real-thread")
-
-    assert client.statements == []
-
-
-THREAD = "phase5-proof-abcd1234"
-JOURNEY = "jrn-1"
-RUN_TABLES = ("booking_action_audit", "bookings", "booking_lines", "hold_requests",
-              "journeys", "journey_executions",
-              "journey_threads", "workflow_snapshots", "workflow_session_stops")
-FORCED = ("booking_action_audit", "bookings", "booking_lines")
-
-
-class FakeAurora:
-    """A small Aurora: the run's rows, and FORCE RLS on the booking tables.
-
-    A booking table shows and deletes rows only inside a transaction pinned to the row's traveler
-    and the booking agent. Any other statement silently matches nothing, as Aurora does.
-    """
-
-    DELETE = re.compile(r"DELETE FROM (\w+) WHERE (\w+) = %s")
-    COUNT = re.compile(r"SELECT COUNT\(\*\) AS n FROM (\w+) WHERE (\w+) = %s")
-
-    def __init__(self, *, keep=(), traveler="trv_meridian_demo"):
-        self.keep, self.traveler = set(keep), traveler
-        self.tables = {
-            "journeys": [{"journey_id": JOURNEY}],
-            "journey_threads": [{"journey_id": JOURNEY, "thread_id": THREAD}],
-            "hold_requests": [{"journey_id": JOURNEY, "booking_id": "bk-1"}],
-            "bookings": [{"booking_id": "bk-1", "traveler_id": traveler}],
-            "booking_lines": [{"booking_id": "bk-1", "traveler_id": traveler}],
-            "booking_action_audit": [{"booking_id": "bk-1", "traveler_id": traveler}],
-            "journey_executions": [{"thread_id": THREAD}],
-            "workflow_snapshots": [{"session_id": THREAD}],
-            "workflow_session_stops": [{"journey_id": JOURNEY}],
-        }
-        self.pinned: dict[str, dict] = {}
-        self.statements: list[tuple[str, str | None]] = []
-        self.ended: list[str] = []
-
-    def begin_transaction(self):
-        self.pinned[f"tx{len(self.pinned)}"] = {}
-        return list(self.pinned)[-1]
-
-    def commit_transaction(self, tx):
-        self.ended.append(f"commit {tx}")
-
-    def rollback_transaction(self, tx):
-        self.ended.append(f"rollback {tx}")
-
-    def visible(self, table, row, tx):
-        if table not in FORCED:
-            return True
-        scope = self.pinned.get(tx) or {}
-        return (scope.get("app.current_traveler_id") == row.get("traveler_id")
-                and scope.get("app.agent_type") == "booking_agent")
-
-    async def execute(self, sql, params=(), transaction_id=None, **_kwargs):
-        self.statements.append((sql, transaction_id))
-        if "set_config" in sql:
-            names = re.findall(r"set_config\('([\w.]+)'", sql)
-            self.pinned[transaction_id].update(zip(names, params, strict=True))
-            return [{}]
-        if match := self.DELETE.search(sql):
-            return self.delete(*match.groups(), params[0], transaction_id)
-        if match := self.COUNT.search(sql):
-            return [{"n": len(self.matching(*match.groups(), params[0], transaction_id))}]
-        return self.read(sql, params)
-
-    def matching(self, table, column, value, tx):
-        return [row for row in self.tables[table]
-                if row.get(column) == value and self.visible(table, row, tx)]
-
-    def delete(self, table, column, value, tx):
-        if table not in self.keep:
-            doomed = self.matching(table, column, value, tx)
-            self.tables[table] = [r for r in self.tables[table] if r not in doomed]
-        return []
-
-    def read(self, sql, params):
-        if "SELECT journey_id FROM journey_threads" in sql:
-            return [{"journey_id": r["journey_id"]} for r in self.tables["journey_threads"]
-                    if r["thread_id"] == params[0]]
-        if "SELECT booking_id FROM hold_requests" in sql:
-            return [{"booking_id": r["booking_id"]} for r in self.tables["hold_requests"]
-                    if r["journey_id"] == params[0]]
-        if "FROM hold_requests hr" in sql:
-            return [{"booking_id": r["booking_id"], "status": "held", "hold_request_id": "hr-1"}
-                    for r in self.tables["hold_requests"] if r["journey_id"] == params[0]]
-        return []
-
-    def left(self):
-        return {table: len(rows) for table, rows in self.tables.items() if rows}
-
-
-async def test_the_purge_removes_every_table_including_the_row_level_secured_bookings():
-    client = FakeAurora()
-
-    await proof._purge_run(client, THREAD)
-
-    assert client.left() == {}
-
-
-async def test_the_booking_tables_are_read_and_deleted_in_a_transaction_pinned_to_the_traveler():
-    client = FakeAurora()
-
-    await proof._purge_run(client, THREAD)
-
-    pinned = [s for s in client.statements if "set_config" in s[0]]
-    assert pinned and "app.current_traveler_id" in pinned[0][0] and "app.agent_type" in pinned[0][0]
-    booking_work = [tx for sql, tx in client.statements
-                    if re.search(r"(DELETE FROM|FROM) (bookings|booking_lines)\b", sql)]
-    assert booking_work and all(tx is not None for tx in booking_work)
-    assert all(end.startswith("commit") for end in client.ended)
-
-
-@pytest.mark.parametrize("table", RUN_TABLES)
-async def test_a_delete_that_silently_matches_nothing_makes_the_purge_raise(table):
-    client = FakeAurora(keep=[table])
-
-    with pytest.raises(RuntimeError, match=table):
-        await proof._purge_run(client, THREAD)
-
-
-async def test_a_booking_row_hidden_from_the_unpinned_master_is_still_counted_and_fails():
-    client = FakeAurora(traveler="trv_someone_else")
-
-    with pytest.raises(RuntimeError, match="bookings"):
-        await proof._purge_run(client, THREAD)
-
-
-async def test_a_failed_pinned_statement_rolls_the_transaction_back():
-    client = FakeAurora()
-    original = client.delete
-
-    def boom(table, column, value, tx):
-        if table == "booking_lines":
-            raise ConnectionError("data api down")
-        return original(table, column, value, tx)
-
-    client.delete = boom
-
-    with pytest.raises(ConnectionError):
-        await proof._purge_run(client, THREAD)
-
-    assert client.ended and client.ended[-1].startswith("rollback")
-
-
-@pytest.mark.parametrize(("keep", "raises"), [((), False), (("workflow_snapshots",), True)])
-async def test_a_thread_with_no_journey_is_purged_and_counted_too(keep, raises):
-    client = FakeAurora(keep=keep)
-    client.tables["journey_threads"] = []
-
-    if raises:
-        with pytest.raises(RuntimeError, match="workflow_snapshots"):
-            await proof._purge_run(client, THREAD)
-    else:
-        await proof._purge_run(client, THREAD)
-        assert client.tables["workflow_snapshots"] == []
-
-
 RUN = "phase5-proof-0123456789ab"
 OLDER = "phase5-proof-feedfacecafe"
 SECRET = "token-abc123"
@@ -348,12 +161,12 @@ class ReleaseAurora:
             names = re.findall(r"set_config\('([\w.]+)'", sql)
             self.pinned[transaction_id].update(zip(names, params, strict=True))
             return [{}]
-        if sql == proof.RUN_HOLDS_SQL:
+        if sql == governed_release.RUN_HOLDS_SQL:
             journey = self.threads.get(params[0])
             return [dict(hold) for hold in self.holds if hold["journey_id"] == journey]
-        if sql == proof.THREADS_OF_JOURNEY_SQL:
+        if sql == governed_release.THREADS_OF_JOURNEY_SQL:
             return [{"n": sum(1 for j in self.threads.values() if j == params[0])}]
-        if sql == proof.ACTIVE_SQL:
+        if sql == governed_release.ACTIVE_SQL:
             return self.state(params[0], transaction_id)
         raise AssertionError(f"unexpected statement: {sql}")
 

@@ -12,9 +12,12 @@ subprocess as the meridian_workflow login (their AURORA_SECRET_ARN becomes
 AURORA_WORKFLOW_SECRET_ARN). The driver keeps the master client for verification and
 cleanup, and fails unless every worker reports ``current_user`` as meridian_workflow.
 
-Creates isolated rehearsal rows and removes them in finally. It ends by releasing the
-committed hold through the Gateway's release_hold tool and reading the booking back as
-released. No existing bookings, schema, permissions, or service configuration are changed.
+Creates isolated rehearsal rows. It ends by releasing the committed hold through the
+Gateway's release_hold tool and reading the booking back as released; if the run fails first,
+the hold is released through the same shared rule (scripts/governed_release.py) in finally.
+The journey, hold request, booking and their action audit rows stay. ``--delete-from-disposable-
+database`` deletes them instead, audit rows included: use it only on a database you discard.
+No existing bookings, schema, permissions, or service configuration are changed.
 """
 from __future__ import annotations
 
@@ -33,6 +36,7 @@ from scripts.kill_and_resume_proof import (  # noqa: E402
     require_worker_login, run_takeover, say, scoped, worker_env,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
+from scripts.governed_release import final_code, release_journey  # noqa: E402
 from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
     HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold, release_arguments,
@@ -119,7 +123,21 @@ async def check_release(client, journey_id: str, hold: dict, call_tool) -> None:
     say("release", f"{hold['booking_id']} released through the Gateway; Aurora shows released")
 
 
-async def main(worker_login: bool = False) -> int:
+async def _finish(client, journey_id: str, thread_id: str, delete: bool) -> bool:
+    """Give back any hold still held and keep every row, or delete them; True when clean."""
+    if delete:
+        await _purge(client, journey_id, thread_id)
+        say("cleanup", "isolated rehearsal rows deleted from the disposable database")
+        return True
+    problems = await release_journey(client, TRAVELER, journey_id)
+    for problem in problems:
+        say("cleanup", f"FAILED for journey {journey_id}: {problem}")
+    if not problems:
+        say("cleanup", "no hold left held; journey, booking and audit rows kept")
+    return not problems
+
+
+async def main(worker_login: bool = False, delete: bool = False) -> int:
     env = worker_env(worker_login)
     client = get_rds_data_client()
     store = workflow_store_status()
@@ -129,6 +147,16 @@ async def main(worker_login: bool = False) -> int:
         thread_id = f"loss-{uuid.uuid4().hex[:10]}"
         await bind_thread(db, journey_id, thread_id)
     say("journey", f"{journey_id} · thread {thread_id}")
+    code = 1
+    try:
+        code = await _rehearse(client, env, journey_id, thread_id, worker_login)
+    finally:
+        clean = await _finish(client, journey_id, thread_id, delete)
+    return final_code(code, clean)
+
+
+async def _rehearse(client, env: dict, journey_id: str, thread_id: str,
+                    worker_login: bool) -> int:
     child = None
     try:
         child = await asyncio.create_subprocess_exec(
@@ -189,8 +217,6 @@ async def main(worker_login: bool = False) -> int:
         if child is not None and child.returncode is None:
             child.kill()
             await child.wait()
-        await _purge(client, journey_id, thread_id)
-        say("cleanup", "isolated rehearsal rows removed")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -200,6 +226,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--worker-login", action="store_true",
         help="run the worker subprocess as the meridian_workflow login",
     )
+    parser.add_argument(
+        "--delete-from-disposable-database", action="store_true", dest="delete",
+        help="delete the rehearsal's rows, audit rows included: only for a database you discard",
+    )
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     return parser
 
@@ -208,4 +238,5 @@ if __name__ == "__main__":
     args = build_parser().parse_args()
     with caller_scope(user_for_traveler(TRAVELER)):
         raise SystemExit(
-            asyncio.run(worker(args.worker) if args.worker else main(args.worker_login)))
+            asyncio.run(
+                worker(args.worker) if args.worker else main(args.worker_login, args.delete)))

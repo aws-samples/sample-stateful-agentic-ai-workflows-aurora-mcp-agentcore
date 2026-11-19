@@ -1,9 +1,16 @@
 """Warm every service the demo touches so the first live turn is not cold.
 
 Runs, in order: health (Aurora), the catalog, the traveler profile under RLS, one
-read-only turn each for SQL, MCP, Retrieval and Production (AgentCore Runtime,
-Memory and Gateway), and the saved-journey list. It never places a hold, confirms
-a booking or starts a recovery workflow.
+chat turn each for SQL, MCP, Retrieval and Production (AgentCore Runtime, Memory and
+Gateway), and the saved-journey list. It never places a hold, confirms a booking or
+starts a recovery workflow.
+
+The four chat turns are NOT read-only, and the warm-up is not a health probe. Each turn
+can write conversation, message and trip-interaction rows and traveler preferences for
+the seeded traveler, and every authorization check adds append-only audit rows
+(``traveler_access_audit`` and the agent audit log). Nothing is deleted afterwards.
+``--conversation-ids-file`` records the conversation id of each turn so you can find its
+rows. A health probe (``/health``, or ``/api/health`` for the Aurora check) only reads.
 
 Local (default): python scripts/warm_demo.py
 Hosted:          MERIDIAN_HOSTED_AUTH='{"username": ..., "password": ...}' \
@@ -15,6 +22,11 @@ Verify:          add --verify to --hosted. A full pass writes status "verified" 
 
 With MERIDIAN_AGENTCORE_AUTH=jwt the script signs in as a seeded user (``--as jordan`` or
 ``--as decoy``) and sends that access token; the edge credential is not used.
+
+Direct backend URL in the ``iam`` release (``--base-url <ServiceEndpoint>``): the backend wants
+the shared API token as a bearer. Set ``MERIDIAN_API_TOKEN`` for that one command, resolved from
+the Secrets Manager secret ``meridian/web/api-token`` and never written to a file; it goes only
+to an https URL or to localhost.
 """
 
 from __future__ import annotations
@@ -29,6 +41,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 
@@ -66,12 +79,20 @@ def basic_auth_header() -> dict[str, str]:
     return {"Authorization": "Basic " + base64.b64encode(token).decode()}
 
 
+def shared_token_header(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The shared API token as a bearer header, when ``MERIDIAN_API_TOKEN`` holds a real one."""
+    token = (os.environ if environ is None else environ).get("MERIDIAN_API_TOKEN", "")
+    if not token or token.startswith("{{resolve:"):
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
 def request_headers(hosted: bool, user: str) -> dict[str, str]:
-    """The seeded user's token in jwt mode; otherwise the edge credential for a hosted site."""
+    """The seeded user's token in jwt mode; else the hosted edge credential or the shared token."""
     token = bearer_headers(user)
     if token:
         return token
-    return basic_auth_header() if hosted else {}
+    return basic_auth_header() if hosted else shared_token_header()
 
 
 def call(base: str, headers: dict[str, str], path: str, body: dict | None = None) -> object:
@@ -229,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"--verify records the release verdict for {DEFAULT_USER} only; "
                      f"--as {args.as_user} would check a different traveler and write nothing")
     base = release_url(load_record()).rstrip("/") if args.hosted else args.base_url.rstrip("/")
-    require_token_safe_url(base, always=args.hosted)
+    require_token_safe_url(base, always=args.hosted or bool(shared_token_header()))
     headers = request_headers(args.hosted, args.as_user)
     print(f"Warming {base}")
     if args.conversation_ids_file:

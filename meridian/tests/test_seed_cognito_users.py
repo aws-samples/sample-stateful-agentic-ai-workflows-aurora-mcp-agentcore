@@ -81,6 +81,12 @@ class FakeRds:
                 if name == "execute_statement"]
 
 
+@pytest.fixture(autouse=True)
+def on_a_mac(monkeypatch):
+    """The suite runs on Linux CI too; the tests about other platforms say so themselves."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+
 def _error(code):
     return ClientError({"Error": {"Code": code, "Message": "x"}}, "Op")
 
@@ -442,3 +448,78 @@ def test_a_failed_read_rolls_the_transaction_back():
         seed.require_traveler(rds, {"resourceArn": CLUSTER, "secretArn": "s", "database": "d"},
                               seed.USERS["jordan"])
     assert rds.finished == ["rollback"] and rds.open_transactions == set()
+
+
+MUTATING = ("admin_create_user", "admin_set_user_password", "create_secret", "put_secret_value")
+
+
+def _main_clients(monkeypatch, tmp_path):
+    idp, sm, rds = Recorder(), Recorder(), FakeRds()
+    clients = {"sts": Recorder({"get_caller_identity": {"Account": "111122223333"}}),
+               "cognito-idp": idp, "secretsmanager": sm, "rds-data": rds}
+    monkeypatch.setattr(seed.boto3, "client", lambda name, **kw: clients[name])
+    monkeypatch.setattr(seed, "ENV_FILE", tmp_path / ".env")
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
+    monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
+    monkeypatch.setenv("MERIDIAN_COGNITO_USER_POOL_ID", POOL)
+    return idp, sm, rds
+
+
+def _mutations(idp, sm, rds):
+    return ([n for n, _ in idp.calls if n in MUTATING] + [n for n, _ in sm.calls if n in MUTATING]
+            + [kw["sql"][:6] for kw in rds.inserts()])
+
+
+def test_a_non_mac_apply_records_zero_mutation_calls(monkeypatch, tmp_path):
+    idp, sm, rds = _main_clients(monkeypatch, tmp_path)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(seed.boto3, "client", lambda *a, **k: pytest.fail("touched AWS"))
+
+    with pytest.raises(SystemExit, match="--no-keychain") as exit_info:
+        seed.main(["--apply"])
+
+    assert "Nothing was changed" in str(exit_info.value)
+    assert _mutations(idp, sm, rds) == []
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_a_non_mac_apply_with_no_keychain_completes_the_binding(monkeypatch, tmp_path, platform):
+    _idp, sm, rds = _main_clients(monkeypatch, tmp_path)
+    sm.answers = {"describe_secret": _error("ResourceNotFoundException")}
+    idp_user = cognito()
+    monkeypatch.setattr(seed.boto3, "client", lambda name, **kw: {
+        "sts": Recorder({"get_caller_identity": {"Account": "111122223333"}}),
+        "cognito-idp": idp_user, "secretsmanager": sm, "rds-data": rds}[name])
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(seed, "store_keychain", lambda *a: pytest.fail("used the Keychain"))
+
+    seed.main(["--apply", "--no-keychain"])
+
+    assert len(rds.inserts()) == 2
+    assert "create_secret" in [n for n, _ in sm.calls]
+    assert [n for n, _ in idp_user.calls].count("admin_set_user_password") == 2
+
+
+def test_a_non_mac_dry_run_changes_nothing_and_needs_no_flag(monkeypatch, tmp_path, capsys):
+    _idp, sm, rds = _main_clients(monkeypatch, tmp_path)
+    monkeypatch.setattr(sys, "platform", "linux")
+    idp_user = cognito()
+    monkeypatch.setattr(seed.boto3, "client", lambda name, **kw: {
+        "sts": Recorder({"get_caller_identity": {"Account": "111122223333"}}),
+        "cognito-idp": idp_user, "secretsmanager": sm, "rds-data": rds}[name])
+
+    seed.main([])
+
+    assert _mutations(idp_user, sm, rds) == []
+    assert "would create" in capsys.readouterr().out
+
+
+def test_no_keychain_keeps_the_password_in_secrets_manager_and_names_that_in_the_dry_run(capsys):
+    kept = []
+    run(seed.USERS["jordan"], idp=cognito(), keychain=lambda u, p: kept.append(p))
+    assert kept != []
+    seed.seed_user(
+        seed.USERS["jordan"], idp=cognito(), sm=Recorder(), rds=FakeRds(), pool_id=POOL,
+        cluster_arn=CLUSTER, master_secret_arn="arn:master", database="meridian", apply=False,
+        use_keychain=False)
+    assert "Keychain" not in capsys.readouterr().out

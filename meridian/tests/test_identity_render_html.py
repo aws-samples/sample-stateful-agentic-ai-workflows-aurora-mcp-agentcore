@@ -65,14 +65,14 @@ def test_the_full_page_lists_every_probe_and_the_cleanup():
 
     assert page.count("<tr>") == 22
     assert "gateway.decoy_holds_for_jordan" in page and "Holds Lambda: workload grant" in page
-    assert "threads purged" in page and "leftovers 0" in page
+    assert "threads checked" in page and "leftovers 0" in page
 
 
 def test_the_full_page_escapes_every_receipt_value():
     data = recorded()
     data["outcomes"][0]["detail"] = "<script>alert(1)</script>"
     data["outcomes"][0]["probe"] = '"><img src=x>'
-    data["cleanup"]["threads_purged"] = "<i>9</i>"
+    data["cleanup"]["threads_checked"] = "<i>9</i>"
 
     page = full_html(data)
 

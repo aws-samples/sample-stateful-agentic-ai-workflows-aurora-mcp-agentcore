@@ -131,9 +131,9 @@ python meridian/scripts/render_agentcore_config.py
 The render needs `AURORA_WORKFLOW_SECRET_ARN` and `AURORA_GATEWAY_SECRET_ARN`, which the two
 provisioning commands in Prerequisites write to `meridian/.env`. Run them first.
 
-On a new account the script reports that it left out the gateway ID variables
+On a new account the script reports that it left out the holds target, the gateway ID variables
 and the Cedar policy engine: the policies name the gateway, which does not
-exist yet. The [AgentCore project README](../meridian_agentcore/README.md)
+exist yet. It builds the deployment in four stages, described under [Deploy](#4-deploy). The [AgentCore project README](../meridian_agentcore/README.md)
 describes each placeholder.
 
 ## 2. Create the catalog Lambda
@@ -237,7 +237,9 @@ schema and the code are deployed separately.
 
 ## 3. Bootstrap CDK
 
-Once per account and Region:
+Once per account and Region. The first Aurora preflight
+([Provision Aurora](OPERATIONS.md#provision-aurora)) checks for this bootstrap and prints the
+command when it is missing, so you may have done it already; running it again is harmless:
 
 ```bash
 (
@@ -249,30 +251,46 @@ Once per account and Region:
 
 ## 4. Deploy
 
-A new account needs three passes, because each one creates an ID the next
-render needs. Run each pass from the repository root:
+A new account needs four renders and four deploys, because each deploy creates an ID that the
+next render needs. This is the manual path for the default `iam` mode. Run each round from the
+repository root:
 
 ```bash
 python meridian/scripts/render_agentcore_config.py
 (cd meridian/meridian_agentcore && agentcore validate --json && agentcore deploy -y)
 ```
 
-In `jwt` mode the deploy runs through `release_identity.py deploy` instead (see
-[Deploy the identity release](#deploy-the-identity-release-jwt)).
+In `jwt` mode never run `agentcore deploy` bare. Use `release_identity.py deploy` for every
+round instead (see [Deploy the identity release](#deploy-the-identity-release-jwt)); it runs one
+stage, refuses unless the render, the deployed state and the live Gateway agree, and prints a
+dry-run plan first.
 
 Every render needs `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env` (set by
 `provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env`, after migration
 018; see Prerequisites).
 
-1. **First pass.** Creates the runtime, memory, gateway and both targets,
-   without policies. Expect about 5 to 8 minutes.
-2. **Second pass.** The render now finds the gateway ID in
-   `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json` and adds
-   the policy engine, its four Cedar policies (five in `jwt` mode, with
-   `meridian_traveler_binding`) and the gateway association.
-3. **Third pass.** The render adds the policy engine ID to the runtime's
-   environment and prints `Configuration complete.` The deploy updates the
-   runtime so its trace names the engine.
+The render reads `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json` and prints the
+stage it wrote as `Build stage: <name> (<n> of 4)`. The stage is the first resource the state
+does not list:
+
+| Render prints | What the deploy that follows creates | What the next render finds |
+| --- | --- | --- |
+| `Build stage: gateway (1 of 4)` | Both Runtimes, memory, the Gateway and the `MeridianCatalog` target. No holds target, no policy engine. Expect about 5 to 8 minutes. | The Gateway ID |
+| `Build stage: targets (2 of 4)` | The `MeridianHolds` target and its Lambda | The holds target ID |
+| `Build stage: governance (3 of 4)` | The policy engine, its four Cedar policies (five in `jwt` mode, with `meridian_traveler_binding`) and the Gateway association | The policy engine ID |
+| `Build stage: complete (4 of 4)` | The engine ID is added to the Runtimes' environment, so the trace names the engine. The deploy updates the Runtimes. | Nothing is left out |
+
+The deployment is finished when the render prints `Build stage: complete (4 of 4)` and then
+`Configuration complete.`, and the deploy that follows it succeeds. Do not stop after the third
+deploy: until the fourth, the Runtimes do not know the engine ID.
+
+The stage is read from the deployed state each time and is never remembered between runs, so
+you resume an interrupted deployment by running the render again. Check its `Build stage` line
+against the table, then run the deploy for that stage. A deploy that failed before it created
+the stage's resource shows the same stage again. A deploy that finished moves the render to the
+next one. If the render shows an earlier stage than you expect, for example on another machine
+without the state file, pass the IDs you have: `--gateway-id` says the Gateway and its holds
+target exist, and `--policy-engine-id` adds the engine.
 
 `agentcore deploy` writes the deployed ARNs and IDs to
 `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. If that file
@@ -522,8 +540,30 @@ outside its list (`parse_turn` answers an `unknown workflow_turn fields` request
 recovery start from a new backend would fail against it. Deploy in this order:
 
 1. Deploy the `MeridianWorkflow` Runtime (the AgentCore stack, step 4).
-2. Read `get-agent-runtime` for it. It must report the new code and platform version `V1`, as every
-   Runtime is pinned. Do not go on until it does.
+2. Check it from two places, because no single call proves both. `get-agent-runtime` does not
+   report the platform version: the pinned botocore (1.43.72) returns `status` and
+   `agentRuntimeVersion` and has no `platformVersion` member, so waiting for that field never ends.
+   Read readiness and the serving revision from the service:
+
+   ```bash
+   aws bedrock-agentcore-control get-agent-runtime --region "$REGION" \
+     --agent-runtime-id <MeridianWorkflow runtime id> \
+     --query '{status: status, revision: agentRuntimeVersion}'
+   ```
+
+   `status` must be `READY` and `revision` must be higher than before the deploy. A revision number
+   alone does not say which platform version runs, so also read `PlatformVersion` from the
+   deployed CloudFormation template, where every Runtime is pinned to `V1`:
+
+   ```bash
+   aws cloudformation get-template --region "$REGION" --stack-name AgentCore-meridianv2-default \
+     --query TemplateBody --output json | jq '[.Resources | to_entries[]
+       | select(.value.Type == "AWS::BedrockAgentCore::Runtime")
+       | {runtime: .key, PlatformVersion: .value.Properties.PlatformVersion}]'
+   ```
+
+   Both Runtime resources must show `"PlatformVersion": "V1"`. Do not go on until `status` is
+   `READY`, the revision moved and both Runtimes show `V1`.
 3. Deploy the backend and the web app.
 
 A run paused before step 1 has no `recovery` in its saved inputs. On resume the Runtime decides

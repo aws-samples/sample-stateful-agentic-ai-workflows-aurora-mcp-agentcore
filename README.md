@@ -29,9 +29,36 @@ The recovery scenario starts with a traveler reporting a canceled flight; the ap
 no airline, supplier, payment or real reservation integration.
 
 **Start here:** [Five phases](#five-phases) | [Architecture](#architecture) |
+[**Explore the five phases without an AWS account**](meridian/docs/CODE_WALKTHROUGH.md) |
 [Run locally](#quick-start) | [Deployment](#deploy-to-your-account) |
 [Verification](#tests-and-evidence) | [Production guidance](#production-implementation-scalability-and-operational-resilience) |
 [Costs and cleanup](#costs-and-clean-up)
+
+**No AWS account yet? Read the code first.** The [walkthrough](meridian/docs/CODE_WALKTHROUGH.md)
+follows one request through the five phases, and the tests below run on your machine with no AWS
+credentials. Three places to look:
+
+- Where Aurora saves workflow progress:
+  [`snapshot_storage.py`](meridian/backend/agents/phase_05_workflow/snapshot_storage.py) appends
+  each saved step to the `workflow_snapshots` table
+  ([migration 014](meridian/scripts/migrations/014_workflow_snapshots.sql)).
+- Where the booking request gets its stable identity:
+  [`hold_intent.py`](meridian/backend/agents/phase_05_workflow/hold_intent.py) allocates the
+  `hold_request_id` once and saves it before the hold runs, so a retry reuses it, and
+  [migration 008](meridian/scripts/migrations/008_hold_request_identity.sql) enforces one hold per
+  request inside the database.
+- Which test shows a paused workflow resuming:
+  [`test_workflow_graph.py`](meridian/tests/test_workflow_graph.py), starting with
+  `test_a_new_graph_resumes_from_the_snapshot_and_holds_once`, where a new graph over the same
+  storage stands in for a restarted process. After the [backend install](#1-install-local-dependencies),
+  run `PYTHON_DOTENV_DISABLED=1 venv/bin/python -m pytest -m "not database" tests/test_workflow_graph.py -k resumes`
+  from `meridian/`.
+
+**Setting up AWS is a separate step and it costs money.** [Run locally](#quick-start) and the
+[deployment](#deploy-to-your-account) create an Amazon Aurora cluster, call Amazon Bedrock and
+deploy AgentCore resources. They bill for as long as they exist, and some of them (the Aurora
+cluster, load balancers, secrets, logs) keep billing until you remove them. Read
+[Costs and cleanup](#costs-and-clean-up) before you create anything.
 
 > [!IMPORTANT]
 > Running the application uses billable AWS services. This is a reference application for
@@ -144,8 +171,10 @@ hold, confirmation and release functions. See
   Confirm model availability and inference-profile permissions before you seed the database.
 - Phases 4 and 5 require deployed AgentCore resources. Packaging uses `uv` and the pinned
   `@aws/agentcore` CLI specified in the [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md).
-- The supplied Cognito test-user seeding flow uses macOS Keychain. Other platforms need an
-  equivalent credential provisioning flow; the release CLI itself is invoked through pinned `npx`.
+- The supplied Cognito test-user seeding flow stores each password in AWS Secrets Manager and, on
+  macOS, in the Keychain. On Linux or Windows run `seed_cognito_users.py --apply --no-keychain`
+  to keep the password in Secrets Manager alone; without that flag a non-macOS `--apply` stops
+  before it changes anything. The release CLI itself is invoked through pinned `npx`.
 
 ## Quick start
 
@@ -185,7 +214,8 @@ The listing leaves out migration 034, which creates the password-rotation roles;
 `--with-rotation` only if you adopt [automatic rotation](meridian/docs/OPERATIONS.md#rotate-workload-passwords-automatically).
 Existing installations run only named migrations and must follow the
 [026-029 upgrade order](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md); do not apply all four before
-upgrading the running application. Never run `apply_migrations.py` without a flag.
+upgrading the running application. Run without a flag, `apply_migrations.py` only lists the pending migrations and prints its usage;
+nothing applies without `--only`. `scripts/setup.sh` follows this route for a new database.
 
 Before the launcher, provision the **backend service login**: its password goes in its own
 Secrets Manager secret, and `AURORA_BACKEND_SECRET_ARN` is written to `meridian/.env`. It needs
@@ -242,9 +272,16 @@ After completing setup, choose **File > Open Workspace from File** in VS Code an
 [`meridian.code-workspace`](meridian.code-workspace). Install its recommended Python extensions,
 then select **Meridian: local app** in Run and Debug and press **F5**.
 The workspace starts Vite at `http://localhost:5173` and the backend on port 8013, then opens the showcase.
-Enter your provisioned email and password in the inline form and choose **Sign in**.
-Credentials go directly to Amazon Cognito over HTTPS. The launcher never embeds them or
-automatically signs you in; tokens stay in memory and a page reload requires sign-in again.
+What you see depends on the identity mode:
+
+| Mode | What F5 opens |
+| --- | --- |
+| `iam` (the default) | No sign-in form. With no Cognito settings in `frontend/.env.development.local` the frontend is an ungated build (it logs "Meridian is running as an ungated build: sign-in is not configured"), and the loopback backend treats your local browser as the sample traveler Jordan Morgan (`trv_meridian_demo`). The showcase opens directly. |
+| `jwt`, with `VITE_COGNITO_DOMAIN` and `VITE_COGNITO_CLIENT_ID` set | The inline sign-in form. Enter a seeded email and password (Jordan Morgan or the decoy Jordan Lee) and choose **Sign in**. Everything you then see is that traveler's, and the identity pipeline checks the token at every hop. |
+
+Credentials in the form go directly to Amazon Cognito over HTTPS. The launcher never embeds
+them or automatically signs you in; tokens stay in memory and a page reload requires sign-in
+again.
 `scripts/run_local.py` selects `AURORA_BACKEND_SECRET_ARN` for that process; it leaves the
 administrator settings in `.env` unchanged and refuses to launch without the service secret.
 It preserves the configured authentication mode. Local sign-in also needs the Cognito frontend
@@ -290,8 +327,9 @@ runs it can import it into CloudFormation
 App Runner stopped accepting new customers on 30 April 2026, so a new deployment hosts the backend,
 one stateless container, on Amazon ECS Express Mode. The CDK app adds that path when it gets
 `-c backendHost=express`, and the App Runner path is unchanged without it
-([Operations](meridian/docs/OPERATIONS.md#host-the-backend-on-amazon-ecs-express-mode)). Hosting is
-optional; AWS data and agent services are required for the corresponding local application features.
+([Operations](meridian/docs/OPERATIONS.md#host-the-backend-on-amazon-ecs-express-mode)). Each hosting
+choice has its own teardown, listed under [Clean up](#clean-up): Express Mode keeps one task and
+one load balancer running until you remove it. Hosting is optional; AWS data and agent services are required for the corresponding local application features.
 
 ## Tests and evidence
 
@@ -308,8 +346,43 @@ The unit-test guard blocks TCP connections and supplies fake AWS credentials. Te
 `database` access a configured live Aurora cluster and can write data; do not include them in an
 offline check.
 
-Frontend, from `meridian/frontend/`: run `npm ci`, `npm run lint`, `npm run typecheck`,
-`npm run test:run`, `npm run build` and `npm run test:accessibility`.
+The `database` tests give back the holds they place and keep every booking, hold request, journey
+and audit row, because an audit export may already hold them. Two of them confirm a booking
+(`test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privilege_login` and
+`test_release_hold_leaves_a_confirmed_booking_alone`). Each run leaves one confirmed booking for one
+or two travelers, which uses package places for good. The tests pick the package with the most
+places left to spread that cost. Capacity comes back only through
+`scripts/release_demo_bookings.py --delete-from-disposable-database` on a disposable database, or by
+raising availability, so run them against a shared database sparingly. `scripts/validate_demo.py`
+works the same way: its confirmation step leaves one confirmed booking for one traveler, on the
+roomiest package the traveler's budget covers.
+
+Audit rows are never deleted, so a few remain. `test_workflow_audit_aurora` writes two
+`agent_audit_log` rows per run for the demo traveler Jordan Morgan, under a unique `sub-test-` subject.
+It cannot use another traveler, because the workflow login's audit write is authorized for the
+travelers it is bound to, and that is what the test proves. `test_migration_033_live` writes one
+`traveler_access_audit` deny row per run for a synthetic traveler, `trv_itest_synthetic`, so it does
+not touch the demo traveler.
+
+Frontend, from `meridian/frontend/`, one command at a time (if `npm` or `npx` is a shell alias
+that contains a `;`, a chained `&&` hides a failed step, so run each on its own line):
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm run test:run
+npm run build
+npx playwright install --with-deps chromium
+npm run test:accessibility
+```
+
+`npm run test:accessibility` drives Chromium through Playwright, and a fresh machine has no
+Chromium: without the `playwright install` step the run stops with a missing-executable error.
+That line is the one CI runs. `--with-deps` also installs the operating-system libraries Chromium
+needs on Linux, which takes root (it uses `apt`); on macOS and Windows use
+`npx playwright install chromium`, which downloads the browser into Playwright's cache. On
+Linux without root, install the libraries with your package manager first.
 
 The [CI workflow](.github/workflows/application-ci.yml) also checks infrastructure synthesis,
 dependency advisories and each Runtime's exact dependency environment. The isolated
@@ -395,18 +468,40 @@ backups, logs, secrets and images can continue to incur charges after compute is
 
 ### Clean up
 
-Remove resources in reverse dependency order using the runbooks:
+Remove resources in reverse dependency order using the runbooks. The order matters: a managed
+policy cannot be deleted while a role still has it attached, a CloudFormation export cannot be
+deleted while another stack imports it, and the Express service keeps a task and a load balancer
+running until its stack is gone.
 
-1. [Hosted web application](meridian/docs/OPERATIONS.md#publish-the-web-app), if created.
-2. [Sign-in resources and service-login integrations](meridian/docs/OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
-3. [AgentCore resources](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down), including separately provisioned targets and secrets.
-4. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora), preserving a final snapshot until you no longer need the data.
-5. CDK bootstrap: the `CDKToolkit` stack holds any backend images CDK pushed. Delete it
+1. The hosted web application, if created. Each hosting choice has its own teardown, so use only
+   the one you deployed (or both, if you deployed both):
+   - Express Mode (the path for a new account):
+     [Tear down an Express-only deployment](meridian/docs/OPERATIONS.md#tear-down-the-express-backend).
+     The site goes before the service, and the service before its roles; then check that the
+     service and its load balancer are gone.
+   - App Runner: [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app), its last
+     teardown paragraph.
+2. [AgentCore resources](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down), including separately
+   provisioned targets and secrets. Do this before the logins: the `MeridianWorkflow` Runtime's
+   role attaches `MeridianWorkflowAuroraAccess` (the AgentCore template names it) and the catalog
+   Lambda's role attaches `MeridianCatalogAuroraAccess`, and a policy with an attached role cannot
+   be deleted.
+3. [Sign-in resources and service-login integrations](meridian/docs/OPERATIONS.md#roll-back-the-service-logins-and-sign-in).
+   By now nothing attaches `MeridianBackendAuroraAccess` (the web roles were removed in step 1).
+4. [Audit export](meridian/docs/OPERATIONS.md#audit-export), if you enabled it: stop its schedule
+   before you retire Aurora, so it does not keep reading a database that is going away. The stack
+   never deletes the audit bucket (the `BucketName` output), its KMS key or the export Lambda's log
+   group. They stay in your account and keep costing storage until Object Lock retention ends and
+   you delete them yourself.
+5. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora), preserving a final snapshot until you no longer need the data.
+6. CDK bootstrap: the `CDKToolkit` stack holds any backend images CDK pushed. Delete it
    only if nothing else in the account and Region deploys with CDK, and empty its S3 bucket
    and Amazon ECR repository first if the delete stops on them. Do not remove shared
    infrastructure as part of this application's cleanup.
 
-Review retained snapshots, log groups, secrets, S3 objects and images afterward.
+Review retained snapshots, log groups, secrets, S3 objects and images afterward. The
+dependency order above follows the stack definitions in `meridian/infra/lib` and
+`meridian/meridian_agentcore/agentcore/cdk`; it was not rehearsed in a disposable account.
 
 ## Documentation
 
@@ -418,7 +513,7 @@ Review retained snapshots, log groups, secrets, S3 objects and images afterward.
 | [Operations](meridian/docs/OPERATIONS.md) | Provisioning, deployment, recovery and teardown |
 | [Booking functions upgrade](meridian/docs/BOOKING_FUNCTIONS_UPGRADE.md) | Migration order, acceptance matrix, rollback and test reset |
 | [Documentation index](meridian/docs/README.md) | All supporting guides |
-| [Second workflow implementation](meridian/examples/langgraph/) | A maintained second implementation of the workflow on another graph framework; the application does not import it, and the test block above installs its requirements |
+| [Persistence and pause/resume example](meridian/examples/langgraph/) | Another graph framework saving its state in Aurora and resuming a paused graph. It is not the governed workflow, which is Meridian's Strands path; the application does not import it, and the test block above installs its requirements |
 
 ## Security and contribution
 

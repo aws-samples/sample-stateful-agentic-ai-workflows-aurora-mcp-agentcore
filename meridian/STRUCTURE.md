@@ -113,6 +113,7 @@ uses the governed Gateway path.
 | `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role (Jordan Morgan only) and the App Runner instance role (`--traveler`, `--apply`) access to a seeded traveler |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
 | `scripts/run_gateway_harness.py`, `scripts/gateway_harness/` | Create a separate throwaway Gateway, answer the interceptor and Cedar questions with real tokens, print a verdict table and delete everything; dry run by default, live only with `--apply --i-understand-this-creates-aws-resources` |
+| `scripts/governed_release.py` | The one rule every proof, validator and reset uses to give a hold back through the Gateway release tool: read back first, at most two calls, unknown is never released, no row deleted |
 | `scripts/agentcore_caller.py` | Bind a seeded user's real access token for a smoke script in `jwt` mode; does nothing in `iam` mode |
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
 | `scripts/stage_concierge_runtime.py`, `scripts/generate_catalog_tool_schema.py` | Copy the shared concierge definition into the Concierge Runtime; generate the `MeridianCatalog` tool schema from the tool functions |
@@ -128,8 +129,8 @@ uses the governed Gateway path.
 | `scripts/apply_rls_force_and_decoy.py` | One-shot: enable FORCE row level security on the Phase 4 tables and seed a decoy traveler's preferences |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
 | `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
-| `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release the sample traveler's bookings |
-| `scripts/warm_demo.py` | Warm health, catalog, traveler profile and one read-only turn per phase before you use the app |
+| `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; give back the sample traveler's active holds |
+| `scripts/warm_demo.py` | Warm health, catalog, traveler profile and one chat turn per phase before you use the app (the turns write conversation, memory and audit rows) |
 | `scripts/install_catalog_images.py` | Install catalog artwork by package ID |
 
 ### Other
@@ -139,7 +140,7 @@ uses the governed Gateway path.
 | `examples/rls_app_role.sql`, `examples/rls_for_agents.sql` | The restricted RLS role, RLS policies and the authorization audit view |
 | `examples/memory_mcp_demo.py` | Stand-alone client for the custom memory MCP server |
 | `tests/` | Pytest suite |
-| `examples/langgraph/` | A maintained second implementation of the workflow: a Data API saver, a pause and resume graph, and its tests, including the saver conformance suite in `tests/conformance/`. The application does not import it |
+| `examples/langgraph/` | A persistence and pause/resume example, not the governed workflow: a Data API saver, a pause and resume graph, and its tests, including the saver conformance suite in `tests/conformance/`. The application does not import it |
 | `docs/` | Architecture, operations, deployment runbook, code walkthrough and design notes |
 
 ## Naming

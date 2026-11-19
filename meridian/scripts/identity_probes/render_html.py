@@ -89,7 +89,7 @@ def _outcome_row(outcome: dict[str, Any]) -> str:
 
 def _notes(data: dict[str, Any]) -> str:
     cleanup = data.get("cleanup", {})
-    line = (f"Cleanup: {cleanup.get('threads_purged', 0)} threads purged, "
+    line = (f"Cleanup: {cleanup.get('threads_checked', 0)} threads checked, "
             f"{cleanup.get('bookings_released', 0)} bookings released, "
             f"leftovers {cleanup.get('leftovers', 0)}")
     lines = [line]

@@ -6,10 +6,9 @@ import uuid
 import boto3
 import pytest
 
-
 from backend.db.rds_data_client import get_rds_data_client
 from tests.lambda_targets_support import load_target
-from tests.live_support import JORDAN, live_region, require_env
+from tests.live_support import JORDAN, delete_unaudited_fixture, live_region, require_env
 
 pytestmark = pytest.mark.database
 
@@ -111,8 +110,8 @@ async def _add_line(booking_id, package_id, duration, places):
 
 
 async def _release(booking_id):
-    await _master("DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,))
-    await _master("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+    # A plain-SQL fixture with no action audit row; the helper refuses if one exists.
+    await delete_unaudited_fixture(get_rds_data_client(), booking_ids=[booking_id])
 
 
 async def test_a_sold_out_package_is_never_offered(catalog):

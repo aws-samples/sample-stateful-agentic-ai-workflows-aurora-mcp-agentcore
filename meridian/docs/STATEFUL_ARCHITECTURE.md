@@ -247,9 +247,9 @@ the run finished, which is recorded as `finished`. The `--during running` proof
 can miss that window and then exits 2 with "missed the window"; run it again.
 Only the local kill-and-resume proof stops at an exact step.
 
-### The second implementation
+### The persistence and pause/resume example
 
-The application does not import the other graph framework. A maintained example, with
+The application does not import the other graph framework. A persistence and pause/resume example, with
 its Data API saver and its own tests, is in
 [`examples/langgraph/`](../examples/langgraph/README.md).
 

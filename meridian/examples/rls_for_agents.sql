@@ -18,11 +18,30 @@
 --
 --   • You know Postgres, new to agents: an "agent turn" is one user prompt
 --     handled by an LLM that may emit several tool calls (search, recall
---     memory, book). Each turn runs in ONE short DB transaction. We pin the
---     traveler's id into a session variable for that transaction so the LLM
---     physically cannot read another traveler's rows — even if the SQL it
---     generates forgets a WHERE clause. RLS is the backstop for code whose
---     output you can't fully predict.
+--     memory, book). A turn does not hold one transaction open. Each database
+--     step opens its own short transaction, and each one pins the traveler's id
+--     into a session variable so the LLM physically cannot read another
+--     traveler's rows, even if the SQL it generates forgets a WHERE clause.
+--     RLS is the backstop for code whose output you can't fully predict.
+--
+--     Where a Phase 4 turn opens and closes them (ProductionAgent in
+--     backend/agents/phase_04_production/production_agent.py):
+--       1. READ  (_authorized_read): authorize the workload, then recall the
+--          profile, the session's turns, preferences and similar past
+--          interactions as agent_type concierge_agent. It commits before the
+--          model runs.
+--       2. The Runtime turn (model and Gateway tools) runs with NO transaction
+--          open. The Gateway tools reach Aurora through their own service
+--          logins, in transactions of their own.
+--       3. AUDIT (_audit_unit): the turn's agent_audit_log row is written and
+--          committed on its own, apart from memory, so a memory failure cannot
+--          roll it back.
+--       4. MEMORY (_memory_unit), optional: the turn's two messages and one
+--          trip_interaction are written in a last short transaction, only for a
+--          turn that completed and only when the traveler's memory is on. With
+--          memory off none of the four steps' memory reads or writes happen.
+--     A denied traveler claim commits its own deny row in
+--     traveler_access_audit before the error is raised (see scoped_session).
 --
 --   • You build agents, new to RLS: Row-Level Security is a PostgreSQL feature
 --     where the DATABASE filters rows per query from a policy attached to the
@@ -35,16 +54,21 @@
 --
 --   1. ENABLE ROW LEVEL SECURITY   → the table's policies get consulted
 --   2. a policy with a USING (...) → defines which rows pass
---   3. the connecting role is one RLS actually applies to — i.e. NOT the
+--   3. the connecting role is one RLS actually applies to, i.e. NOT the
 --      cluster master role, which stays exempt here   ← THE GOTCHA (below)
 --   (We also set FORCE ROW LEVEL SECURITY as defense-in-depth.)
 --
 -- THE GOTCHA WE HIT (why the policies alone weren't enough) -------------------
 --
 --   The RDS Data API connects as whatever DB user the secret in secretArn
---   maps to — it is NOT inherently privileged. OUR secret maps to the cluster
---   MASTER user (meridian_admin). That privileged role is NOT getting RLS
---   applied to it — PostgreSQL's own row_security_active() returns false for
+--   maps to; it is NOT inherently privileged. Which user that is depends on
+--   the workload. Schema init, seeding and local admin tooling use the cluster
+--   MASTER user (meridian_admin). The hosted JWT release does not: its backend
+--   connects as the least-privilege login meridian_backend (and the Runtimes
+--   and Lambdas as meridian_workflow, meridian_gateway and the others), none of
+--   which can bypass RLS. Whichever login connects, scoped_session() still
+--   steps down to meridian_app, as below. The master role is the dangerous
+--   one: that privileged role is NOT getting RLS applied to it — PostgreSQL's own row_security_active() returns false for
 --   it — even though the tables have RLS both ENABLED and FORCED, and the
 --   master user is neither a superuser nor BYPASSRLS (\du and pg_roles confirm
 --   both). The exact reason the Aurora master role stays exempt under FORCE is
@@ -67,8 +91,11 @@
 --      examples/rls_app_role.sql — RUN IT, or RLS will not filter.
 --
 --   Production best practice: give the app its OWN restricted DB user with its
---   OWN secret, so it never holds master credentials. We keep the master
---   secret and step down per-transaction so the role switch is visible live.
+--   OWN secret, so it never holds master credentials. The hosted JWT release
+--   and scripts/run_local.py do this: they select AURORA_BACKEND_SECRET_ARN
+--   (the meridian_backend login) and refuse to run application traffic on the
+--   master secret. The per-transaction step down is kept as well, so the role
+--   switch stays visible live.
 --
 -- WHY TRANSACTION-SCOPED (set_config(..., true) and SET LOCAL) ----------------
 --   • Agent crashes mid-turn → the GUC and the role both revert with the
@@ -88,10 +115,14 @@
 --      binding exists, and writes the allow/deny to traveler_access_audit.
 --   3. Aurora RLS enforces WHAT rows the authorized traveler scope may see.
 --
---   This is workload authorization. A multi-user hosted application should
---   additionally authenticate the end user (for example with Cognito) and map
---   that user subject to a traveler rather than treating one workload as all
---   users.
+--   Step 2 is workload authorization. It is not the only caller check. In
+--   the hosted JWT release the signed-in person is the only source of the
+--   traveler: an Amazon Cognito access token carries a traveler_id claim that a
+--   pre-token-generation trigger copied from that user's active 'cognito' row
+--   in traveler_identity_bindings, the backend verifies the token, and the
+--   turn's audit row names the verified Cognito subject. The workload binding
+--   (aws_iam) stays a second check. See docs/OPERATIONS.md, "Sign-in and who
+--   is calling".
 --
 -- TWO PATTERNS THIS FILE DEPLOYS ---------------------------------------------
 --   A) Per-traveler memory isolation (Phase 4): traveler_preferences,

@@ -112,7 +112,9 @@ def initialize_database() -> None:
     if existing["records"][0][0]["booleanValue"]:
         raise SystemExit(
             "Initialization requires an empty database. Existing tables were left unchanged. "
-            "Use scripts/apply_migrations.py to upgrade an existing database."
+            "Use scripts/apply_migrations.py to upgrade an existing database. "
+            "Run --pending, then --dry-run --only <first-pending.sql> and "
+            "--only <first-pending.sql>, one file at a time."
         )
     transaction = client.begin_transaction(
         resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, database=DATABASE,

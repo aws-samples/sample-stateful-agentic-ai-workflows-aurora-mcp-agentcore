@@ -25,17 +25,18 @@ NOT_YOURS = "The authenticated caller is not authorized for that traveler."
 class FakeCleanup:
     """A cleanup port that records what it was asked to remove."""
 
-    def __init__(self, *, fail_purge=False, fail_release=False, leftovers=0, fail_check=False):
-        self.purged, self.released, self.prefix, self.baseline = [], [], None, None
+    def __init__(self, *, fail_thread_release=False, fail_release=False, leftovers=0,
+                 fail_check=False):
+        self.threads_released, self.released, self.prefix, self.baseline = [], [], None, None
         self.order = []
-        self.fail_purge, self.fail_release = fail_purge, fail_release
+        self.fail_thread_release, self.fail_release = fail_thread_release, fail_release
         self._leftovers, self.fail_check = leftovers, fail_check
 
-    def purge_thread(self, thread):
-        self.order.append("purge")
-        if self.fail_purge:
-            raise RuntimeError("purge refused for 123456789012")
-        self.purged.append(thread)
+    def release_thread(self, thread):
+        self.order.append("release_thread")
+        if self.fail_thread_release:
+            raise RuntimeError("release refused for 123456789012")
+        self.threads_released.append(thread)
 
     def release_bookings(self, bookings):
         self.order.append("release")

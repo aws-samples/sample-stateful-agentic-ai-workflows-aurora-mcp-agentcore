@@ -20,8 +20,19 @@ class _Db:
         self.close_fails, self.statements = close_fails, []
         self.no_request = set(no_request)
 
-    async def execute(self, sql, params=()):
+    def begin_transaction(self):
+        return "tx"
+
+    def commit_transaction(self, tx):
+        pass
+
+    def rollback_transaction(self, tx):
+        pass
+
+    async def execute(self, sql, params=(), transaction_id=None, **_kwargs):
         self.statements.append(sql)
+        if "set_config" in sql:
+            return [{}]
         key = params[0]
         if "AS active FROM bookings" in sql:
             if key in self.read_fails:
@@ -247,3 +258,16 @@ def test_ids_are_recorded_only_when_the_run_log_is_set(tmp_path, monkeypatch):
     live_support.record_live_ids("t", booking_id="HLD-7")
     assert [json.loads(line) for line in log.read_text().splitlines()] == [
         {"test": "t", "booking_id": "HLD-7"}]
+
+
+async def test_a_cleanup_whose_holds_are_all_inactive_needs_no_gateway_or_token(monkeypatch):
+    def broken():
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", broken)
+    monkeypatch.setattr("scripts.agentcore_caller.caller_scope",
+                        lambda user_key: (_ for _ in ()).throw(RuntimeError(SECRET)))
+    db = _Db({"HLD-1": False}, threads={"t1": ["HLD-1"]})
+
+    assert await live_support.cleanup_run(db, live_support.JORDAN, test="t",
+                                          threads=["t1"]) == []

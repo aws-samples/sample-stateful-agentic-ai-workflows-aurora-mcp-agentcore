@@ -6,9 +6,10 @@ import uuid
 import pytest
 
 from backend.db.rds_data_client import get_rds_data_client
+from scripts.governed_release import pinned_to_traveler
 from scripts.identity_probes.effects import AuroraCleanup, AuroraPort
 from scripts.identity_probes.probes import DECOY_TRAVELER, JORDAN_TRAVELER
-from scripts.kill_and_resume_proof import pinned_to_traveler
+from tests import live_support
 
 
 @pytest.mark.database
@@ -41,32 +42,27 @@ async def insert_booking(client, booking: str, journey: str) -> None:
             INSERT_HOLD_REQUEST, (journey, f"req-{booking}", booking), transaction_id=transaction)
 
 
-async def drop_journey(client, journey: str) -> None:
-    await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey,))
-
-
 @pytest.mark.database
 def test_the_unscoped_tables_the_proof_reads_show_their_rows_to_this_role():
     AuroraPort(get_rds_data_client()).preflight()
 
 
 @pytest.mark.database
-def test_a_booking_is_found_pinned_listed_as_new_released_and_gone():
+def test_a_booking_is_found_pinned_and_listed_as_new_until_its_fixture_rows_are_removed():
     client = get_rds_data_client()
     port, cleanup = AuroraPort(client), AuroraCleanup(client)
     baseline = {t: frozenset(port.booking_ids(t)) for t in (JORDAN_TRAVELER, DECOY_TRAVELER)}
     booking = f"HLD-IDP{uuid.uuid4().hex[:8].upper()}"
-    pair = (JORDAN_TRAVELER, booking)
     journey = f"idp-test-{booking}"
     prefix = "phase5-proof-idp-live-test"
     try:
         asyncio.run(insert_booking(client, booking, journey))
         assert booking in port.booking_ids(JORDAN_TRAVELER)
         assert booking not in port.booking_ids(DECOY_TRAVELER)
-        assert cleanup.leftovers(prefix, baseline) == [f"booking {booking} of {JORDAN_TRAVELER}"]
+        assert cleanup.leftovers(prefix, baseline) == [
+            f"booking {booking} of {JORDAN_TRAVELER} still held or of unknown state"]
     finally:
-        if booking in port.booking_ids(JORDAN_TRAVELER):
-            cleanup.release_bookings([pair])
-        asyncio.run(drop_journey(client, journey))
+        asyncio.run(live_support.delete_unaudited_fixture(
+            client, booking_ids=[booking], journey_ids=[journey]))
 
     assert cleanup.leftovers(prefix, baseline) == []

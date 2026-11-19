@@ -10,9 +10,11 @@ deny row); a 401, a 5xx, a timeout or any other failure is an error, not a refus
 be allowed at all four layers, and a decoy refusal counts only beside a passing Jordan control at
 the same layer. The decoy is also let in where it should be (its own identity, a Workflow ping,
 a Gateway read). Jordan's controls write three things: one review-only Workflow run, one
-courtesy hold, and one Concierge turn. The run and the hold are removed by id; both travelers'
-bookings are compared with a baseline taken before the first probe, and any booking the run
-cannot tie to itself is reported and never deleted. A leftover fails the receipt. The Concierge
+courtesy hold, and one Concierge turn. The hold is given back through the governed Gateway
+release tool by id and every row stays (the booking, hold request, journey and action audit rows);
+both travelers' bookings are compared with a baseline taken before the first probe, and any
+booking the run cannot tie to itself is reported and never touched. A hold still held, or of
+unknown state, after the cleanup is a leftover and fails the receipt. The Concierge
 turn writes AgentCore Memory events that this command does not delete; the dry run, the receipt
 and the operations guide declare them.
 

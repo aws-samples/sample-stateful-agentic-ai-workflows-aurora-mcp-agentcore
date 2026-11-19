@@ -8,15 +8,15 @@ import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 
-from backend.agents.phase_05_workflow.graph import snapshot_key
-from backend.agentcore.workflow_runtime import SessionStop, workflow_session_id
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agentcore.workflow_runtime import SessionStop, workflow_session_id
+from backend.agents.phase_05_workflow.graph import snapshot_key
 from backend.db.journey_document import assemble_journey_document
 from backend.db.journey_store import bind_thread, claim_execution, create_journey
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers import journeys
-from tests.live_support import record_live_ids
+from tests.live_support import delete_unaudited_fixture, record_live_ids
 
 pytestmark = pytest.mark.database
 
@@ -73,7 +73,7 @@ async def journey_with(monkeypatch):
         await master.execute(
             "UPDATE journeys SET active_thread_id = NULL WHERE journey_id = %s", (journey,))
         await master.execute("DELETE FROM journey_threads WHERE thread_id = %s", (thread,))
-        await master.execute("DELETE FROM journeys WHERE journey_id = %s", (journey,))
+        await delete_unaudited_fixture(master, journey_ids=[journey])
 
 
 async def _stop_rows(journey):

@@ -15,6 +15,7 @@ import pytest_asyncio
 from backend.agents.phase_05_workflow.runner import WorkflowCommand, WorkflowConflictError
 from backend.agents.phase_05_workflow.service import build_workflow_runner
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import delete_unaudited_fixture
 from tests.phase5_support import GatewayFake, fake_availability, fake_search
 
 pytestmark = pytest.mark.database
@@ -37,7 +38,7 @@ async def thread():
     )
     await client.execute("DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,))
     for row in rows:
-        await client.execute("DELETE FROM journeys WHERE journey_id = %s", (row["journey_id"],))
+        await delete_unaudited_fixture(client, journey_ids=[row["journey_id"]])
 
 
 async def worker(thread_id: str, mode: str) -> asyncio.subprocess.Process:

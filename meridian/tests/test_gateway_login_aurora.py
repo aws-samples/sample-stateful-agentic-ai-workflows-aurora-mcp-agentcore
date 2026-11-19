@@ -13,7 +13,7 @@ import pytest
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.budget import budget_ceiling_per_traveler_cents
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
-from tests.live_support import delete_booking_rows, delete_journey_rows
+from tests.live_support import choose_package, cleanup_run, report_cleanup
 
 pytestmark = pytest.mark.database
 
@@ -63,21 +63,21 @@ async def _saved_cap_cents(traveler: str) -> int:
 
 
 async def _package_with_room(
-    *, within_cents=None, above_cents=None, seats: int = 2
+    *, within_cents=None, above_cents=None, seats: int = 2, roomiest: bool = False
 ) -> tuple[str, str, int]:
+    """A package and duration with room, by ``package_id`` order or, with ``roomiest``, the most.
+
+    A test that confirms a booking passes ``roomiest=True``: its booking stays and uses places
+    for good, so the cost is spread over the package with the most places left.
+    """
     rows = await get_rds_data_client().execute(
         "SELECT package_id, ROUND(price_per_person * 100)::BIGINT AS cents, "
         "package_places_left(package_id) AS availability FROM trip_packages ORDER BY package_id")
-    for row in rows:
-        cents = int(row["cents"])
-        if (within_cents is not None and cents > within_cents) or (
-            above_cents is not None and cents <= above_cents
-        ):
-            continue
-        for duration, places in (row["availability"] or {}).items():
-            if int(places) >= seats:
-                return row["package_id"], duration, cents
-    pytest.skip(f"no catalog package with {seats} places left fits the price bound")
+    chosen = choose_package(rows, within_cents=within_cents, above_cents=above_cents,
+                            seats=seats, roomiest=roomiest)
+    if chosen is None:
+        pytest.skip(f"no catalog package with {seats} places left fits the price bound")
+    return chosen
 
 
 def _hold_args(package_id, duration, cents, traveler, journey_ref):
@@ -88,27 +88,31 @@ def _hold_args(package_id, duration, cents, traveler, journey_ref):
     }
 
 
-async def _remove(booking_id, journey_ref):
-    """Remove the test's rows, including any booking the journey holds whatever the reply said."""
-    master = get_rds_data_client()
-    journey = await master.execute(
-        "SELECT journey_id FROM journey_threads WHERE thread_id = %s", (journey_ref,))
-    held = await master.execute(
-        "SELECT hr.booking_id FROM hold_requests hr JOIN journey_threads jt "
-        "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s", (journey_ref,))
-    for booked in {booking_id, *(row["booking_id"] for row in held)} - {""}:
-        await delete_booking_rows(master, booked)
-    await master.execute("UPDATE journeys SET active_thread_id = NULL WHERE active_thread_id = %s",
-                         (journey_ref,))
-    await master.execute("DELETE FROM journey_threads WHERE thread_id = %s", (journey_ref,))
-    for row in journey:
-        await delete_journey_rows(master, row["journey_id"])
-        await master.execute("DELETE FROM journeys WHERE journey_id = %s", (row["journey_id"],))
+async def _give_back(booking_id, journey_ref):
+    """Give back every hold the test placed, a lost reply's included, and delete nothing.
+
+    The booking, hold request, journey and action audit rows stay: the audit export may already
+    hold them. Every id is the test's own, so earlier runs' rows never matter. Called from a
+    ``finally``, it sees the test's own failure in flight: that stays the primary error and a
+    cleanup problem is added to it as a note, as in the lease test.
+    """
+    failure = sys.exc_info()[1]
+    report_cleanup(await cleanup_run(
+        get_rds_data_client(), JORDAN, test="gateway_login", threads=(journey_ref,),
+        bookings=(booking_id,) if booking_id else ()), failure)
 
 
 async def test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privilege_login(holds):
+    """Place and confirm a hold as the gateway login.
+
+    Residual cost: this test leaves one confirmed booking for one traveler, kept as audit
+    evidence and using one package place for good. It picks the package with the most places
+    left to spread that cost. Capacity comes back only through
+    ``scripts/release_demo_bookings.py --delete-from-disposable-database`` on a disposable
+    database, or by raising availability.
+    """
     package_id, duration, cents = await _package_with_room(
-        within_cents=await _saved_cap_cents(JORDAN)
+        within_cents=await _saved_cap_cents(JORDAN), roomiest=True
     )
     details = holds.get_package_details({"packageId": package_id})
     assert details["package"]["package_id"] == package_id
@@ -127,7 +131,7 @@ async def test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privileg
         assert confirmed["booking"]["status"] == "confirmed", confirmed
         assert Decimal(confirmed["booking"]["totalAmount"]) == Decimal(cents) / 100
     finally:
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)
 
 
 async def test_a_hold_above_the_saved_budget_is_refused_whatever_ceiling_the_caller_sends(holds):
@@ -147,7 +151,7 @@ async def test_a_hold_above_the_saved_budget_is_refused_whatever_ceiling_the_cal
             "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s", (journey_ref,))
         assert held == [{"n": 0}]
     finally:
-        await _remove((result.get("hold") or {}).get("bookingId", ""), journey_ref)
+        await _give_back((result.get("hold") or {}).get("bookingId", ""), journey_ref)
 
 
 async def test_a_traveler_the_role_is_not_bound_to_is_refused_and_recorded(holds):

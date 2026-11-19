@@ -1,8 +1,13 @@
 # LangGraph example
 
-Phase 5 of Meridian runs a Strands Graph on AgentCore Runtime. This directory keeps
-the LangGraph version of the same idea as a maintained example. The application does
-not import it, and the backend image does not install LangGraph.
+Phase 5 of Meridian runs a Strands Graph on AgentCore Runtime. This directory is a
+persistence and pause/resume example for LangGraph: it saves checkpoints in Amazon Aurora
+and resumes a paused graph from any process that can reach the cluster. It is not a copy of
+Meridian's governed workflow. Its graph makes up two options from the request and marks the
+first as held after the resume, even for an ordinary question; it places no real hold,
+calls no Gateway tool, and has no worker lease or recovery. The governed booking and
+recovery behavior is in Meridian's Strands path. The application does not import this
+directory, and the backend image does not install LangGraph.
 
 ## When to choose it
 
@@ -41,8 +46,11 @@ These tests use an in-memory saver and mocked clients. They run in CI.
 The tests marked `database` and the vendored conformance suite in
 `tests/conformance/` write to a real Amazon Aurora cluster over the Data API. They need
 AWS credentials, the cluster settings from `.env`, and migration 007 applied (it
-creates `checkpoints`, `checkpoint_blobs` and `checkpoint_writes`). Each test deletes
-the rows it creates.
+creates `checkpoints`, `checkpoint_blobs` and `checkpoint_writes`). Each live test
+writes under a thread id generated for that test or, in the conformance suite, for the
+run and the pytest-xdist worker (`tests/conformance/thread_ids.py`), and deletes only
+those ids. A checkpoint thread of yours or of another participant, even one named
+`thread-1`, is never read or deleted.
 
 ```sh
 AWS_PROFILE=<profile> venv/bin/python -m pytest examples/langgraph/tests -m database -q -p no:cacheprovider

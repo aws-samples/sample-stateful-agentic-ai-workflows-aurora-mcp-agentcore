@@ -45,6 +45,16 @@ python scripts/provision_preflight.py --account <account-id> --region <region> \
   --engine-version 18.6 --output .local/provision-preflight.json
 ```
 
+Two checks fail on a new account until you act, and the preflight prints the fix beside each one
+(on stderr, and as `recovery` in the JSON report). `cdk_bootstrap` needs the CDK environment
+bootstrapped once per account and Region: from `infra/`, run
+`npm ci && npx cdk bootstrap aws://<account-id>/<region>`, which the
+[AgentCore runbook](AGENTCORE_DEPLOY_RUNBOOK.md#3-bootstrap-cdk) repeats for its own CDK app.
+`rds_service_linked_role` needs the RDS service-linked role, which a first cluster creates for
+you only when the deploying identity may create it; create it up front with
+`aws iam create-service-linked-role --aws-service-name rds.amazonaws.com`. Run the preflight
+again after each fix.
+
 The stack creates a writer and a reader, so a first creation needs room for two DB instances
 and the preflight fails with one. For a stack that is already deployed, add
 `--cluster-identifier <cluster-name>`: it then checks only the DB instances that cluster still
@@ -183,7 +193,8 @@ The listing leaves out migration 034 (login rotation clones), which is opt-in: a
 migrations that follow 034 still apply in order, and a database that already has 034 applied
 lists it as done either way.
 
-Do not run the migration script bare. `--only` refuses any file other than the first pending
+Run with no flag, the migration script only lists the pending files and prints its usage (exit 2); it
+writes nothing, and nothing applies without `--only`. `--only` refuses any file other than the first pending
 migration. Dry runs acquire database locks and execute DDL before rolling back; they require
 the same operational review as other AWS access. Apply prerequisites before dry-running the
 next migration, because a rolled-back prerequisite does not exist for the next check.
@@ -387,8 +398,9 @@ The backend stays up. The workflow continues at `availability` on the same
 `thread_id` in a new microVM; `search` does not run again.
 
 **Scripts against real Aurora and Gateway calls.** Both need the deployed
-AgentCore resources and create, then remove, their own journey, snapshot and
-hold records. They do not reset the catalog or touch other bookings.
+AgentCore resources and create their own journey, snapshot and hold records.
+They give their holds back through the Gateway and keep their rows. They do not
+reset the catalog or touch other bookings.
 
 ```bash
 python scripts/kill_and_resume_proof.py
@@ -420,10 +432,20 @@ and expiry. A second execution alone does not prove that the resume succeeded.
 `stop_and_resume_proof.py` drives the running backend instead: it stops the
 journey's Runtime session through the stop endpoint, once while the run waits
 for review (`--during waiting`) and once mid-run (`--during running`), resumes
-on a new microVM and removes its own rows unless you pass `--keep`.
+on a new microVM. At the end it gives the run's hold back through the governed Gateway release
+tool and keeps every row: the journey, hold request, booking and `booking_action_audit` rows stay,
+so an audit export taken during the run still matches Aurora. `--keep` leaves the hold held.
 
-A confirmed booking uses catalog capacity. To release the sample traveler's
-bookings, list them first:
+The other exercises follow the same rule. `kill_and_resume_proof.py`, `lost_response_proof.py` and
+`validate_demo.py` release their active holds through the Gateway and keep their rows. The
+confirmation step of `validate_demo.py` leaves one confirmed booking; the cleanup keeps it and
+prints its id, because a confirmed booking is not a hold and still uses package capacity. Each of
+the three has `--delete-from-disposable-database`, off by default, which deletes the run's rows
+instead. That deletion removes `booking_action_audit` rows, so a comparison with an earlier audit
+export reports `row-deleted`. Use it only on a database you are going to discard.
+
+A confirmed booking uses catalog capacity. To give back the sample traveler's active holds, list
+the bookings first:
 
 ```bash
 python scripts/release_demo_bookings.py
@@ -431,9 +453,12 @@ python scripts/release_demo_bookings.py --booking-id <booking-id> --apply \
   --i-understand-this-changes-aws
 ```
 
-Without `--apply` the script only lists what it would release (`--dry-run` is a deprecated
-alias of that default). `--apply` without
-`--i-understand-this-changes-aws` exits 3 and deletes nothing.
+Without `--apply` the script only lists (`--dry-run` says so explicitly). With `--apply` it
+releases each held booking through the Gateway as the traveler and deletes nothing; confirmed
+bookings are listed and kept. `--apply` without `--i-understand-this-changes-aws` exits 3 and
+changes nothing. To free the capacity of a confirmed booking on a disposable database, add
+`--delete-from-disposable-database`. That is an administrative deletion, not a release: it
+removes the booking, its lines, its hold request and its action audit rows.
 
 ## Governed tools and the workflow audit row
 
@@ -635,7 +660,8 @@ backend login has not been exercised against the live cluster.
    `conversation_messages`, `trip_interactions`, `conversations` and
    `traveler_preferences` rows for Jordan, and the access checks add
    append-only audit rows (`traveler_access_audit` and the agent audit log).
-   Only the recovery step's own rows are removed.
+   The recovery step's hold is given back through the Gateway release tool; its journey,
+   hold request, booking and action audit rows stay.
 
    | Code | Meaning |
    | --- | --- |
@@ -667,7 +693,8 @@ read a table the repository no longer has and that `PUBLIC` could still execute.
    ```
 
    Repeat with `023_drop_legacy_product_search.sql`. If 022 is already applied, start with 023;
-   if both are applied, skip this step. Do not run the script bare or edit an applied migration.
+   if both are applied, skip this step. Run with no flag, the script only lists pending
+   migrations and prints usage (exit 2), so name the file as above. Never edit an applied migration.
    The runner commits each file and its `schema_migrations` record together and rolls back on
    error. A failed role-attribute check is a finding to investigate, not permission to alter
    the role into shape. Current installations must also follow the 026-029 release sequence.
@@ -887,7 +914,10 @@ Each step that calls AWS needs the owner's approval. Run from `meridian/`.
 | `row-unexported` | A row behind the watermark was never exported |
 
 To stop exporting, delete the schedule, or turn off termination protection and destroy the stack.
-The bucket and key stay. To retire the login, run `ALTER ROLE meridian_audit_export NOLOGIN PASSWORD
+Do this before you retire Aurora. The bucket (the `BucketName` output of `MeridianAuditExport`),
+its KMS key and the export Lambda's log group are retained by the stack and stay in the account:
+name them in your teardown notes, because nothing else removes them and Object Lock keeps the
+objects until their retention ends. To retire the login, run `ALTER ROLE meridian_audit_export NOLOGIN PASSWORD
 NULL` as the master login and delete the secret and the managed policy.
 
 ## Rotate workload passwords automatically
@@ -1170,6 +1200,11 @@ the access token. A user with no active binding cannot sign in.
    python scripts/seed_cognito_users.py --apply
    ```
 
+   Off macOS there is no Keychain. `--apply` then stops before it creates, resets or stores
+   anything and names the fix: add `--no-keychain` to keep each password in Secrets Manager only
+   (`python scripts/seed_cognito_users.py --apply --no-keychain`). The token tools read the
+   password from Secrets Manager, so the binding is complete either way.
+
    What the script does, as verified against the live cluster:
 
    - It checks that each traveler exists before it creates anything. The
@@ -1299,12 +1334,17 @@ values, and by the `AuthGate` component tests. Neither uses the real settings.
 
 ### Roll back the service logins and sign-in
 
-Undo in the reverse of the order above and stop at the step you need.
+Undo in the reverse of the order above and stop at the step you need. Before step 3, remove
+everything that still attaches a login's managed policy, because IAM refuses to delete a policy
+that a role uses: the hosted web roles (the App Runner instance role or the Express task role,
+which attach `MeridianBackendAuroraAccess`) and the AgentCore stack (its Workflow Runtime role attaches `MeridianWorkflowAuroraAccess`) and the
+catalog Lambda's role (which attaches `MeridianCatalogAuroraAccess`). Retire the hosted app and then AgentCore first; the
+README's [Clean up](../../README.md#clean-up) list gives the whole order.
 
 1. Users. Delete the two Cognito users and the two `meridian/cognito/*`
    secrets, delete the `cognito` binding rows
    (`DELETE FROM traveler_identity_bindings WHERE identity_provider = 'cognito'`
-   as the master login), then, on the macOS machine that seeded them, remove the Keychain items:
+   as the master login), then, on the macOS machine that seeded them (a `--no-keychain` run has none), remove the Keychain items:
 
    ```bash
    security delete-generic-password -s meridian-cognito -a jordan.morgan@example.com
@@ -1933,7 +1973,7 @@ and not from a layer that turns the decoy away for any request.
 | `runtime.decoy_tampers_concierge` | Runtimes | decoy | `MeridianConcierge` turn with Jordan's traveler in the payload |
 | `runtime.decoy_pings_workflow` | Runtimes | decoy | `MeridianWorkflow` ping with the decoy's token, allowed |
 | `runtime.jordan_pings_workflow` | Runtimes | Jordan | `MeridianWorkflow` ping |
-| `runtime.jordan_runs_workflow` | Runtimes | Jordan | A review-only `MeridianWorkflow` start, purged afterwards |
+| `runtime.jordan_runs_workflow` | Runtimes | Jordan | A review-only `MeridianWorkflow` start, its holds given back afterwards |
 | `runtime.jordan_opens_concierge` | Runtimes | Jordan | A `MeridianConcierge` turn, first event only |
 | `gateway.jordan_reads_package` | Gateway | Jordan | `get_package_details` for one package |
 | `gateway.decoy_reads_package` | Gateway | decoy | `get_package_details` for one package with the decoy's token, allowed |
@@ -2001,12 +2041,14 @@ the run unless the Aurora role sees their rows: a table with forced row-level se
 bypasses, would answer with zero rows and no error, and the deny-row attribution and the leftover check would pass for
 the wrong reason. It must pass on the live cluster before the proof counts for anything.
 
-Jordan's controls write a review-only Workflow run and one courtesy hold. Cleanup releases bookings by exact id. Before
-it commits, it recounts the booking's rows in `bookings`, `booking_lines` and `hold_requests`; any row left cancels the
-release and is reported. It releases only a booking that the call's own answer or its journey reference ties to this
-run. Any other booking that appears while a probe runs is reported and never deleted, and it fails the receipt, as does
-any booking a decoy probe makes. Threads are purged after the bookings are released, and every step runs even if an
-earlier one failed. A leftover or a cleanup problem fails the receipt.
+Jordan's controls write a review-only Workflow run and one courtesy hold. Cleanup gives each hold back through the
+Gateway release tool by exact id, as its traveler. It reads the booking back first, sends a second call only after a read-back
+shows it still held, and sends at most two calls for a hold. A booking it cannot read is unknown and never counts as
+released. It touches only a booking that the call's own answer or its journey reference ties to this run. Any other
+booking that appears while a probe runs is reported and never touched, and it fails the receipt, as does any booking a
+decoy probe makes. Then it gives back the holds of the run's threads, and every step runs even if an earlier one failed.
+Nothing is deleted: the bookings, hold requests, journeys and action audit rows stay. A hold still held or of unknown
+state, or a cleanup problem, fails the receipt.
 
 Some residue stays on purpose and is listed under `notes` in the receipt. Audit rows (`traveler_access_audit` and the
 agent audit log) are append-only. The Concierge probes write AgentCore Memory events for Jordan's traveler, under the
@@ -2048,15 +2090,17 @@ MERIDIAN_HOSTED_AUTH='{"username": "...", "password": "..."}' python scripts/war
 ```
 
 It runs the hosted warm-up (health and Amazon Aurora, catalog, traveler profile under
-row-level security, one read-only turn for each of phases 1 to 4, saved journeys). When every
+row-level security, one chat turn for each of phases 1 to 4, saved journeys). The four chat turns
+write conversation, message, interaction and preference rows and audit rows for the seeded
+traveler, which stay (see [Host the backend on Amazon ECS Express Mode](#host-the-backend-on-amazon-ecs-express-mode), "What the warm-up writes"). When every
 step passes it sets `status` to `verified` in the release record and adds `verifiedAt`,
 `verifiedCommit` (the Git HEAD of the tree that ran it) and `checks` (the step names). When a
 step fails it sets `verification_failed` with `failedCheck` (the first failing step) and the
 `checks` that passed, and exits 1. Exit codes: 0 verified, 1 a failed step or an unfinished
 release record, 2 a usage error (`--verify` without `--hosted`, or with `--as` other than the default
 user, because the verdict is for the default traveler). A network error part-way through is a failed step. The record keeps `image` and
-`previousImage` and never holds credentials or tokens. Without `--verify` the warm-up writes
-nothing. Confirm current asset hashes and image identity separately; the warm-up does not
+`previousImage` and never holds credentials or tokens. Without `--verify` the warm-up leaves the
+release record alone, but its chat turns still write the rows above. Confirm current asset hashes and image identity separately; the warm-up does not
 check them.
 [App Runner no longer accepts new customers](https://aws.amazon.com/apprunner/),
 so this path applies to accounts that already use it. A new account hosts the backend on
@@ -2112,13 +2156,20 @@ In a `jwt` build the stack sets the container's `AURORA_SECRET_ARN` from it
 holds for a Git push but not for a publish.
 
 `scripts/validate_demo.py` runs the full sample contract (catalog, phases, holds,
-confirmation and cleanup) against a backend. It uses real services and removes
-only its own records. Against a hosted backend it needs
+confirmation and cleanup) against a backend. It uses real services. Its cleanup gives back
+its own active holds through the Gateway, keeps every row and names the confirmed booking it
+leaves behind (`--delete-from-disposable-database` deletes the rows instead). The release needs the
+Gateway configuration (`sync_agentcore_env.py --write`), master Aurora access for the read-backs and, in
+`jwt` mode, the seeded user's Cognito secret, because the Gateway call carries that user's token. Without
+them a run whose checks passed still exits 1 and prints "no governed release possible" for each
+hold, and the holds stay held until they expire or you run `release_demo_bookings.py`. Against a hosted backend it needs
 `--allow-hosted-demo-writes`, and `MERIDIAN_HOSTED_AUTH` must supply the site's
 basic-auth credentials at run time. Resolve that value from Secrets Manager
 when you run the command; do not store it in a file.
 
-To tear down the hosted app, run `npx cdk destroy MeridianWeb --exclusively` from `infra/`,
+To tear down an App Runner hosted app (for Express Mode, use
+[Tear down the Express backend](#tear-down-the-express-backend) instead), run
+`npx cdk destroy MeridianWeb --exclusively` from `infra/`,
 delete the App Runner service, then run
 `npx cdk destroy MeridianWebBackend MeridianWebRoles --exclusively`. Delete the
 `meridian/web/api-token` secret if you created one. The backend images CDK pushed stay in the
@@ -2293,15 +2344,33 @@ trial deploy, 15 Nov 2026, showed exactly that):
 **Validate before any traffic moves.** The service answers at its own HTTPS endpoint, the
 `ServiceEndpoint` output, a URL such as `https://<name>.ecs.<region>.on.aws` (the `ServiceHost`
 output is the same without the scheme; the CloudFront origin uses that). In the `jwt` release that
-endpoint refuses callers without a token, so a direct probe is safe. Run the warm-up against it as
-a seeded user ([Run the smoke scripts as a seeded user](#run-the-smoke-scripts-as-a-seeded-user)):
+endpoint refuses callers without a token, so a direct probe is safe. Run the warm-up against it with
+the credential its release needs ([Run the smoke scripts as a seeded user](#run-the-smoke-scripts-as-a-seeded-user)):
 
 ```bash
 cd ..    # meridian/
-python scripts/warm_demo.py --base-url <ServiceEndpoint>
+# jwt release: the script signs in as a seeded user and sends that access token.
+MERIDIAN_AGENTCORE_AUTH=jwt python scripts/warm_demo.py --base-url <ServiceEndpoint>
+# iam release: the direct endpoint wants the shared API token as a bearer. Resolve it from
+# Secrets Manager for this one command; never put it in a file or an argument.
+MERIDIAN_API_TOKEN="$(aws secretsmanager get-secret-value --secret-id meridian/web/api-token \
+  --query SecretString --output text)" python scripts/warm_demo.py --base-url <ServiceEndpoint>
 ```
 
-It must end with `Warm.`, with every step `ok`. This writes nothing and changes no data.
+It must end with `Warm.`, with every step `ok`. Without the credential the `iam` call is refused
+with HTTP 401 at the first step, the health check, and the run stops there. That is a missing
+credential, not a sick service.
+
+**What the warm-up writes.** It is not a health probe. The health step and the catalog, profile and
+journey reads only read, and a health probe on its own (`/health` for the load balancer, `/api/health`
+for the Aurora check) never writes. The four chat turns, phases 1 to 4, do write for the seeded
+traveler: conversation and message rows, trip interactions and saved preferences, and the access
+checks add append-only audit rows (`traveler_access_audit` and the agent audit log). A Phase 4 turn
+also commits its audit row and then stores its memory in separate short transactions. The warm-up
+never places a hold, confirms a booking or starts a recovery workflow, and nothing it writes is
+deleted afterwards. Add `--conversation-ids-file <file>` to record each turn's conversation id.
+Expect these rows after every warm-up, `--verify` or not.
+
 If the service is not healthy, read the log group `/aws/ecs/meridian-web-express` and the service's
 events in the Amazon ECS console. The task starts slowly (see the gaps below); allow up to five
 minutes after the stack reports success before treating a failed health step as a failure.
@@ -2335,6 +2404,21 @@ The record is local and git-ignored. `--verify` then adds `verified` and the che
 seeded user; in the `iam` release set `MERIDIAN_HOSTED_AUTH` to the site's credentials for the call,
 as there.
 
+**First-time hosting: the callback and the edge credentials.** The CloudFront site URL, the
+`SiteUrl` output of `MeridianWeb`, exists only after the cutover, so what depends on it
+comes after the cutover and the release record below:
+
+| Release | After `MeridianWeb` is deployed |
+| --- | --- |
+| `jwt` | Register the site's HTTPS return address with the Cognito app client: redeploy the identity stack with `-c callbackUrls=http://localhost:5173/showcase,<SiteUrl>/showcase` (the command is in [Sign-in and who is calling](#sign-in-and-who-is-calling)). Until you do, the hosted sign-in flow ends in `redirect_mismatch`. There is no edge credential to provision: the `jwt` viewer function holds none. |
+| `iam` | No Cognito callback applies. The stack creates the KeyValueStore `meridian-web-access` (its ARN is the `AccessStoreArn` output) empty, and the viewer function reads two keys from it: `basic`, the base64 of `user:password` for the presenter's Basic credential, and `token`, the shared API token it injects as the bearer for API paths. Add both before the first visit, with the token taken from the `meridian/web/api-token` secret. The repository has no script for this, so use `aws cloudfront-keyvaluestore put-key` and keep both values out of files. |
+
+Then test as a stranger would, in a fresh browser session with no saved cookies or tokens (a
+private window): open the `SiteUrl`, sign in (`jwt`) or answer the Basic prompt (`iam`), and load
+the showcase. Check the hosted site with the same script: `python scripts/warm_demo.py --hosted`
+(`jwt`, as a seeded user) or with `MERIDIAN_HOSTED_AUTH` set to the Basic credential (`iam`). This
+fresh-session check has not been run for the Express path in a disposable account.
+
 **Update the service.** Rebuild with the same switch and deploy `MeridianWebExpress`. A new image
 tag, or changed environment, becomes a new service revision, which Express Mode rolls out with a
 canary deployment and rolls back on 5XX alarms. Deploy `MeridianWebExpressRoles` first when
@@ -2354,8 +2438,8 @@ Keep the hosted UI domain set: `MeridianWeb` builds its Content-Security-Policy 
 rollback without it would drop the Cognito host from the policy and break sign-in.
 
 CloudFront returns to the App Runner service within minutes; App Runner was never changed. To
-remove the Express path, first switch `MeridianWeb` away from it (CloudFormation refuses to delete
-an export `MeridianWeb` still imports), then run
+remove the Express path after a rollback to App Runner, first switch `MeridianWeb` away from it
+(CloudFormation refuses to delete an export `MeridianWeb` still imports), then run
 `npx cdk destroy MeridianWebExpress MeridianWebExpressRoles -c backendHost=express --exclusively`.
 Keep `--exclusively`: without it the CDK CLI also destroys every stack that depends on the ones you
 name, and `MeridianWeb` depends on the Express stacks, so the command would delete the live site
@@ -2363,6 +2447,55 @@ name, and `MeridianWeb` depends on the Express stacks, so the command would dele
 stack deletes the service, and Express Mode deletes the load balancer, security groups and
 certificate it created when no other Express service shares them. The log group is removed with the
 stack. The image stays in the CDK assets repository.
+
+### Tear down the Express backend
+
+Use this when Express Mode is the only host you created. There is no App Runner service to roll
+back to, so the App Runner teardown in [Publish the web app](#publish-the-web-app) does not
+apply: it would try to destroy stacks you never deployed. One task and one Application Load
+Balancer run all the time and bill by the hour, so do not leave this half done.
+
+The order follows the stack definitions. `MeridianWeb` takes the service's host from
+`MeridianWebExpress`, which takes its roles from `MeridianWebExpressRoles`, and CloudFormation will
+not delete an export another stack still imports. So the consumer goes first and the roles last.
+Run from `infra/`, in the same shell values you deployed with: `MERIDIAN_WEB_REGION`,
+`MERIDIAN_AGENTCORE_AUTH`, `MERIDIAN_COGNITO_HOSTED_UI_DOMAIN`, no `MERIDIAN_BACKEND_HOST`, and in
+the `iam` release `-c apiTokenSecretArn=<ARN of meridian/web/api-token>` on every command. The
+Express stacks exist in the CDK app only with `-c backendHost=express`, and every command keeps
+`--exclusively`:
+
+```bash
+npx cdk destroy MeridianWeb -c backendHost=express --exclusively
+npx cdk destroy MeridianWebExpress -c backendHost=express --exclusively
+npx cdk destroy MeridianWebExpressRoles -c backendHost=express --exclusively
+```
+
+1. `MeridianWeb` is the site that consumes the service. It removes the CloudFront distribution and
+   the site bucket (its objects are deleted with it). CloudFront takes several minutes.
+2. `MeridianWebExpress` deletes the Express service, and Express Mode deletes the load balancer,
+   security groups and certificate it created when no other Express service shares them. Its log
+   group `/aws/ecs/meridian-web-express` goes with the stack.
+3. `MeridianWebExpressRoles` deletes the task, execution and infrastructure roles last, because the
+   service stack imports them.
+
+Then verify, because a failed or interrupted delete leaves the task and the load balancer billing:
+
+```bash
+aws ecs list-services --cluster default --region <region>
+aws elbv2 describe-load-balancers --region <region> --query 'LoadBalancers[].[LoadBalancerName,CreatedTime]'
+```
+
+`meridian-web-express` must not be listed, and no load balancer that Express Mode created for it
+may remain (it is named by Express Mode, so match its creation time and tags in the Amazon EC2
+console). If a stack stays in `DELETE_FAILED`, read its events and fix the cause before you
+destroy the roles. What stays: the image in the CDK assets repository, the `meridian/web/api-token`
+secret in the `iam` release, and the `MeridianBackendAuroraAccess` policy, which you delete only
+after the roles stack is gone, in
+[Roll back the service logins and sign-in](#roll-back-the-service-logins-and-sign-in).
+
+This order has not been rehearsed in a disposable account. It comes from reading
+`infra/lib/meridian-web-app.ts`, `meridian-web-express-stack.ts` and
+`meridian-web-express-roles-stack.ts`.
 
 **What Express Mode cannot set, compared with App Runner.** These are limits of the
 `AWS::ECS::ExpressGatewayService` resource at the pinned `aws-cdk-lib`, not omissions:
@@ -2634,7 +2767,7 @@ the FastAPI backend on App Runner, both in the primary Region (`MERIDIAN_WEB_REG
 | `identity_proof.py` stops with an unscoped read that could return zero rows | The preflight found a table the proof reads without a scope that the Aurora role cannot see. Fix the role or the policy before running. |
 | `identity_proof.py` reports a booking that appeared and cannot be tied to the run | Something else wrote a booking during a probe. It was not deleted. Check it by id and remove it yourself if it is a test row. |
 | `identity_proof.py` reports an access-denied error on a Runtime row for Jordan | The Runtime's authorizer rejected a valid token. Check that the Cognito app client is in the Runtime's allowed clients and that `Authorization` is in its request header allowlist. |
-| `identity_proof.py` prints `CLEANUP:` lines or leftovers above 0 | Something the run made remains. List threads that start with `phase5-proof-idp` and holds the run placed, then purge and release them by id. |
+| `identity_proof.py` prints `CLEANUP:` lines or leftovers above 0 | A hold the run placed is still held or its state is unknown. List threads that start with `phase5-proof-idp` and their holds, then give each back with `scripts/release_demo_bookings.py` or the Gateway release tool, by id. Rows are never deleted. |
 
 ## Waits, retries and readback
 

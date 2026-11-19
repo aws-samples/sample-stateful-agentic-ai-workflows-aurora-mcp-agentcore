@@ -26,8 +26,6 @@ from backend.routers.memory import get_memory_profile
 from scripts.agentcore_caller import caller_scope
 from tests.live_support import (
     cleanup_run,
-    delete_booking_rows,
-    delete_journey_rows,
     report_cleanup,
 )
 
@@ -101,23 +99,6 @@ class _Holds:
         report_cleanup(await cleanup_run(self.client, TRAVELER, test="stale_quote",
                                          threads=self.threads, bookings=self.booking_ids))
 
-    async def purge(self) -> None:
-        for booking_id in self.booking_ids:
-            journeys = await self.client.execute(
-                "SELECT journey_id FROM hold_requests WHERE booking_id = %s",
-                (booking_id,),
-            )
-            await delete_booking_rows(self.client, booking_id)
-            for row in journeys:
-                await delete_journey_rows(self.client, row["journey_id"])
-                await self.client.execute(
-                    "DELETE FROM journey_threads WHERE journey_id = %s",
-                    (row["journey_id"],),
-                )
-                await self.client.execute(
-                    "DELETE FROM journeys WHERE journey_id = %s", (row["journey_id"],)
-                )
-
 
 @pytest.fixture(autouse=True)
 def signed_in_as_jordan():
@@ -132,16 +113,7 @@ def signed_in_as_jordan():
 
 @pytest_asyncio.fixture
 async def holds() -> AsyncIterator[_Holds]:
-    tracker = _Holds(get_rds_data_client())
-    try:
-        yield tracker
-    finally:
-        await tracker.purge()
-
-
-@pytest_asyncio.fixture
-async def released_holds() -> AsyncIterator[_Holds]:
-    """Like ``holds``, but the holds go back through the governed release and every row stays.
+    """Every hold a test tracks goes back through the governed release; every row stays.
 
     The audit export may already hold the action audit rows; deleting them would leave a
     lasting row-deleted finding in the shared database's verification.
@@ -313,16 +285,16 @@ async def test_an_unpublished_duration_is_refused_before_any_hold(
 
 
 async def test_a_quote_the_catalog_no_longer_matches_reserves_nothing_until_it_is_renewed(
-    released_holds: _Holds,
+    holds: _Holds,
 ) -> None:
     """The traveler saw an older price: 409 with the current terms, then the new approval holds."""
-    package_id, duration, _seats = await _a_package_with_room(released_holds.client, 1)
-    current = await _quote(released_holds.client, package_id, duration, 1)
+    package_id, duration, _seats = await _a_package_with_room(holds.client, 1)
+    current = await _quote(holds.client, package_id, duration, 1)
     stale = {**current, "unit_price_cents": current["unit_price_cents"] - 100,
              "total_cents": current["total_cents"] - 100}
     conversation = f"hold-test-{uuid.uuid4().hex[:12]}"
     # Phase 4 holds use this journey thread; tracking it first also cleans up a lost reply.
-    thread = released_holds.track_thread(f"concierge:{conversation}")
+    thread = holds.track_thread(f"concierge:{conversation}")
 
     with pytest.raises(HTTPException) as refused:
         await process_order(OrderRequest(
@@ -332,14 +304,14 @@ async def test_a_quote_the_catalog_no_longer_matches_reserves_nothing_until_it_i
     assert refused.value.status_code == 409
     assert refused.value.detail["code"] == "price_changed"
     assert refused.value.detail["quote"] == current
-    assert await released_holds.thread_bookings(thread) == [], "the refused quote reserved nothing"
+    assert await holds.thread_bookings(thread) == [], "the refused quote reserved nothing"
 
     renewed = await process_order(OrderRequest(
         product_id=package_id, size=duration, quantity=1, phase=4,
         conversation_id=conversation, quote=current), PRINCIPAL)
     assert renewed.order is not None
-    released_holds.track(renewed.order.order_id)
-    assert await released_holds.thread_bookings(thread) == [renewed.order.order_id]
-    line = await released_holds.booking_line(renewed.order.order_id)
+    holds.track(renewed.order.order_id)
+    assert await holds.thread_bookings(thread) == [renewed.order.order_id]
+    line = await holds.booking_line(renewed.order.order_id)
     assert int(round(float(line["unit_price"]) * 100)) == current["unit_price_cents"]
     assert renewed.order.total == current["total_cents"] / 100

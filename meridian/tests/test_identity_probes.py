@@ -64,7 +64,7 @@ def test_no_two_probes_share_a_thread_or_a_conversation_name():
     assert len(ctx.memory_sessions) == len(set(ctx.memory_sessions)) == 2
 
 
-def test_probe_threads_are_ones_the_recovery_purge_accepts():
+def test_probe_threads_are_ones_the_recovery_proof_names():
     assert THREAD_PREFIX.startswith(recovery.PROOF_THREAD_PREFIX)
 
 

@@ -25,6 +25,7 @@ from langgraph.checkpoint.serde.jsonplus import (
 )
 
 from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.tests.conformance.thread_ids import THREAD_1, THREAD_2, THREAD_T1
 
 
 class MemoryPydantic(BaseModel):
@@ -48,21 +49,21 @@ class TestMemorySaver:
         # objects for test setup
         self.config_1: RunnableConfig = {
             "configurable": {
-                "thread_id": "thread-1",
+                "thread_id": THREAD_1,
                 "checkpoint_ns": "",
                 "checkpoint_id": "1",
             }
         }
         self.config_2: RunnableConfig = {
             "configurable": {
-                "thread_id": "thread-2",
+                "thread_id": THREAD_2,
                 "checkpoint_ns": "",
                 "checkpoint_id": "2",
             }
         }
         self.config_3: RunnableConfig = {
             "configurable": {
-                "thread_id": "thread-2",
+                "thread_id": THREAD_2,
                 "checkpoint_id": "2-inner",
                 "checkpoint_ns": "inner",
             }
@@ -108,7 +109,7 @@ class TestMemorySaver:
         # calls the async equivalents; the assertions are unchanged.
         config: RunnableConfig = {
             "configurable": {
-                "thread_id": "thread-2",
+                "thread_id": THREAD_2,
                 "checkpoint_ns": "",
                 "__super_private_key": "super_private_value",
             },
@@ -180,7 +181,7 @@ class TestMemorySaver:
 
         # search by config (defaults to checkpoints across all namespaces)
         search_results_5 = list(
-            self.memory_saver.list({"configurable": {"thread_id": "thread-2"}})
+            self.memory_saver.list({"configurable": {"thread_id": THREAD_2}})
         )
         assert len(search_results_5) == 2
         assert {
@@ -289,7 +290,7 @@ async def test_memory_saver_warns_on_unregistered_msgpack(
     checkpoint["channel_versions"] = {"foo": 1}
 
     config: RunnableConfig = {
-        "configurable": {"thread_id": "thread-1", "checkpoint_ns": ""}
+        "configurable": {"thread_id": THREAD_1, "checkpoint_ns": ""}
     }
 
     caplog.set_level(logging.WARNING, logger="langgraph.checkpoint.serde.jsonplus")
@@ -318,7 +319,7 @@ async def test_memory_saver_allowlist_silences_warning(
     checkpoint["channel_versions"] = {"foo": 1}
 
     config: RunnableConfig = {
-        "configurable": {"thread_id": "thread-1", "checkpoint_ns": ""}
+        "configurable": {"thread_id": THREAD_1, "checkpoint_ns": ""}
     }
 
     caplog.set_level(logging.WARNING, logger="langgraph.checkpoint.serde.jsonplus")
@@ -343,7 +344,7 @@ async def test_memory_saver_strict_blocks_unregistered(
     checkpoint["channel_versions"] = {"foo": 1}
 
     config: RunnableConfig = {
-        "configurable": {"thread_id": "thread-1", "checkpoint_ns": ""}
+        "configurable": {"thread_id": THREAD_1, "checkpoint_ns": ""}
     }
 
     caplog.set_level(logging.WARNING, logger="langgraph.checkpoint.serde.jsonplus")
@@ -371,7 +372,7 @@ async def test_memory_saver_with_allowlist_proxy_isolated(cluster) -> None:
     checkpoint["channel_versions"] = {"foo": 1}
 
     config: RunnableConfig = {
-        "configurable": {"thread_id": "thread-1", "checkpoint_ns": ""}
+        "configurable": {"thread_id": THREAD_1, "checkpoint_ns": ""}
     }
 
     new_config = await proxy.aput(config, checkpoint, {}, {"foo": 1})
@@ -400,7 +401,7 @@ class TestInMemorySaverDeltaChannel:
         """_load_blobs omits delta channels (stored as 'empty'); reconstruction deferred."""
         saver = InMemorySaver()
 
-        thread_id, ns, channel = "t1", "", "messages"
+        thread_id, ns, channel = THREAD_T1, "", "messages"
         v1 = "00000000000000000000000000000001.0000000000000000"
 
         saver.blobs[(thread_id, ns, channel, v1)] = ("empty", b"")
@@ -420,7 +421,7 @@ class TestInMemorySaverDeltaChannel:
         saver = InMemorySaver()
         serde = JsonPlusSerializer()
 
-        thread_id, ns, channel = "t1", "", "messages"
+        thread_id, ns, channel = THREAD_T1, "", "messages"
 
         cp1 = empty_checkpoint()
         cp1["id"] = "cp1"
@@ -466,7 +467,7 @@ class TestInMemorySaverDeltaChannel:
         """Reconstructing the root checkpoint's state: no ancestors → []."""
         saver = InMemorySaver()
         serde = JsonPlusSerializer()
-        thread_id, ns, channel = "t1", "", "messages"
+        thread_id, ns, channel = THREAD_T1, "", "messages"
 
         cp1 = empty_checkpoint()
         cp1["id"] = "cp1"
@@ -522,7 +523,7 @@ class TestBaseFallbackGetChannelWrites:
         Returns `(saver, thread_id, namespace)`.
         """
         saver = AuroraDataApiSaver(cluster)
-        thread_id, ns = "t1", ""
+        thread_id, ns = THREAD_T1, ""
 
         cp0_id = "00000000000000000000000000000001.0000000000000000"
         cp1_id = "00000000000000000000000000000002.0000000000000000"
@@ -711,7 +712,7 @@ class TestPreDeltaBlobTerminator:
         """
         saver = InMemorySaver()
         serde = JsonPlusSerializer()
-        thread_id, ns, channel = "t1", "", "messages"
+        thread_id, ns, channel = THREAD_T1, "", "messages"
 
         v1 = "00000000000000000000000000000001.0"
         v2 = "00000000000000000000000000000002.0"

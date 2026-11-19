@@ -25,7 +25,7 @@ def test_a_correct_system_gives_a_passing_receipt_and_a_clean_cleanup():
     assert receipt.ok is True and len(receipt.outcomes) == 21
     assert receipt.cleanup["leftovers"] == 0 and receipt.cleanup["problems"] == []
     assert cleanup.released == [("trv_meridian_demo", "HLD-TEST0001")]
-    assert all(t.startswith(THREAD_PREFIX + "abc12345") for t in cleanup.purged)
+    assert all(t.startswith(THREAD_PREFIX + "abc12345") for t in cleanup.threads_released)
     assert cleanup.prefix == THREAD_PREFIX + "abc12345"
 
 
@@ -50,7 +50,7 @@ def test_a_leftover_fails_the_run():
 
 def test_cleanup_failures_are_recorded_masked_and_fail_the_run():
     ports, _ = good_world()
-    cleanup = FakeCleanup(fail_purge=True, fail_release=True, fail_check=True)
+    cleanup = FakeCleanup(fail_thread_release=True, fail_release=True, fail_check=True)
 
     receipt = run_proof(ports, cleanup, Context(run_id="abc12345", design="both"), HEADER)
 
@@ -77,13 +77,13 @@ def test_cleanup_runs_even_when_the_run_is_interrupted():
     assert calls["n"] == 1 and cleanup.prefix == THREAD_PREFIX + "abc12345"
 
 
-def test_the_bookings_are_released_before_the_threads_are_purged():
+def test_the_bookings_are_released_before_the_threads_holds_are():
     ports, _ = good_world()
     cleanup = FakeCleanup()
 
     run_proof(ports, cleanup, Context(run_id="abc12345", design="both"), HEADER)
 
-    assert cleanup.order.index("release") < cleanup.order.index("purge")
+    assert cleanup.order.index("release") < cleanup.order.index("release_thread")
     assert cleanup.order[-1] == "check"
 
 
@@ -143,7 +143,7 @@ def test_the_receipt_carries_the_residue_notes():
     assert receipt.to_dict()["notes"] == receipt.notes
 
 
-def test_tidy_purges_each_thread_once():
+def test_tidy_releases_each_thread_once():
     ctx = Context(run_id="abc12345", design="both")
     ctx.baseline = {}
     ctx.threads += [ctx.thread("d")] * 2
@@ -151,7 +151,7 @@ def test_tidy_purges_each_thread_once():
 
     notes = tidy(cleanup, ctx)
 
-    assert notes["threads_purged"] == 1 and len(cleanup.purged) == 1
+    assert notes["threads_checked"] == 1 and len(cleanup.threads_released) == 1
 
 
 class InterruptedOnce(FakeCleanup):
@@ -166,9 +166,9 @@ class InterruptedOnce(FakeCleanup):
             self.hit = True
             raise KeyboardInterrupt
 
-    def purge_thread(self, thread):
-        self._maybe("purge")
-        super().purge_thread(thread)
+    def release_thread(self, thread):
+        self._maybe("thread")
+        super().release_thread(thread)
 
     def release_bookings(self, booking_ids):
         self._maybe("release")
@@ -179,7 +179,7 @@ class InterruptedOnce(FakeCleanup):
         return super().leftovers(prefix, booking_ids)
 
 
-@pytest.mark.parametrize("step", ["purge", "release", "check"])
+@pytest.mark.parametrize("step", ["thread", "release", "check"])
 def test_a_second_interrupt_during_cleanup_is_reported_and_the_rest_still_runs(step):
     ports, _ = good_world()
     cleanup = InterruptedOnce(step)
@@ -197,7 +197,7 @@ def test_a_second_interrupt_after_a_first_still_leaves_notes_on_the_error():
     ports, _ = good_world()
     broken = ports.__class__(**{**ports.__dict__, "http": lambda *a: (_ for _ in ()).throw(
         KeyboardInterrupt())})
-    cleanup = InterruptedOnce("purge")
+    cleanup = InterruptedOnce("thread")
 
     with pytest.raises(KeyboardInterrupt) as caught:
         run_proof(broken, cleanup, Context(run_id="abc12345", design="both"), HEADER)

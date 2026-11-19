@@ -23,8 +23,7 @@ from backend.db.journey_store import ScopedDb, bind_thread, claim_execution, cre
 from backend.db.rds_data_client import get_rds_data_client
 from tests.live_support import (
     as_gateway,
-    delete_booking_rows,
-    delete_journey_rows,
+    delete_unaudited_fixture,
     gateway_login,
     record_live_ids,
 )
@@ -50,10 +49,10 @@ class Fixture:
         )
 
     async def purge(self) -> None:
+        """Remove this fixture's SQL-only rows; refuse if an action audit row references them."""
         await self.client.execute(
             "DELETE FROM workflow_snapshots WHERE session_id = %s", (self.thread_id,)
         )
-        await delete_booking_rows(self.client, self.booking_id)
         await self.client.execute(
             "DELETE FROM journey_executions WHERE thread_id = %s", (self.thread_id,)
         )
@@ -64,10 +63,8 @@ class Fixture:
         await self.client.execute(
             "DELETE FROM journey_threads WHERE thread_id = %s", (self.thread_id,)
         )
-        await delete_journey_rows(self.client, self.journey_id)
-        await self.client.execute(
-            "DELETE FROM journeys WHERE journey_id = %s", (self.journey_id,)
-        )
+        await delete_unaudited_fixture(
+            self.client, booking_ids=[self.booking_id], journey_ids=[self.journey_id])
 
 
 @pytest_asyncio.fixture
@@ -326,11 +323,12 @@ async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(
 
 async def _place_hold(journey: Fixture) -> str:
     """Create one 12-hour hold on the journey through the Gateway login; return its request id."""
+    from decimal import Decimal
+
     from backend.agents.phase_05_workflow.hold_intent import (
         fingerprint_terms,
         normalize_hold_terms,
     )
-    from decimal import Decimal
 
     request_id = f"hrq_{uuid.uuid4().hex[:12]}"
     fingerprint = fingerprint_terms(

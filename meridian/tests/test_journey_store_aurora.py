@@ -28,6 +28,7 @@ from backend.db.journey_store import (
     renew_lease,
 )
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import delete_unaudited_fixture
 
 pytestmark = pytest.mark.database
 
@@ -39,7 +40,7 @@ TRAVELER = "trv_meridian_demo"
 ALREADY_EXPIRED = -1
 
 
-async def _purge(client, thread_ids: list[str], journey_ids: list[str]) -> None:
+async def _remove_fixture(client, thread_ids: list[str], journey_ids: list[str]) -> None:
     """Remove test rows as the admin role; the app role holds no DELETE."""
     for thread_id in thread_ids:
         await client.execute(
@@ -53,9 +54,7 @@ async def _purge(client, thread_ids: list[str], journey_ids: list[str]) -> None:
             "DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,)
         )
     for journey_id in journey_ids:
-        await client.execute(
-            "DELETE FROM journeys WHERE journey_id = %s", (journey_id,)
-        )
+        await delete_unaudited_fixture(client, journey_ids=[journey_id])
 
 
 class _Session:
@@ -103,7 +102,7 @@ async def session() -> AsyncIterator[_Session]:
             yield created
     finally:
         if created is not None:
-            await _purge(client, created.threads, created.journeys)
+            await _remove_fixture(client, created.threads, created.journeys)
 
 
 # ---------------------------------------------------------------- identity

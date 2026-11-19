@@ -21,7 +21,7 @@ retrieval, a production Concierge with memory, and a durable Workflow. Real sign
 | `scripts/` | Migrations in `scripts/migrations/`, provisioning and binding tools, release tools, identity proofs, the throwaway-Gateway harness in `scripts/gateway_harness/` |
 | `tests/` | Pytest suite; `database`-marked tests need a live cluster |
 | `docs/` | Operations, architecture, runbooks, learnings |
-| `examples/` | SQL examples, plus `examples/langgraph/`, a maintained second implementation of the workflow that the application never imports |
+| `examples/` | SQL examples, plus `examples/langgraph/`, a persistence and pause/resume example (not the governed workflow) that the application never imports |
 | `.local/` | Local scratch and receipts. Git-ignored. Never commit from it |
 
 The Python version is 3.13 (the `Dockerfile` and CI). The local environment is `venv/`. Use
@@ -131,8 +131,9 @@ scripts, `scripts/sync_*` and `scripts/seed_*` tools, and `agentcore deploy`.
   (`--apply` plus `--i-understand-this-changes-aws` or `--i-understand-this-creates-aws-resources`).
   Never add a flag to skip a confirmation. Exit codes differ by tool; see `scripts/README.md`, and
   `docs/OPERATIONS.md#read-the-release-back` for `release_identity.py`.
-- Never run `scripts/apply_migrations.py` bare. Run it with `--pending` first and apply one
-  migration at a time, with a rolled-back dry run before the real apply.
+- Run `scripts/apply_migrations.py` with `--pending` first and apply one migration at a time,
+  with a rolled-back dry run before the real apply. With no flag it only lists and prints usage;
+  nothing applies without `--only`.
 - The AgentCore CLI is pinned to one release, `AGENTCORE_CLI_VERSION` in
   `scripts/identity_release/settings.py` (0.31.2, from npm's `v0-latest` tag). The release tools run
   it as `npx -y @aws/agentcore@0.31.2` and refuse to plan or deploy when `--version` reports anything

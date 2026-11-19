@@ -7,6 +7,7 @@ import pytest
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
+from scripts import governed_release
 
 JORDAN = "trv_meridian_demo"
 DECOY = "trv_demo_decoy"
@@ -106,16 +107,60 @@ async def as_gateway(client: RDSDataClient, transaction_id: str, sql: str, param
     return rows
 
 
-async def delete_booking_rows(client, booking_id: str) -> None:
-    """Delete one booking's rows, referencing tables first (migration 028 foreign keys)."""
-    for table in BOOKING_ROW_TABLES:
-        await client.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking_id,))
+AUDITED_BY = {"booking_id": "booking_id", "journey_id": "journey_id"}
 
 
-async def delete_journey_rows(client, journey_id: str) -> None:
-    """Delete a journey's action audit and hold identity rows, before the journey itself."""
-    for table in ("booking_action_audit", "hold_requests"):
-        await client.execute(f"DELETE FROM {table} WHERE journey_id = %s", (journey_id,))
+async def _audit_rows(client, column: str, value: str) -> int:
+    rows = await client.execute(
+        f"SELECT COUNT(*) AS n FROM booking_action_audit WHERE {column} = %s", (value,))
+    return int(rows[0]["n"])
+
+
+RESTRICTED_LOGINS = frozenset({
+    "meridian_app", "meridian_backend", "meridian_gateway", "meridian_workflow",
+    "meridian_identity", "meridian_catalog", "meridian_audit_export", "meridian_rotator"})
+_MASTER_CHECKED: set[int] = set()
+
+
+async def require_master_login(client) -> None:
+    """Fail once per client unless it is the master login.
+
+    A restricted login cannot read ``booking_action_audit`` under row-level security, so its
+    audit count would read zero and the refusal in :func:`delete_unaudited_fixture` would
+    never fire.
+    """
+    if id(client) in _MASTER_CHECKED:
+        return
+    rows = await client.execute("SELECT current_user AS login")
+    login = str(rows[0]["login"]) if rows else ""
+    if login in RESTRICTED_LOGINS or login.endswith("_clone"):
+        raise AssertionError(
+            f"the fixture cleanup needs the master login, not {login}: a restricted login "
+            "cannot see the audit rows it must not delete")
+    _MASTER_CHECKED.add(id(client))
+
+
+async def delete_unaudited_fixture(client, *, booking_ids=(), journey_ids=()) -> None:
+    """Delete synthetic fixture rows, and refuse when an action audit row references them.
+
+    Only for rows a test inserted with plain SQL, or through a booking function called
+    directly, so no Lambda wrote an action audit row. A booking or journey with such a row is
+    evidence the audit export may already hold: the helper raises before it deletes anything,
+    and the test must give the hold back through the governed release instead
+    (:func:`cleanup_run`). The helper never deletes from an audit table.
+    """
+    await require_master_login(client)
+    for column, values in (("booking_id", booking_ids), ("journey_id", journey_ids)):
+        for value in values:
+            if await _audit_rows(client, AUDITED_BY[column], value):
+                raise AssertionError(
+                    f"{column} {value} has booking_action_audit rows; not deleting evidence")
+    for booking in booking_ids:
+        for table in ("hold_requests", "booking_lines", "bookings"):
+            await client.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,))
+    for journey in journey_ids:
+        await client.execute("DELETE FROM hold_requests WHERE journey_id = %s", (journey,))
+        await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey,))
 
 
 RUN_LOG_ENV = "MERIDIAN_LIVE_RUN_LOG"
@@ -132,76 +177,30 @@ def record_live_ids(test: str, **ids: str) -> None:
             log.write(json.dumps({"test": test, **ids}) + "\n")
 
 
-async def booking_is_active(client, booking_id: str) -> bool:
-    """A hold that still reserves places: held and not past its expiry, by Aurora's clock."""
-    rows = await client.execute(
-        "SELECT (status = 'held' AND hold_expires_at > CURRENT_TIMESTAMP) AS active "
-        "FROM bookings WHERE booking_id = %s",
-        (booking_id,),
-    )
-    return bool(rows) and bool(rows[0]["active"])
-
-
-RELEASE_CALLS_PER_HOLD = 2
-
-
-def _cause(exc: BaseException) -> str:
-    """A cause that is safe to print: the exception type, never its text, which can carry ids."""
-    return type(exc).__name__
-
-
-async def _active_or_unknown(client, booking_id: str) -> tuple[bool | None, str]:
-    """Whether the hold is active, or None with a cause when Aurora could not be read."""
-    try:
-        return await booking_is_active(client, booking_id), ""
-    except Exception as exc:  # noqa: BLE001 - an unknown state is reported, never assumed
-        return None, f"read-back failed ({_cause(exc)})"
-
-
-def _call_release(release, call_tool, args) -> str:
-    """One governed release call: '' when the Gateway answered released, else a fixed cause."""
-    try:
-        outcome = release(call_tool, args)
-    except Exception as exc:  # noqa: BLE001 - an ambiguous reply: the next read-back decides
-        return f"release reply lost ({_cause(exc)})"
-    return "" if outcome.released else f"release not confirmed ({outcome.error})"
-
-
-async def _release_one(client, call_tool, release, args, booking_id: str) -> str:
-    """Release one hold with at most two governed calls, reading it back before each call.
-
-    A second call goes out only when a read-back succeeded and showed the hold still active,
-    so a release whose outcome is unknown is never repeated blind.
-
-    Returns '' once the hold is no longer active, else every cause seen, in order.
-    """
-    causes: list[str] = []
-    for call in range(RELEASE_CALLS_PER_HOLD + 1):
-        active, read_cause = await _active_or_unknown(client, booking_id)
-        if active is False:
-            return ""
-        causes.append(read_cause)
-        if call == RELEASE_CALLS_PER_HOLD or (call and active is None):
-            break
-        causes.append(_call_release(release, call_tool, args))
-    return "; ".join(dict.fromkeys(cause for cause in causes if cause)) or "still held"
+RELEASE_CALLS_PER_HOLD = governed_release.RELEASE_CALLS_PER_HOLD
+_cause = governed_release.cause
 
 
 async def _release_each(client, traveler_id: str, holds: list[dict], call_tool) -> dict:
-    """Attempt every hold, whatever happened to the ones before it."""
-    from backend.agents.phase_05_workflow.governed_hold import (
-        release_arguments,
-        release_governed_hold,
-    )
+    """Attempt every hold, whatever happened to the ones before it.
 
+    Each hold goes through the shared rule in ``scripts/governed_release.py``: a pinned
+    read-back before each call and at most two calls. ``call_tool`` may be a
+    :class:`governed_release.LazyGateway`, set up only when a hold still needs a call.
+    """
+    from backend.agents.phase_05_workflow.governed_hold import release_arguments
+
+    ledger = governed_release.CallLedger()
     unresolved: dict[str, str] = {}
     for hold in holds:
         try:
             args = release_arguments(traveler_id=traveler_id,
                                      hold_request_id=hold["hold_request_id"],
                                      journey_id=hold["journey_id"])
-            cause = await _release_one(client, call_tool, release_governed_hold, args,
-                                       hold["booking_id"])
+            cause = await governed_release.release_one(
+                client, traveler_id, call_tool, args, hold["booking_id"], ledger)
+        except governed_release.GatewayUnavailable as exc:
+            cause = f"no governed release possible ({exc.reason})"
         except Exception as exc:  # noqa: BLE001 - one bad hold never stops the others
             cause = f"cleanup error ({_cause(exc)})"
         if cause:
@@ -229,22 +228,14 @@ async def release_active_holds(client, traveler_id: str, holds: list[dict],
             and why, as an exception type or the Gateway's fixed error code, and a failure
             to close the caller token scope.
     """
-    unresolved: dict[str, str] | None = None
-    closing = ""
+    gateway = governed_release.LazyGateway(user_key)
+    unresolved: dict[str, str] = {}
     try:
-        from backend.agentcore.gateway import get_agentcore_gateway
-        from scripts.agentcore_caller import caller_scope
-
-        with caller_scope(user_key):
-            unresolved = await _release_each(client, traveler_id, holds,
-                                             get_agentcore_gateway().call_tool)
+        unresolved = await _release_each(client, traveler_id, holds, gateway)
     except Exception as exc:  # noqa: BLE001 - reported below; the run's cleanup goes on
-        if unresolved is None:
-            unresolved = {hold["booking_id"]: f"no governed release possible ({_cause(exc)})"
-                          for hold in holds}
-        else:
-            closing = f"closing the caller token scope failed ({_cause(exc)})"
-    problems = [f"{booking} ({cause})" for booking, cause in (unresolved or {}).items()]
+        unresolved = {hold["booking_id"]: f"cleanup error ({_cause(exc)})" for hold in holds}
+    closing = gateway.close()
+    problems = [f"{booking} ({cause})" for booking, cause in unresolved.items()]
     if closing:
         problems.append(closing)
     if problems:
@@ -270,7 +261,8 @@ async def _lookup(client, sql: str, key: str, kind: str, problems: list[str]):
         return None
 
 
-async def _run_holds(client, threads, bookings, problems: list[str]) -> list[dict]:
+async def _run_holds(client, traveler_id: str, threads, bookings,
+                     problems: list[str]) -> list[dict]:
     """The holds a run owns: every hold on its threads and every booking it tracked.
 
     A tracked booking with no hold request cannot be released through the Gateway; it is
@@ -285,7 +277,7 @@ async def _run_holds(client, threads, bookings, problems: list[str]) -> list[dic
         for row in rows or []:
             found.setdefault(row["booking_id"], row)
         if rows == [] and booking not in found:
-            active, read_cause = await _active_or_unknown(client, booking)
+            active, read_cause = await governed_release.hold_state(client, traveler_id, booking)
             if active is not False:
                 problems.append(f"{booking} has no hold request to release it by "
                                 f"({read_cause or 'still held'})")
@@ -321,7 +313,7 @@ async def cleanup_run(client, traveler_id: str, *, test: str, threads=(), bookin
         The problems, each with a sanitized cause; empty when everything was cleaned up.
     """
     problems: list[str] = []
-    holds = await _run_holds(client, threads, bookings, problems)
+    holds = await _run_holds(client, traveler_id, threads, bookings, problems)
     try:
         await release_active_holds(client, traveler_id, holds)
     except AssertionError as exc:
@@ -343,3 +335,27 @@ def report_cleanup(problems: list[str], test_error: BaseException | None = None)
         test_error.add_note(message)
         return
     raise AssertionError(message)
+
+
+def choose_package(rows, *, within_cents=None, above_cents=None, seats: int = 2,
+                   roomiest: bool = False):
+    """Pick ``(package_id, duration, cents)`` with at least ``seats`` places left, or None.
+
+    Rows carry ``package_id``, ``cents`` and ``availability`` (duration to places left). The
+    first fit in row order is returned, or with ``roomiest`` the fit with the most places
+    (ties go to the earlier row), so a test whose booking stays spreads its cost.
+    """
+    best = None
+    for row in rows:
+        cents = int(row["cents"])
+        if (within_cents is not None and cents > within_cents) or (
+                above_cents is not None and cents <= above_cents):
+            continue
+        for duration, places in (row["availability"] or {}).items():
+            if int(places) < seats:
+                continue
+            if not roomiest:
+                return row["package_id"], duration, cents
+            if best is None or int(places) > best[0]:
+                best = (int(places), row["package_id"], duration, cents)
+    return best[1:] if best else None

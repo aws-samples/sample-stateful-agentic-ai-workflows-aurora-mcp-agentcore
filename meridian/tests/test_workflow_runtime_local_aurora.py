@@ -2,7 +2,8 @@
 
 This proves the login's grants for real retrieval, the lease, scoped sessions and the hold
 readback, which the mocked login test could not reach. The hold goes through the Gateway, the
-holds Lambda and Cedar. The test purges everything it created, as the master role.
+holds Lambda and Cedar. The test gives its hold back through the governed Gateway release and
+keeps every row, audit rows included.
 """
 
 import asyncio
@@ -15,7 +16,8 @@ from pathlib import Path
 import pytest
 
 from backend.db.rds_data_client import get_rds_data_client
-from scripts.kill_and_resume_proof import QUERY, _holds_for, _purge
+from scripts.governed_release import release_journey
+from scripts.kill_and_resume_proof import QUERY, _holds_for
 
 pytestmark = pytest.mark.database
 
@@ -23,16 +25,13 @@ logger = logging.getLogger(__name__)
 
 MERIDIAN = Path(__file__).resolve().parents[1]
 TRAVELER = "trv_meridian_demo"
-LEFTOVER_TABLES = (
-    ("workflow_snapshots", "session_id"),
-    ("journey_executions", "thread_id"),
-    ("journey_threads", "thread_id"),
-)
 
 
 async def turn(thread_id: str, mode: str, session_id: str) -> list[dict]:
     payload = {"event": "workflow_turn", "mode": mode, "thread_id": thread_id,
                "traveler_id": TRAVELER, "query": QUERY, "travelers_count": 2}
+    if mode == "start":
+        payload["intent"] = "recovery"  # only a typed recovery intent starts the hold workflow
     child = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "tests.workflow_runtime_process", json.dumps(payload), session_id,
         cwd=MERIDIAN, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -54,17 +53,11 @@ def cedar_decisions(state: dict) -> list[str]:
             if field["label"] == "cedar_decision"]
 
 
-async def leftovers(client, journey_id: str, thread_id: str) -> dict:
-    counts = {}
-    for table, column in LEFTOVER_TABLES:
-        rows = await client.execute(
-            f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = %s", (thread_id,))
-        counts[table] = int(rows[0]["n"])
-    counts["holds"] = len(await _holds_for(client, journey_id))
-    rows = await client.execute(
-        "SELECT COUNT(*) AS n FROM journeys WHERE journey_id = %s", (journey_id,))
-    counts["journeys"] = int(rows[0]["n"])
-    return counts
+async def held_holds(client, journey_id: str) -> int:
+    """Holds of the journey still held. Released and expired holds are kept rows, not leftovers."""
+    if not journey_id:
+        return 0
+    return sum(1 for hold in await _holds_for(client, journey_id) if hold["status"] == "held")
 
 
 async def test_a_paused_review_resumes_on_another_session_and_holds_once():
@@ -95,10 +88,9 @@ async def test_a_paused_review_resumes_on_another_session_and_holds_once():
             rows = await master.execute(
                 "SELECT journey_id FROM journey_threads WHERE thread_id = %s", (thread_id,))
             journey_id = rows[0]["journey_id"] if rows else ""
-        try:
-            await _purge(master, journey_id, thread_id)
-        except Exception:
-            logger.exception("purge failed for thread %s journey %s", thread_id, journey_id)
-    assert await leftovers(master, journey_id, thread_id) == {
-        "workflow_snapshots": 0, "journey_executions": 0, "journey_threads": 0,
-        "holds": 0, "journeys": 0}
+        problems = await release_journey(master, TRAVELER, journey_id) if journey_id else []
+        if problems:
+            logger.error("release problems for thread %s journey %s: %s",
+                         thread_id, journey_id, problems)
+        assert problems == [], problems
+    assert await held_holds(master, journey_id) == 0

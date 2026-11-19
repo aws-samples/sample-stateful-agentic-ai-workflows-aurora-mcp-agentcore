@@ -1,10 +1,14 @@
-"""A pause and resume workflow in LangGraph.
+"""A persistence and pause/resume example in LangGraph.
 
-This is the LangGraph counterpart of the Strands Graph that Phase 5 runs on
-AgentCore Runtime. The nodes are the same shape: classify the request, search
-for options, pause so a person can review them, then place a hold. The pause
-is ``interrupt_after`` on the search node, so the checkpoint written there is
-what a later call resumes from, whichever process makes that call.
+It shows one thing: a graph that pauses, saves its state in Amazon Aurora and resumes from
+that state in whichever process makes the next call. It is not Meridian's governed workflow,
+which is the Strands Graph that Phase 5 runs on AgentCore Runtime. The nodes only have the
+same names: classify the request, search for options, pause so a person can review them,
+then "hold". Search makes up two options from the request, and the hold node marks the
+first one as held after the resume, even for an ordinary question. No real hold is placed,
+no Gateway tool is called, and there is no worker lease or recovery. The pause is
+``interrupt_after`` on the search node, so the checkpoint written there is what a later call
+resumes from.
 
 ``build_graph`` takes any LangGraph checkpointer. ``build_aurora_graph`` wires
 in ``AuroraDataApiSaver`` so the saved step lives in Amazon Aurora.

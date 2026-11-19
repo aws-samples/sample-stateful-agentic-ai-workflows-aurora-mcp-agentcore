@@ -26,8 +26,16 @@ from backend.agentcore.runtime_https import RuntimeHttpClient, invocation_url
 from backend.db.rds_data_client import RDSDataClient
 from scripts.agentcore_caller import require_token_safe_url
 from scripts.cognito_tokens import mint_access_token
-from scripts.kill_and_resume_proof import BOOKING_AGENT, pinned_to_traveler
-from scripts.identity_probes.probes import CONCIERGE, WORKFLOW, BookingRef, Ports
+from scripts import governed_release
+from scripts.governed_release import BOOKING_AGENT
+from scripts.identity_probes.probes import (
+    CONCIERGE,
+    JORDAN_TRAVELER,
+    THREAD_PREFIX,
+    WORKFLOW,
+    BookingRef,
+    Ports,
+)
 from scripts.identity_probes.receipt import DECOY, JORDAN
 
 APP_ROLE = "meridian_app"
@@ -40,8 +48,6 @@ COUNT_SQL = "SELECT COUNT(*) AS n FROM traveler_preferences WHERE traveler_id = 
 DENY_SQL = ("SELECT COUNT(*) AS n FROM traveler_access_audit "
             "WHERE requested_traveler_id = %s AND decision = 'deny'")
 BOOKING_SQL = "SELECT booking_id FROM bookings WHERE traveler_id = %s"
-BOOKING_OWNED_SQL = ("SELECT booking_id FROM bookings WHERE booking_id = %s AND traveler_id = %s "
-                     "FOR UPDATE")
 HOLD_SQL = ("SELECT hr.booking_id FROM hold_requests hr "
             "JOIN journey_threads jt ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s")
 ROLE_SQL = "SELECT current_user AS role, row_security_active('traveler_preferences') AS active"
@@ -50,8 +56,6 @@ PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
 BOOKING_PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
                    "set_config('app.current_traveler_id', %s, true), "
                    "set_config('app.agent_type', %s, true)")
-COUNT_BOOKING_SQL = "SELECT COUNT(*) AS n FROM {table} WHERE booking_id = %s"
-RELEASE_TABLES = ("booking_action_audit", "hold_requests", "booking_lines", "bookings")
 UNSCOPED_TABLES = ("traveler_access_audit", "journey_threads", "hold_requests",
                    "workflow_snapshots", "journey_executions")
 VISIBILITY_SQL = (
@@ -245,71 +249,82 @@ class AuroraPort:
 
 
 class AuroraCleanup:
-    """Removes what the positive controls created, by id."""
+    """Gives back what the positive controls created, by id, through the governed Gateway.
+
+    Nothing is deleted: every booking, hold request, journey and action audit row the run made
+    stays, because those rows are the evidence of what the run did.
+    """
 
     def __init__(self, client: RDSDataClient) -> None:
         self._client = client
+        self._ledger = governed_release.CallLedger()
 
-    def purge_thread(self, thread: str) -> None:
-        """Purge a ``phase5-proof-`` journey or thread; any other name is refused."""
-        from scripts import stop_and_resume_proof as recovery
-
-        asyncio.run(recovery._purge_run(self._client, thread))
-
-    def release_bookings(self, bookings: list[BookingRef]) -> int:
-        """Release ``(traveler, booking)`` pairs by exact id, each in its own pinned transaction.
+    def release_thread(self, thread: str) -> None:
+        """Give back the active holds of a ``phase5-proof-idp`` thread; any other name is refused.
 
         Raises:
-            RuntimeError: After trying every booking, when any is not visible in its traveler's
-                pinned scope (so its deletion cannot be proven).
+            RuntimeError: When the thread is not one this proof names, or a hold of it is still
+                held or of unknown state afterwards.
+        """
+        if not thread.startswith(THREAD_PREFIX):
+            raise RuntimeError(f"thread {thread} was not named by this proof; not touching it")
+        problems = asyncio.run(self._release_thread(thread))
+        if problems:
+            raise RuntimeError("; ".join(problems))
+
+    async def _release_thread(self, thread: str) -> list[str]:
+        holds, problems = await governed_release.thread_holds(self._client, thread)
+        return problems + await governed_release.release_holds(
+            self._client, JORDAN_TRAVELER, holds, self._ledger)
+
+    def release_bookings(self, bookings: list[BookingRef]) -> int:
+        """Give back ``(traveler, booking)`` pairs by exact id, each as its own traveler.
+
+        Raises:
+            RuntimeError: After trying every booking, when any is still held or of unknown
+                state (for instance not visible in its traveler's pinned scope).
         """
         released, failures = 0, []
         for traveler, booking in bookings:
-            try:
-                asyncio.run(self._release_one(traveler, booking))
+            problems = asyncio.run(governed_release.release_bookings(
+                self._client, traveler, [booking], self._ledger))
+            if problems:
+                failures.extend(problems)
+            else:
                 released += 1
-            except RuntimeError as exc:
-                failures.append(str(exc))
         if failures:
             raise RuntimeError("; ".join(failures))
         return released
 
-    async def _release_one(self, traveler: str, booking: str) -> None:
-        async with pinned_to_traveler(self._client, traveler) as transaction:
-            seen = await self._client.execute(
-                BOOKING_OWNED_SQL, (booking, traveler), transaction_id=transaction)
-            if not seen:
-                raise RuntimeError(
-                    f"booking {booking} is not visible as {traveler} with the booking agent "
-                    "pinned, so it was not deleted")
-            for table in RELEASE_TABLES:
-                await self._client.execute(
-                    f"DELETE FROM {table} WHERE booking_id = %s", (booking,),
-                    transaction_id=transaction)
-            await self._require_gone(booking, transaction)
-
-    async def _require_gone(self, booking: str, transaction: str) -> None:
-        remaining = []
-        for table in RELEASE_TABLES:
-            rows = await self._client.execute(
-                COUNT_BOOKING_SQL.format(table=table), (booking,), transaction_id=transaction)
-            if _count(rows):
-                remaining.append(table)
-        if remaining:
-            raise RuntimeError(f"booking {booking} still has rows in {', '.join(remaining)} "
-                               "after its delete, so nothing was committed")
-
     def leftovers(self, prefix: str, baseline: Mapping[str, frozenset[str]]) -> list[str]:
-        """Threads with the prefix, and bookings that are not in the baseline, by name."""
-        threads = sorted({row["thread"] for row in asyncio.run(
-            self._client.execute(SWEEP_SQL, (prefix + "%",) * 3))})
-        items = [f"thread {thread}" for thread in threads]
+        """Holds the run left held or unknown, by name.
+
+        Lists a hold of a thread with the prefix, and of a booking that is not in the baseline,
+        whose state is not read back as inactive. Rows that stay by design are not leftovers.
+        """
+        items = []
+        for thread in self._prefix_threads(prefix):
+            holds, problems = asyncio.run(governed_release.thread_holds(self._client, thread))
+            items.extend(f"thread {thread}: {problem}" for problem in problems)
+            items.extend(self._unreleased(JORDAN_TRAVELER, [h["booking_id"] for h in holds],
+                                          f"of thread {thread}"))
         for traveler, known in sorted(baseline.items()):
             current = asyncio.run(pinned_rows(
                 self._client, traveler, BOOKING_SQL, (traveler,), agent=BOOKING_AGENT))
-            items.extend(f"booking {row['booking_id']} of {traveler}"
-                         for row in sorted(current, key=lambda r: r["booking_id"])
-                         if row["booking_id"] not in known)
+            new = sorted(row["booking_id"] for row in current if row["booking_id"] not in known)
+            items.extend(self._unreleased(traveler, new, f"of {traveler}"))
+        return list(dict.fromkeys(items))
+
+    def _prefix_threads(self, prefix: str) -> list[str]:
+        rows = asyncio.run(self._client.execute(SWEEP_SQL, (prefix + "%",) * 3))
+        return sorted({row["thread"] for row in rows})
+
+    def _unreleased(self, traveler: str, bookings: list[str], whose: str) -> list[str]:
+        items = []
+        for booking in bookings:
+            active, _ = asyncio.run(governed_release.hold_state(self._client, traveler, booking))
+            if active is not False:
+                items.append(f"booking {booking} {whose} still held or of unknown state")
         return items
 
 

@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from backend.agentcore.caller_credential import current_caller_token
+from scripts import governed_release
 from scripts.identity_probes import effects
 from scripts.identity_probes.effects import (
     UNSCOPED_TABLES,
@@ -156,6 +157,8 @@ class FakeRds:
         self.sql, self.rolled_back, self.committed = [], [], []
         self.pinned: dict[str, str] = {}
         self.deleted: list[tuple[str, str]] = []
+        self.held = set(self.bookings)
+        self.threads: dict[str, str] = {}
 
     def begin_transaction(self):
         self.pinned = {}
@@ -191,11 +194,21 @@ class FakeRds:
             if table == "bookings":
                 self.bookings.pop(params[0], None)
             return []
-        if "COUNT(*)" in query:
+        if "COUNT(*)" in query and query != governed_release.THREADS_OF_JOURNEY_SQL:
             return [{"n": self.count}]
         return self._rows(query, params)
 
     def _rows(self, query, params):
+        if query == governed_release.ACTIVE_SQL:
+            return [{"active": params[0] in self.held} for b in self._visible() if b == params[0]]
+        if query == governed_release.BOOKING_HOLD_SQL:
+            return ([{"booking_id": params[0], "hold_request_id": f"hrq-{params[0]}",
+                      "journey_id": "jrn-1"}] if params[0] in self.bookings else [])
+        if query == governed_release.RUN_HOLDS_SQL:
+            return [{"booking_id": b, "hold_request_id": f"hrq-{b}", "journey_id": "jrn-1"}
+                    for b in sorted(self.bookings) if self.threads.get(params[0]) == "jrn-1"]
+        if query == governed_release.THREADS_OF_JOURNEY_SQL:
+            return [{"n": 1}]
         if "FROM bookings WHERE booking_id = %s" in query:
             return [{"booking_id": b} for b in self._visible() if b == params[0]]
         if "FROM bookings WHERE traveler_id = %s" in query:
@@ -321,105 +334,149 @@ def test_http_port_does_not_follow_a_redirect_with_the_token():
     assert port("jordan", "GET", "/api/me", None)[0] == 302 and seen == [BASE + "/api/me"]
 
 
-def test_release_deletes_each_booking_by_id_pinned_and_commits():
+class ReleaseGateway:
+    """The governed release tool over the fake Aurora: a release makes the booking inactive."""
+
+    def __init__(self, rds, *, works=True):
+        self.rds, self.works, self.calls = rds, works, []
+
+    def call_tool(self, name, args):
+        booking = args["holdRequestId"].removeprefix("hrq-")
+        self.calls.append((name, booking, args["travelerId"]))
+        if not self.works:
+            body = {"error": "hold_not_found"}
+        else:
+            self.rds.held.discard(booking)
+            body = {"release": {"status": "released", "replayed": False}}
+        return {"result": {"content": [{"type": "text", "text": json.dumps(body)}]}}
+
+
+@pytest.fixture
+def gateway(monkeypatch):
+    def install(rds, **kwargs):
+        made = ReleaseGateway(rds, **kwargs)
+        monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: made)
+        return made
+    return install
+
+
+def _written(rds):
+    return [q for q, _p, _t in rds.sql
+            if q.lstrip().upper().startswith(("DELETE", "UPDATE", "INSERT"))]
+
+
+def test_release_gives_each_booking_back_through_the_gateway_and_deletes_nothing(gateway):
     rds = FakeRds()
+    made = gateway(rds)
 
     released = AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
 
-    assert released == 1 and rds.bookings == {"HLD-2": "trv_meridian_demo"}
-    assert rds.deleted == [("booking_action_audit", "HLD-1"), ("hold_requests", "HLD-1"),
-                           ("booking_lines", "HLD-1"),
-                           ("bookings", "HLD-1")]
-    assert rds.committed == ["tx-1"]
+    assert released == 1 and rds.held == {"HLD-2"}
+    assert [c[1:] for c in made.calls] == [("HLD-1", "trv_meridian_demo")]
+    assert rds.bookings == {"HLD-1": "trv_meridian_demo", "HLD-2": "trv_meridian_demo"}
+    assert rds.deleted == [] and _written(rds) == []
     pins = [p for q, p, _ in rds.sql if "set_config" in q]
-    assert pins == [("trv_meridian_demo", "booking_agent")]
+    assert pins and all(pin == ("trv_meridian_demo", "booking_agent") for pin in pins)
 
 
-def test_release_refuses_a_booking_the_pinned_scope_cannot_see_and_still_releases_the_rest():
+def test_release_still_gives_back_the_rest_when_one_booking_cannot_be_seen(gateway):
     rds = FakeRds(bookings={"HLD-2": "trv_meridian_demo", "HLD-3": "trv_demo_decoy"})
+    made = gateway(rds)
 
     with pytest.raises(RuntimeError, match="HLD-3") as caught:
         AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-3"),
                                              ("trv_meridian_demo", "HLD-2")])
 
-    assert "HLD-2" not in str(caught.value) and "HLD-2" not in rds.bookings
-    assert rds.bookings == {"HLD-3": "trv_demo_decoy"}
-    assert rds.deleted.count(("bookings", "HLD-3")) == 0
-    assert rds.rolled_back == ["tx-1"] and rds.committed == ["tx-1"]
+    assert "HLD-2" not in str(caught.value) and "HLD-2" not in rds.held
+    assert "not visible" in str(caught.value) and rds.deleted == []
+    assert [c[1] for c in made.calls] == ["HLD-3", "HLD-2"]
 
 
-def test_release_releases_a_decoy_booking_under_the_decoy():
+def test_release_gives_a_decoy_booking_back_as_the_decoy(gateway):
     rds = FakeRds(bookings={"HLD-D": "trv_demo_decoy"})
+    made = gateway(rds)
 
     assert AuroraCleanup(rds).release_bookings([("trv_demo_decoy", "HLD-D")]) == 1
-    assert rds.bookings == {}
+    assert made.calls == [(governed_release_tool(), "HLD-D", "trv_demo_decoy")]
+    assert rds.held == set()
 
 
-def test_cleanup_lists_threads_and_bookings_that_are_not_in_the_baseline():
+def governed_release_tool():
+    from backend.agents.phase_05_workflow.governed_hold import RELEASE_TOOL
+    return RELEASE_TOOL
+
+
+def test_a_release_the_gateway_refuses_is_reported_after_two_calls_and_nothing_is_deleted(
+        gateway):
+    rds = FakeRds(bookings={"HLD-1": "trv_meridian_demo"})
+    made = gateway(rds, works=False)
+    cleanup = AuroraCleanup(rds)
+
+    with pytest.raises(RuntimeError, match="HLD-1"):
+        cleanup.release_bookings([("trv_meridian_demo", "HLD-1")])
+    with pytest.raises(RuntimeError, match="HLD-1"):
+        cleanup.release_bookings([("trv_meridian_demo", "HLD-1")])
+
+    assert len(made.calls) == 2 and rds.held == {"HLD-1"} and _written(rds) == []
+
+
+def test_a_thread_of_this_proof_has_its_holds_given_back_and_a_foreign_thread_is_refused(
+        gateway):
+    rds = FakeRds(bookings={"HLD-1": "trv_meridian_demo"})
+    rds.threads = {"phase5-proof-idpabc12345wj": "jrn-1"}
+    made = gateway(rds)
+    cleanup = AuroraCleanup(rds)
+
+    cleanup.release_thread("phase5-proof-idpabc12345wj")
+    assert rds.held == set() and len(made.calls) == 1 and _written(rds) == []
+
+    with pytest.raises(RuntimeError, match="not named by this proof"):
+        cleanup.release_thread("jordan-real-thread")
+
+
+def test_cleanup_lists_the_holds_still_held_for_threads_and_new_bookings(gateway):
     class Rds(FakeRds):
         def _rows(self, query, params):
-            if "journey_threads" in query:
+            if "journey_threads" in query and "LIKE" in query:
                 return [{"thread": "phase5-proof-idpabc12345wj"}]
             return super()._rows(query, params)
 
     rds = Rds(bookings={"HLD-OLD": "trv_meridian_demo", "HLD-NEW": "trv_meridian_demo"})
+    rds.threads = {"phase5-proof-idpabc12345wj": "jrn-1"}
     baseline = {"trv_meridian_demo": frozenset({"HLD-OLD"}), "trv_demo_decoy": frozenset()}
 
     items = AuroraCleanup(rds).leftovers("phase5-proof-idpabc12345", baseline)
 
-    assert items == ["thread phase5-proof-idpabc12345wj",
-                     "booking HLD-NEW of trv_meridian_demo"]
+    assert items.count("booking HLD-NEW of trv_meridian_demo still held or of unknown state") == 1
 
 
-def test_cleanup_with_nothing_new_lists_nothing():
-    rds = FakeRds(bookings={"HLD-OLD": "trv_meridian_demo"})
+def test_a_kept_booking_that_reads_inactive_is_not_a_leftover():
+    rds = FakeRds(bookings={"HLD-OLD": "trv_meridian_demo", "HLD-NEW": "trv_meridian_demo"})
+    rds.held = {"HLD-OLD"}
     baseline = {"trv_meridian_demo": frozenset({"HLD-OLD"}), "trv_demo_decoy": frozenset()}
 
     assert AuroraCleanup(rds).leftovers("phase5-proof-idpabc12345", baseline) == []
+
+
+def test_a_booking_the_pinned_scope_cannot_see_is_a_leftover_never_released():
+    baseline = {"trv_meridian_demo": frozenset(), "trv_demo_decoy": frozenset()}
+
+    class Hidden(FakeRds):
+        def _rows(self, query, params):
+            if query == governed_release.ACTIVE_SQL:
+                return []
+            return super()._rows(query, params)
+
+    items = AuroraCleanup(Hidden(bookings={"HLD-X": "trv_meridian_demo"})).leftovers(
+        "phase5-proof-idpabc12345", baseline)
+
+    assert items == ["booking HLD-X of trv_meridian_demo still held or of unknown state"]
 
 
 def test_the_gateway_port_refuses_a_url_that_may_not_receive_a_token():
     with pytest.raises(SystemExit, match="Refusing to send a credential"):
         GatewayPort(FakeGateway({}), tokens()[0], url="http://gateway.example.net/mcp")
     GatewayPort(FakeGateway({}), tokens()[0], url="https://gateway.example.net/mcp")
-
-
-class Remnant(FakeRds):
-    """A Data API client whose DELETE of one table does not take effect."""
-
-    def __init__(self, stuck_table, **kwargs):
-        super().__init__(**kwargs)
-        self.stuck_table = stuck_table
-
-    async def execute(self, query, params=None, transaction_id=None):
-        if query.startswith("DELETE FROM " + self.stuck_table):
-            self.sql.append((query, params, transaction_id))
-            return []
-        if query.startswith("SELECT COUNT(*)") and "FROM " + self.stuck_table in query:
-            return [{"n": 1}]
-        return await super().execute(query, params, transaction_id)
-
-
-@pytest.mark.parametrize("table", [
-    "bookings", "booking_lines", "hold_requests", "booking_action_audit"])
-def test_release_raises_and_does_not_commit_when_a_row_of_the_booking_remains(table):
-    rds = Remnant(table)
-
-    with pytest.raises(RuntimeError, match=table):
-        AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
-
-    assert rds.committed == [] and rds.rolled_back == ["tx-1"]
-
-
-def test_release_recounts_all_three_tables_before_it_commits():
-    rds = FakeRds()
-
-    AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
-
-    counted = [q for q, _, _ in rds.sql if q.startswith("SELECT COUNT(*)")]
-    assert [t for t in ("hold_requests", "booking_lines", "bookings")
-            if any(f"FROM {t} " in q for q in counted)] == [
-                "hold_requests", "booking_lines", "bookings"]
 
 
 class Config:

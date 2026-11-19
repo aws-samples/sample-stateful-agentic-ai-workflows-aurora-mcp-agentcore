@@ -228,12 +228,11 @@ async def test_the_settle_time_holds_back_a_row_that_was_just_written(exporter):
     audit_id = f"itest-{uuid.uuid4().hex[:12]}"
     await _master(
         "INSERT INTO traveler_access_audit (audit_id, identity_provider, subject_id, "
-        "requested_traveler_id, decision) VALUES (%s, 'cognito', 'itest', 'trv_meridian_demo', "
+        "requested_traveler_id, decision) VALUES (%s, 'cognito', 'itest', 'trv_itest_synthetic', "
         "'deny')", (audit_id,))
-    try:
-        held = await asyncio.to_thread(_read_all, exporter, table, 180, 50)
-        released = await asyncio.to_thread(_read_all, exporter, table, 0, 50)
-    finally:
-        await _master("DELETE FROM traveler_access_audit WHERE audit_id = %s", (audit_id,))
+    # The probe row stays (audit rows are never deleted). Its audit id is unique to this run and
+    # it names a synthetic traveler, so it never lands on the demo traveler's deny rows.
+    held = await asyncio.to_thread(_read_all, exporter, table, 180, 50)
+    released = await asyncio.to_thread(_read_all, exporter, table, 0, 50)
     assert audit_id not in held
     assert audit_id in released

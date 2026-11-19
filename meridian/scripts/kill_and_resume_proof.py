@@ -37,7 +37,6 @@ import signal
 import sys
 import uuid
 from collections.abc import Mapping
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -60,6 +59,11 @@ from backend.db.journey_store import (  # noqa: E402
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
+from scripts.governed_release import (  # noqa: E402
+    final_code,
+    pinned_to_traveler,
+    release_journey,
+)
 from scripts.identity_release.settings import login_names  # noqa: E402
 
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
@@ -71,7 +75,6 @@ QUERY = (
     "My flight was cancelled, rework the trip and show duration availability."
 )
 
-BOOKING_AGENT = "booking_agent"
 PINNED_TABLES = ("booking_action_audit", "booking_lines", "bookings")
 UNPINNED_TABLES = (
     ("hold_requests", "journey_id"), ("journeys", "journey_id"),
@@ -274,27 +277,6 @@ async def _holds_for(client, journey_id: str) -> list[dict]:
     )
 
 
-@asynccontextmanager
-async def pinned_to_traveler(client, traveler_id: str):
-    """A Data API transaction pinned to one traveler and the booking agent.
-
-    ``bookings`` and ``booking_lines`` force row level security on these two settings, so a
-    statement outside such a transaction can match zero rows without any error. Commits when
-    the block ends, rolls back when it raises.
-    """
-    transaction = client.begin_transaction()
-    try:
-        await client.execute(
-            "SELECT set_config('app.current_traveler_id', %s, true), "
-            "set_config('app.agent_type', %s, true)",
-            (traveler_id, BOOKING_AGENT), transaction_id=transaction)
-        yield transaction
-    except BaseException:
-        client.rollback_transaction(transaction)
-        raise
-    client.commit_transaction(transaction)
-
-
 async def _booking_ids(client, journey_id: str) -> list[str]:
     rows = await client.execute(
         "SELECT booking_id FROM hold_requests WHERE journey_id = %s", (journey_id,))
@@ -400,7 +382,30 @@ def _verify_replacement(state: dict, executions: list[dict], first_worker: str) 
         raise AssertionError("Aurora must record a successful, different replacement worker")
 
 
-async def main(keep: bool, worker_login: bool = False) -> int:
+async def _finish(client, journey_id: str, thread_id: str, keep: bool, delete: bool) -> bool:
+    """Leave the rehearsal's rows, or give back its hold, or delete it all; True when clean.
+
+    By default the hold goes back through the governed Gateway release tool and every row stays,
+    so the action audit trail of the run survives. ``delete`` removes the rows as an
+    administrative reset of a disposable database; it removes audit evidence.
+    """
+    if keep:
+        say("keep", f"left journey {journey_id} and thread {thread_id} in place", DIM)
+        return True
+    if delete:
+        await _purge(client, journey_id, thread_id)
+        say("cleanup", "rehearsal rows deleted from the disposable database", DIM)
+        return True
+    problems = await release_journey(client, TRAVELER, journey_id)
+    for problem in problems:
+        say("cleanup", f"FAILED for journey {journey_id}: {problem}", RED)
+    if not problems:
+        say("cleanup", "hold released through the Gateway; journey, booking and audit rows kept",
+            DIM)
+    return not problems
+
+
+async def main(keep: bool, worker_login: bool = False, delete: bool = False) -> int:
     env = {**worker_env(worker_login), "PYTHONUNBUFFERED": "1"}
     client = get_rds_data_client()
 
@@ -414,6 +419,16 @@ async def main(keep: bool, worker_login: bool = False) -> int:
         await bind_thread(db, journey_id, thread_id)
     say("journey", f"{journey_id} · thread {thread_id}")
 
+    code = 1
+    try:
+        code = await _rehearse(client, env, journey_id, thread_id, worker_login)
+    finally:
+        clean = await _finish(client, journey_id, thread_id, keep, delete)
+    return final_code(code, clean)
+
+
+async def _rehearse(client, env: dict, journey_id: str, thread_id: str,
+                    worker_login: bool) -> int:
     child = await asyncio.create_subprocess_exec(
         sys.executable, __file__, "--worker-one", journey_id, thread_id,
         stdout=asyncio.subprocess.PIPE,
@@ -485,17 +500,17 @@ async def main(keep: bool, worker_login: bool = False) -> int:
         if child.returncode is None:
             child.kill()
             await child.wait()
-        if keep:
-            say("keep", f"left journey {journey_id} and thread {thread_id} in place", DIM)
-        else:
-            await _purge(client, journey_id, thread_id)
-            say("cleanup", "rehearsal rows removed", DIM)
 
 
 def build_parser() -> argparse.ArgumentParser:
     """The command line."""
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--keep", action="store_true", help="leave the rows behind")
+    parser.add_argument("--keep", action="store_true",
+                        help="leave the hold held and every row in place")
+    parser.add_argument(
+        "--delete-from-disposable-database", action="store_true", dest="delete",
+        help="delete the rehearsal's rows, audit rows included: only for a database you discard",
+    )
     parser.add_argument(
         "--worker-login", action="store_true",
         help="run the SIGKILLed worker as the meridian_workflow login",
@@ -514,4 +529,4 @@ if __name__ == "__main__":
         if args.worker_one:
             asyncio.run(_worker_one(*args.worker_one))
         else:
-            raise SystemExit(asyncio.run(main(args.keep, args.worker_login)))
+            raise SystemExit(asyncio.run(main(args.keep, args.worker_login, args.delete)))

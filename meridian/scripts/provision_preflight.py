@@ -25,6 +25,16 @@ def storage_encryption(cluster: dict) -> dict:
             "kmsKeyArn": cluster.get("KmsKeyId"), "encryptionMigrationNeeded": mode == "none"}
 
 
+RECOVERY = {
+    "cdk_bootstrap": (
+        "Bootstrap CDK once for this account and Region, then run the preflight again: from "
+        "meridian/infra run `npm ci && npx cdk bootstrap aws://<account-id>/<region>`. "
+        "The AgentCore runbook's Bootstrap CDK step does the same for its CDK app."),
+    "rds_service_linked_role": (
+        "Create the RDS service-linked role once, then run the preflight again: "
+        "`aws iam create-service-linked-role --aws-service-name rds.amazonaws.com`. "
+        "The identity running it needs iam:CreateServiceLinkedRole."),
+}
 INSTANCES_PER_STACK = 2  # the stack creates a writer and a failover reader
 QUOTA_NAMES = frozenset({"DBClusters", "DBInstances", "DBSubnetGroups", "DBClusterParameterGroups"})
 
@@ -72,6 +82,11 @@ def assess_rds_quotas(rds, cluster_identifier: str | None = None) -> list[dict]:
     return values
 
 
+def recovery_for(check_name: str) -> dict:
+    """The recovery instruction to put beside a failed check, when the repository has one."""
+    return {"recovery": RECOVERY[check_name]} if check_name in RECOVERY else {}
+
+
 def inspect(args) -> dict:
     session = boto3.Session(region_name=args.region)
     identity = session.client("sts", config=CONFIG).get_caller_identity()
@@ -84,9 +99,11 @@ def inspect(args) -> dict:
             detail = function()
             checks.append({"check": name, "status": "PASS", "detail": detail})
         except ClientError as exc:
-            checks.append({"check": name, "status": "BLOCKED", "error": exc.response["Error"]["Code"]})
+            checks.append({"check": name, "status": "BLOCKED",
+                           "error": exc.response["Error"]["Code"], **recovery_for(name)})
         except ValueError as exc:
-            checks.append({"check": name, "status": "FAIL", "error": str(exc)})
+            checks.append({"check": name, "status": "FAIL", "error": str(exc),
+                           **recovery_for(name)})
 
     rds = session.client("rds", config=CONFIG)
     ec2 = session.client("ec2", config=CONFIG)
@@ -170,6 +187,9 @@ def main() -> int:
     except (ValueError, ClientError) as exc:
         print(str(exc) if isinstance(exc, ValueError) else exc.response["Error"]["Code"], file=sys.stderr)
         return 1
+    for failed in (c for c in report["checks"] if c.get("recovery")):
+        print(f"{failed['status']} {failed['check']} ({failed['error']}): {failed['recovery']}",
+              file=sys.stderr)
     rendered = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

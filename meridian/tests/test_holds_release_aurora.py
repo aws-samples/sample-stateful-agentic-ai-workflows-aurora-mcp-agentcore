@@ -7,13 +7,13 @@ import pytest
 from backend.db.journey_store import claim_execution
 from backend.db.rds_data_client import get_rds_data_client
 from tests import test_gateway_login_aurora as login
-from tests.live_support import delete_booking_rows, delete_journey_rows
+from tests.live_support import delete_unaudited_fixture
 from tests.test_gateway_login_aurora import (
     DECOY,
     JORDAN,
+    _give_back,
     _hold_args,
     _package_with_room,
-    _remove,
     _saved_cap_cents,
 )
 
@@ -36,9 +36,9 @@ async def _deny_rows(audit_id=None, traveler=None):
     return len(rows)
 
 
-async def _held(holds, journey_ref, request_id):
+async def _held(holds, journey_ref, request_id, *, roomiest=False):
     package_id, duration, cents = await _package_with_room(
-        within_cents=await _saved_cap_cents(JORDAN))
+        within_cents=await _saved_cap_cents(JORDAN), roomiest=roomiest)
     before = await _places(package_id, duration)
     args = {**_hold_args(package_id, duration, cents, JORDAN, journey_ref),
             "holdRequestId": request_id}
@@ -63,7 +63,7 @@ async def test_release_hold_returns_the_places_and_leaves_a_released_row(holds):
         assert rows == [{"status": "released"}]
         assert holds.release_hold(arguments)["release"]["replayed"] is True
     finally:
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)
 
 
 async def test_release_hold_restores_the_places_the_hold_took(holds):
@@ -77,7 +77,7 @@ async def test_release_hold_restores_the_places_the_hold_took(holds):
                             "journeyId": hold["journeyId"]})
         assert await _places(package_id, duration) == before, "the release gave it back"
     finally:
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)
 
 
 async def test_release_hold_cannot_reach_another_travelers_hold(holds):
@@ -106,16 +106,24 @@ async def test_release_hold_cannot_reach_another_travelers_hold(holds):
             "SELECT status FROM bookings WHERE booking_id = %s", (booking_id,))
         assert rows == [{"status": "held"}]
     finally:
-        await delete_booking_rows(master, booking_id)
-        await delete_journey_rows(master, journey_id)
-        await master.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
+        # SQL-only fixture: no Lambda ran, so no action audit row exists; the helper refuses
+        # to delete if one ever does.
+        await delete_unaudited_fixture(master, booking_ids=[booking_id], journey_ids=[journey_id])
 
 
 async def test_release_hold_leaves_a_confirmed_booking_alone(holds):
+    """A confirmed booking is not a hold, so release_hold refuses it.
+
+    Residual cost: this test leaves one confirmed booking for one traveler, kept as audit
+    evidence and using one package place for good. It picks the package with the most places
+    left to spread that cost. Capacity comes back only through
+    ``scripts/release_demo_bookings.py --delete-from-disposable-database`` on a disposable
+    database, or by raising availability.
+    """
     journey_ref = f"relhold-{uuid.uuid4().hex[:10]}"
     request_id, booking_id = f"hrq_{uuid.uuid4().hex[:12]}", ""
     try:
-        _, _, _, hold, cents = await _held(holds, journey_ref, request_id)
+        _, _, _, hold, cents = await _held(holds, journey_ref, request_id, roomiest=True)
         booking_id = hold["bookingId"]
         confirmed = holds.confirm_booking({
             "travelerId": JORDAN, "bookingId": booking_id, "totalCents": cents,
@@ -129,7 +137,7 @@ async def test_release_hold_leaves_a_confirmed_booking_alone(holds):
             "SELECT status FROM bookings WHERE booking_id = %s", (booking_id,))
         assert rows == [{"status": "confirmed"}]
     finally:
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)
 
 
 async def test_release_hold_refuses_a_traveler_the_role_is_not_bound_to(holds):
@@ -162,7 +170,7 @@ async def _released_with_lease(holds, expire):
         return result, rows
     finally:
         await master.execute("DELETE FROM journey_executions WHERE thread_id = %s", (journey_ref,))
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)
 
 
 async def test_release_hold_with_a_live_lease_releases(holds):
@@ -200,4 +208,4 @@ async def test_release_hold_by_a_worker_that_was_taken_over_leaves_the_hold_held
         assert rows == [{"status": "held"}]
     finally:
         await master.execute("DELETE FROM journey_executions WHERE thread_id = %s", (journey_ref,))
-        await _remove(booking_id, journey_ref)
+        await _give_back(booking_id, journey_ref)

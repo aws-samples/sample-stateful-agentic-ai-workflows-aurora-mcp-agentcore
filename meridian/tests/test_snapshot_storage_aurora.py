@@ -6,7 +6,6 @@ import uuid
 
 import pytest
 import pytest_asyncio
-
 from strands.types.exceptions import StorageError
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -25,6 +24,7 @@ from backend.db.journey_store import (
     release_execution,
 )
 from backend.db.rds_data_client import get_rds_data_client
+from tests.live_support import delete_unaudited_fixture
 
 pytestmark = pytest.mark.database
 
@@ -49,7 +49,7 @@ async def threads():
         )
         await client.execute("DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,))
         if journey_id:
-            await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
+            await delete_unaudited_fixture(client, journey_ids=[journey_id])
 
 
 async def bound_thread(client, made, traveler_id: str, thread_id: str | None = None) -> str:

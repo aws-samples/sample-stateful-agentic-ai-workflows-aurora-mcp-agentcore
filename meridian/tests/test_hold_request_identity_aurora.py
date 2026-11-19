@@ -25,7 +25,7 @@ from backend.agents.phase_05_workflow.hold_intent import (
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.db.rds_data_client import get_rds_data_client
-from tests.live_support import as_gateway, delete_booking_rows, delete_journey_rows, gateway_login
+from tests.live_support import as_gateway, delete_unaudited_fixture, gateway_login
 
 pytestmark = pytest.mark.database
 
@@ -249,8 +249,11 @@ async def test_the_workflow_hold_step_reads_back_the_hold_its_request_placed() -
 
 
 async def _cleanup(client, booking_id: str, thread_id: str, journey_id: str) -> None:
-    """Remove everything the test wrote, as the admin role."""
-    await delete_booking_rows(client, booking_id)
+    """Remove the SQL-only fixture rows this test wrote, as the admin role.
+
+    The test calls the booking function directly, so the Lambda never wrote an action audit
+    row; the helper refuses to delete anything such a row references.
+    """
     if thread_id:
         await client.execute(
             "DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,)
@@ -258,11 +261,8 @@ async def _cleanup(client, booking_id: str, thread_id: str, journey_id: str) -> 
         await client.execute(
             "DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,)
         )
-    if journey_id:
-        await delete_journey_rows(client, journey_id)
-        await client.execute(
-            "DELETE FROM journeys WHERE journey_id = %s", (journey_id,)
-        )
+    await delete_unaudited_fixture(
+        client, booking_ids=[booking_id], journey_ids=[journey_id] if journey_id else [])
 
 
 async def test_the_function_refuses_to_oversell() -> None:

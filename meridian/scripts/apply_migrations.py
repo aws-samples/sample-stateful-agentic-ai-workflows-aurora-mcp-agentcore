@@ -3,6 +3,17 @@
 Unlike init_aurora_schema.py, this command never recreates the base schema or
 removes data. Use it for an existing Aurora cluster before deploying code that
 depends on a newer database contract.
+
+Run without a mode flag it only lists the pending migrations and prints this usage; it writes
+nothing. Apply one migration at a time, as the guides describe:
+
+    python scripts/apply_migrations.py --pending
+    python scripts/apply_migrations.py --dry-run --only <first-pending-migration.sql>
+    python scripts/apply_migrations.py --only <first-pending-migration.sql>
+
+Migrations 026 to 029 span an application cutover on an existing installation, so each one is
+applied on its own with the running application upgraded between them
+(docs/BOOKING_FUNCTIONS_UPGRADE.md).
 """
 
 from __future__ import annotations
@@ -176,7 +187,10 @@ def _dry_run_pending(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0], allow_abbrev=False,
+        usage="apply_migrations.py (--pending | --dry-run --only NAME.sql | --only NAME.sql) "
+              "[--with-rotation]")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--pending", action="store_true",
@@ -192,8 +206,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="also include 034_login_rotation_clones.sql; only when adopting "
                              "automatic password rotation")
     args = parser.parse_args(argv)
+    bare = not (args.pending or args.dry_run or args.only)
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN[/red]")
+        if bare:
+            parser.print_usage(sys.stderr)
         return 2
     if not MIGRATIONS_DIR.exists():
         console.print("[yellow]No migrations directory found.[/yellow]")
@@ -205,23 +222,27 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         return 2
-    if args.pending:
-        pending_names = [path.name for path in pending]
-        print("\n".join(pending_names) or "No pending migrations.")
-        return 0
+    if args.pending or bare:
+        return _list_pending(pending, parser, bare=bare)
     if args.dry_run:
         return _dry_run_pending(client, args.only, args.with_rotation)
     _ensure_migration_table(client)
-
-    if not pending:
-        console.print("[green]No pending migrations.[/green]")
-        return 0
 
     for path in pending:
         console.print(f"[cyan]Applying {path.name}[/cyan]")
         _apply_migration(client, path)
     console.print(f"[bold green]Applied {len(pending)} migration(s).[/bold green]")
     return 0
+
+
+def _list_pending(pending: list[Path], parser: argparse.ArgumentParser, *, bare: bool) -> int:
+    """Print the pending names; with ``bare`` also the usage, and exit 2 so nothing sees success."""
+    print("\n".join(path.name for path in pending) or "No pending migrations.")
+    if not bare:
+        return 0
+    print("\nNothing was applied. Name the migration to dry-run or apply:", file=sys.stderr)
+    parser.print_usage(sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

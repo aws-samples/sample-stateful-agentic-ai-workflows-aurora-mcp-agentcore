@@ -309,3 +309,92 @@ def test_the_cli_flag_opts_in_and_the_default_does_not(monkeypatch, tmp_path, ca
     assert migrations.main(["--pending", "--with-rotation"]) == 0
     assert capsys.readouterr().out.split() == [
         "034_login_rotation_clones.sql", "035_later.sql"]
+
+
+def _bare_setup(monkeypatch, tmp_path, client, names):
+    for name in names:
+        (tmp_path / name).write_text("SELECT 1;")
+    monkeypatch.setattr(migrations, "MIGRATIONS_DIR", tmp_path)
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations.boto3, "client", lambda *a, **k: client)
+
+
+def _writes(client) -> list[str]:
+    return [call["sql"] for call in client.executed
+            if call.get("transactionId") or any(
+                word in call["sql"].upper() for word in ("CREATE", "INSERT", "ALTER"))]
+
+
+@pytest.mark.parametrize("argv", [[], ["--with-rotation"]])
+def test_the_bare_command_lists_pending_and_usage_and_writes_nothing(
+    monkeypatch, tmp_path, capsys, argv
+):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    _bare_setup(monkeypatch, tmp_path, client, ["001_a.sql", "002_b.sql", "003_c.sql"])
+
+    code = migrations.main(argv)
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out.split() == ["002_b.sql", "003_c.sql"]
+    assert "usage:" in captured.err and "Nothing was applied" in captured.err
+    assert _writes(client) == [] and client.commits == [] and client.rollbacks == []
+
+
+def test_the_bare_command_without_a_cluster_prints_usage_and_touches_nothing(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", None)
+    monkeypatch.setattr(migrations.boto3, "client", lambda *a, **k: pytest.fail("no client"))
+
+    assert migrations.main([]) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_a_named_dry_run_rolls_back_and_records_nothing(monkeypatch, tmp_path, capsys):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    _bare_setup(monkeypatch, tmp_path, client, ["001_a.sql", "002_b.sql", "003_c.sql"])
+
+    assert migrations.main(["--dry-run", "--only", "002_b.sql"]) == 0
+
+    assert client.commits == [] and len(client.rollbacks) == 1
+    assert not any("INSERT INTO schema_migrations" in call["sql"] for call in client.executed)
+    assert "002_b.sql ran 1 statement(s) and was rolled back" in capsys.readouterr().out
+
+
+def test_a_named_apply_applies_exactly_that_migration(monkeypatch, tmp_path):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    _bare_setup(monkeypatch, tmp_path, client, ["001_a.sql", "002_b.sql", "003_c.sql"])
+
+    assert migrations.main(["--only", "002_b.sql"]) == 0
+
+    recorded = [call["parameters"][0]["value"]["stringValue"] for call in client.executed
+                if "INSERT INTO schema_migrations" in call["sql"]]
+    assert recorded == ["002_b.sql"] and len(client.commits) == 1
+
+
+CUTOVER = [
+    "025_x.sql", "026_serialize_booking_transitions.sql",
+    "027_prepare_booking_write_cutover.sql", "028_booking_action_audit.sql",
+    "029_restrict_booking_writes.sql",
+]
+
+
+def test_an_existing_installation_never_crosses_the_026_to_029_cutover_by_default(
+    monkeypatch, tmp_path, capsys
+):
+    client = ScriptedClient("schema_migrations", ["025_x.sql"])
+    _bare_setup(monkeypatch, tmp_path, client, CUTOVER)
+
+    assert migrations.main([]) == 2
+    assert capsys.readouterr().out.split() == CUTOVER[1:]
+    assert _writes(client) == []
+
+    assert migrations.main(["--only", CUTOVER[2]]) == 2
+    assert client.commits == []
+
+    assert migrations.main(["--only", CUTOVER[1]]) == 0
+    recorded = [call["parameters"][0]["value"]["stringValue"] for call in client.executed
+                if "INSERT INTO schema_migrations" in call["sql"]]
+    assert recorded == [CUTOVER[1]]

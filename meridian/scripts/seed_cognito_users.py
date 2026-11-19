@@ -5,7 +5,9 @@ can sign in and must be refused everything that belongs to Jordan Morgan. For ea
 1. creates the Cognito user, or resets the existing one, with a generated password;
 2. stores {"username", "password"} in Secrets Manager under meridian/cognito/<key>;
 3. stores the password in the macOS Keychain (service meridian-cognito), through
-   ``security -i`` so it never appears in a process list;
+   ``security -i`` so it never appears in a process list. Off macOS there is no Keychain: pass
+   ``--no-keychain`` to keep the password in Secrets Manager alone (the token tools read it from
+   there). Without that flag a non-macOS ``--apply`` stops before it changes anything;
 4. writes the binding row (identity_provider='cognito', subject_id=<sub>) that the pre-token
    trigger reads, as the master login, which is the only login allowed to grant.
 
@@ -167,12 +169,22 @@ def store_secret(sm, user: SeedUser, password: str) -> None:
     sm.put_secret_value(SecretId=user.secret_name, SecretString=value)
 
 
+KEYCHAIN_PLATFORM_MESSAGE = (
+    "The macOS Keychain is the second home of the sign-in passwords and this is not macOS. "
+    "Nothing was changed. Run this script on the presenter's Mac, or pass --no-keychain to keep "
+    "the passwords in Secrets Manager alone")
+
+
+def require_keychain_platform() -> None:
+    """Stop before any write when the Keychain is wanted and this machine has none."""
+    if sys.platform != "darwin":
+        raise SystemExit(KEYCHAIN_PLATFORM_MESSAGE)
+
+
 def store_keychain(user: SeedUser, password: str,
                    run: Callable[..., Any] = subprocess.run) -> None:
     """Put the password in the macOS Keychain without placing it in any argument list."""
-    if sys.platform != "darwin":
-        raise SystemExit("The macOS Keychain is the second home of the sign-in passwords; "
-                         "run this script on the presenter's Mac")
+    require_keychain_platform()
     if not all(c.isalnum() or c in "-_" for c in password):
         raise SystemExit("refusing to quote an unexpected password alphabet")
     command = (f"add-generic-password -U -s {KEYCHAIN_SERVICE} -a {user.email} "
@@ -280,19 +292,24 @@ def write_binding(rds, cluster_arn: str, master_secret_arn: str, database: str,
 def seed_user(user: SeedUser, *, idp, sm, rds, pool_id: str, cluster_arn: str,
               master_secret_arn: str, database: str, apply: bool,
               keychain: Optional[Callable[[SeedUser, str], None]] = None,
-              password: Optional[str] = None) -> Optional[str]:
-    """Seed one user. Returns the Cognito sub, or None on a dry run."""
+              password: Optional[str] = None, use_keychain: bool = True) -> Optional[str]:
+    """Seed one user. Returns the Cognito sub, or None on a dry run.
+
+    With ``use_keychain`` False the password is kept in Secrets Manager alone.
+    """
     exists = find_user(idp, pool_id, user) is not None
     if not apply:
         verb = "reset" if exists else "create"
-        print(f"{user.key}: would {verb} {user.email}, store {user.secret_name} and a Keychain "
-              f"item, bind {PROVIDER} -> {user.traveler_id}")
+        stored = f"{user.secret_name} and a Keychain item" if use_keychain else user.secret_name
+        print(f"{user.key}: would {verb} {user.email}, store {stored}, "
+              f"bind {PROVIDER} -> {user.traveler_id}")
         return None
     password = password or generate_password()
     try:
         subject = upsert_user(idp, pool_id, user, password)
         store_secret(sm, user, password)
-        (keychain or store_keychain)(user, password)
+        if use_keychain:
+            (keychain or store_keychain)(user, password)
         write_binding(rds, cluster_arn, master_secret_arn, database, user, subject)
     except (ClientError, BotoCoreError) as err:
         raise PartialSeedError(user.key, err) from None
@@ -302,6 +319,8 @@ def seed_user(user: SeedUser, *, idp, sm, rds, pool_id: str, cluster_arn: str,
 
 
 def _run(args: argparse.Namespace) -> None:
+    if args.apply and not args.no_keychain:
+        require_keychain_platform()
     load_dotenv(ENV_FILE)
     cluster_arn = os.environ["AURORA_CLUSTER_ARN"]
     pool_id = os.environ.get("MERIDIAN_COGNITO_USER_POOL_ID", "")
@@ -324,6 +343,7 @@ def _run(args: argparse.Namespace) -> None:
         seed_user(
             user, idp=idp, sm=sm, rds=rds, pool_id=pool_id, cluster_arn=cluster_arn,
             master_secret_arn=master_secret_arn, database=database, apply=args.apply,
+            use_keychain=not args.no_keychain,
         )
 
 
@@ -341,6 +361,9 @@ def main(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--user", choices=[*USERS, "all"], default="all")
     parser.add_argument("--apply", action="store_true", help="make the changes")
+    parser.add_argument("--no-keychain", action="store_true",
+                        help="keep each password in Secrets Manager only; for a machine "
+                             "that is not a Mac")
     args = parser.parse_args(argv)
     try:
         _run(args)

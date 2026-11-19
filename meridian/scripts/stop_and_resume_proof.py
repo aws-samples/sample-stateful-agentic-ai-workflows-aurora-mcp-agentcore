@@ -56,32 +56,20 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from scripts.agentcore_caller import (  # noqa: E402
-    bearer_headers, caller_scope, require_token_safe_url, user_for_traveler,
+    bearer_headers, require_token_safe_url, user_for_traveler,
 )
-from scripts.kill_and_resume_proof import (  # noqa: E402
-    _count,
-    _holds_for,
-    _purge,
-    pinned_to_traveler,
-    read_newest_snapshot,
+from scripts.governed_release import (  # noqa: E402
+    CallLedger,
+    release_holds,
+    thread_holds,
 )
+from scripts.kill_and_resume_proof import _holds_for, read_newest_snapshot  # noqa: E402
 
 API = os.getenv("MERIDIAN_PROOF_API", "http://127.0.0.1:8013/api")
 AUTH_HEADERS: dict[str, str] = {}
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 PROOF_THREAD_PREFIX = "phase5-proof-"
 THREAD_PATTERN = re.compile(r"^phase5-proof-[0-9a-f]{8,32}$")
-RELEASE_CALLS_PER_HOLD = 2
-RUN_HOLDS_SQL = """
-SELECT hr.booking_id, hr.hold_request_id, hr.journey_id
-  FROM journey_threads jt
-  JOIN hold_requests hr ON hr.journey_id = jt.journey_id
- WHERE jt.thread_id = %s
- ORDER BY hr.booking_id
-"""
-THREADS_OF_JOURNEY_SQL = "SELECT COUNT(*) AS n FROM journey_threads WHERE journey_id = %s"
-ACTIVE_SQL = ("SELECT (status = 'held' AND hold_expires_at > CURRENT_TIMESTAMP) AS active "
-              "FROM bookings WHERE booking_id = %s")
 CANONICAL = ("My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration "
              "availability for the best three options.")
 RESUME_MESSAGE = "Resume workflow from the saved step"
@@ -353,173 +341,16 @@ def _print_evidence(document: dict, holds: list[dict], expected: Optional[str], 
     print(f"resumed_after_restart={(document.get('workflow') or {}).get('resumed_after_restart')}")
 
 
-async def _purge_by_thread(client, thread: str) -> None:
-    """Delete a thread's rows when it has no journey, then raise if any survive."""
-    tables = (("workflow_snapshots", "session_id"), ("journey_executions", "thread_id"))
-    for table, column in tables:
-        await client.execute(f"DELETE FROM {table} WHERE {column} = %s", (thread,))
-    left = {table: await _count(client, table, column, thread) for table, column in tables}
-    if any(left.values()):
-        raise RuntimeError(f"the purge of thread {thread} left rows behind: "
-                           + ", ".join(f"{t}={n}" for t, n in left.items() if n))
-
-
-async def _check_owned(client, journey: str, thread: str) -> None:
-    """Refuse to delete a journey that has any thread besides the proof's own."""
-    rows = await client.execute(
-        "SELECT COUNT(*) AS n FROM journey_threads WHERE journey_id = %s", (journey,))
-    if int(rows[0]["n"]) != 1:
-        raise RuntimeError(f"journey {journey} has other threads than {thread}; "
-                           "not purging a journey this proof did not create")
-
-
-async def _purge_run(client, thread: str) -> None:
-    if not thread.startswith(PROOF_THREAD_PREFIX):
-        raise RuntimeError(f"thread {thread} was not created by this proof; not purging it")
-    rows = await client.execute("SELECT journey_id FROM journey_threads WHERE thread_id = %s",
-                                (thread,))
-    if not rows:
-        await _purge_by_thread(client, thread)
-        print(f"cleanup: no journey row for {thread}; purged its snapshots and executions")
-        return
-    journey = rows[0]["journey_id"]
-    await _check_owned(client, journey, thread)
-    await _purge(client, journey, thread, TRAVELER)
-    print(f"cleanup: purged {journey} and counted every table of the run at zero")
-
-
-def _cause(exc: BaseException) -> str:
-    """A cause that is safe to print: the exception type, never its text."""
-    return type(exc).__name__
-
-
-async def _hold_state(client, booking: str) -> tuple[Optional[bool], str]:
-    """Whether the hold still reserves places, read pinned to the traveler.
-
-    ``bookings`` forces row level security, so the read runs in the traveler's pinned scope; a
-    row that cannot be seen there is unknown (None), never taken for a released hold.
-    """
-    try:
-        async with pinned_to_traveler(client, TRAVELER) as transaction:
-            rows = await client.execute(ACTIVE_SQL, (booking,), transaction_id=transaction)
-    except Exception as exc:  # noqa: BLE001 - an unknown state is reported, never assumed
-        return None, f"read-back failed ({_cause(exc)})"
-    if not rows or rows[0]["active"] is None:
-        return None, "booking row not visible or its state unknown"
-    return bool(rows[0]["active"]), ""
-
-
-def _call_release(call_tool, args: dict) -> str:
-    """One governed release call: '' when the Gateway answered released, else a fixed cause."""
-    from backend.agents.phase_05_workflow.governed_hold import release_governed_hold
-
-    try:
-        outcome = release_governed_hold(call_tool, args)
-    except Exception as exc:  # noqa: BLE001 - an ambiguous reply: the next read-back decides
-        return f"release reply lost ({_cause(exc)})"
-    return "" if outcome.released else f"release not confirmed ({outcome.error})"
-
-
-class CallLedger:
-    """Release calls already sent per booking: in memory, or in a file other processes share."""
-
-    def __init__(self, path: Optional[Path] = None) -> None:
-        self.path, self.sent = path, {}
-
-    def made(self, booking: str) -> int:
-        if self.path is None:
-            return self.sent.get(booking, 0)
-        return self.path.read_text().split().count(booking) if self.path.exists() else 0
-
-    def record(self, booking: str) -> None:
-        """Count the call before it is sent, so a call that dies on the way still counts."""
-        if self.path is None:
-            self.sent[booking] = self.sent.get(booking, 0) + 1
-            return
-        with open(self.path, "a", encoding="utf-8") as ledger:
-            ledger.write(booking + "\n")
-
-
-async def _release_one(client, call_tool, args: dict, booking: str, ledger: CallLedger) -> str:
-    """Release one hold with at most two calls in all; '' once it is inactive, else the causes.
-
-    It is read back before each call, and a call after the first goes out only when that
-    read-back succeeded and showed the hold still held, so an unconfirmed release is never
-    repeated blind. Calls an earlier process recorded in the ledger count toward the two.
-    """
-    causes: list[str] = []
-    sent_here = 0
-    while True:
-        made = max(ledger.made(booking), sent_here)
-        active, read_cause = await _hold_state(client, booking)
-        if active is False:
-            return ""
-        causes.append(read_cause)
-        if made >= RELEASE_CALLS_PER_HOLD or (made and active is None):
-            break
-        ledger.record(booking)
-        sent_here += 1
-        causes.append(_call_release(call_tool, args))
-    return "; ".join(dict.fromkeys(cause for cause in causes if cause)) or "still held"
-
-
-async def _run_holds(client, thread: str) -> tuple[list[dict], list[str]]:
-    """The holds this run's thread made, and why any of them must not be touched."""
-    if not THREAD_PATTERN.match(thread):
-        return [], [f"{thread} is not a thread this proof creates; nothing was released"]
-    try:
-        holds = [dict(row) for row in await client.execute(RUN_HOLDS_SQL, (thread,))]
-        shared = []
-        for journey in sorted({hold["journey_id"] for hold in holds}):
-            rows = await client.execute(THREADS_OF_JOURNEY_SQL, (journey,))
-            if int(rows[0]["n"]) != 1:
-                shared.append(journey)
-    except Exception as exc:  # noqa: BLE001 - reported; nothing is released blind
-        return [], [f"reading the holds of {thread} failed ({_cause(exc)})"]
-    problems = [f"journey {journey} has other threads; its holds were not released"
-                for journey in shared]
-    return [hold for hold in holds if hold["journey_id"] not in shared], problems
-
-
-async def _release_holds(client, holds: list[dict], ledger: CallLedger) -> list[str]:
-    """Release each hold through the Gateway as the traveler; every hold is attempted."""
-    from backend.agentcore.gateway import get_agentcore_gateway
-    from backend.agents.phase_05_workflow.governed_hold import release_arguments
-
-    problems = []
-    with caller_scope(user_for_traveler(TRAVELER)):
-        call_tool = get_agentcore_gateway().call_tool
-        for hold in holds:
-            booking = hold["booking_id"]
-            try:
-                args = release_arguments(traveler_id=TRAVELER,
-                                         hold_request_id=hold["hold_request_id"],
-                                         journey_id=hold["journey_id"])
-                cause = await _release_one(client, call_tool, args, booking, ledger)
-            except Exception as exc:  # noqa: BLE001 - one bad hold never stops the others
-                cause = f"cleanup error ({_cause(exc)})"
-            if cause:
-                problems.append(f"booking {booking} still held or unknown ({cause})")
-            else:
-                print(f"released: booking {booking} request {hold['hold_request_id']} "
-                      f"journey {hold['journey_id']}")
-    return problems
-
-
 async def release_run(client, thread: str, ledger: Optional[CallLedger] = None) -> list[str]:
     """Give back every active hold of this run's thread; delete nothing.
 
     Only the holds whose journey belongs to ``thread`` alone are touched. Returns the problems,
     each with a sanitized cause; empty when every hold of the run is inactive.
     """
-    holds, problems = await _run_holds(client, thread)
-    if not holds:
-        return problems
-    try:
-        return problems + await _release_holds(client, holds, ledger or CallLedger())
-    except Exception as exc:  # noqa: BLE001 - no token or gateway: report every hold
-        return problems + [f"booking {hold['booking_id']} not released: no governed release "
-                           f"possible ({_cause(exc)})" for hold in holds]
+    if not THREAD_PATTERN.match(thread):
+        return [f"{thread} is not a thread this proof creates; nothing was released"]
+    holds, problems = await thread_holds(client, thread)
+    return problems + await release_holds(client, TRAVELER, holds, ledger)
 
 
 async def _cleanup(client, thread: str, ledger: CallLedger) -> bool:

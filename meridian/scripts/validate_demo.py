@@ -1,9 +1,15 @@
 """Live demo contract checks against a local or explicitly authorized hosted backend.
 
 Uses real Aurora, Bedrock, MCP, AgentCore Runtime and Gateway. Records each
-result and timing; never replaces unavailable services with fixtures. Deletes
-only this run's demo records unless --keep is requested. Cloud service audit
-traces remain subject to their configured retention.
+result and timing; never replaces unavailable services with fixtures. Afterwards it gives
+back this run's active holds through the governed Gateway release tool and keeps every row:
+the bookings, hold requests, journeys and booking_action_audit rows are evidence. The
+confirmation exercise leaves one confirmed booking, which the cleanup keeps and reports by id.
+Needs the Gateway configuration, Aurora access and, in jwt mode, the seeded user's Cognito
+secret: the release signs in as that user. Without them the cleanup exits 1 with
+"no governed release possible" after a passing run. --keep also leaves the holds held.
+--delete-from-disposable-database deletes this run's rows instead, audit rows included:
+use it only on a database you discard. Cloud service audit traces remain subject to their configured retention.
 """
 from __future__ import annotations
 
@@ -11,6 +17,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -24,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE  # noqa: E402
 from scripts.agentcore_caller import bearer_headers  # noqa: E402
+from scripts.governed_release import final_code  # noqa: E402
 
 load_dotenv()
 
@@ -40,6 +48,22 @@ BROWSER_DEADLINE_MS = 55_000
 
 client: httpx.Client
 steps: list[dict] = []
+
+
+COUNT = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+LENGTH_PATTERN = re.compile(rf"\b{COUNT}(?:\s+|-)nights?\b", re.IGNORECASE)
+PLACES_PATTERN = re.compile(
+    rf"\b{COUNT}\s+(?:package\s+places?|places?\s+(?:left|remaining|available))\b",
+    re.IGNORECASE)
+
+
+def reports_inventory(message: str) -> bool:
+    """Whether a reply states trip lengths and their places left, in whatever words it uses.
+
+    The model words it differently each time ("6 nights", "the 6-night option", "five places"),
+    so the check reads the facts, not one phrase.
+    """
+    return bool(LENGTH_PATTERN.search(message) and PLACES_PATTERN.search(message))
 
 
 def reports_durable_snapshots(body: dict, status: int) -> bool:
@@ -95,6 +119,46 @@ def hold_quote(product_id: str, size: str, quantity: int) -> dict:
     unit_cents = round(float(response.json()["price"]) * 100)
     return {"unit_price_cents": unit_cents, "total_cents": unit_cents * quantity,
             "currency": "USD", "size": size, "quantity": quantity}
+
+
+FALLBACK_TARGET = ("CTY-002", "7 nights")
+
+
+def roomiest_target(packages: list[dict], ceiling_cents) -> tuple[str, str] | None:
+    """The package and trip length with the most places left that one traveler can afford.
+
+    The confirmation step keeps its booking as evidence, so it uses one place for good. Taking
+    the roomiest affordable choice spreads that cost, instead of using up one package run after
+    run. Ties keep catalog order. None when nothing affordable has a place left.
+    """
+    best = None
+    for package in packages:
+        package_id = package.get("product_id") or package.get("package_id")
+        price = round(float(package.get("price") or package.get("price_per_person") or 0) * 100)
+        if ceiling_cents is not None and price > int(ceiling_cents):
+            continue
+        for size, places in (package.get("availability") or {}).items():
+            if int(places) > 0 and (best is None or int(places) > best[0]):
+                best = (int(places), package_id, size)
+    return (best[1], best[2]) if best else None
+
+
+def confirm_target(profile: dict | None) -> tuple[str, str]:
+    """Where the hold and confirmation go: the roomiest affordable choice in the live catalog.
+
+    Falls back to CTY-002 for 7 nights when the catalog cannot be read or the traveler's budget
+    is unknown; the hold step then fails on its own if something is really down.
+    """
+    ceiling = (profile or {}).get("budget_ceiling_per_traveler_cents")
+    if ceiling is None:
+        return FALLBACK_TARGET
+    try:
+        response = client.get("/api/products", params={"limit": 100})
+        response.raise_for_status()
+        packages = response.json().get("products") or []
+    except (httpx.HTTPError, ValueError):
+        return FALLBACK_TARGET
+    return roomiest_target(packages, ceiling) or FALLBACK_TARGET
 
 
 def now() -> str:
@@ -181,7 +245,7 @@ def main() -> int:
 
     record("health", "GET", "/api/health", None, ok=ok,
            durable=reports_durable_snapshots)
-    record("memory_profile", "GET", f"/api/memory/{TRAVELER}", None, ok=ok,
+    profile, _ = record("memory_profile", "GET", f"/api/memory/{TRAVELER}", None, ok=ok,
            facts=lambda b, s: len(b.get("facts") or []) >= 5,
            budget=lambda b, s: b.get("budget_ceiling_per_traveler_cents") is not None)
     record("rls_probe", "POST", "/api/diagnostics/rls-probe", {}, ok=ok,
@@ -233,7 +297,7 @@ def main() -> int:
     record("p3_tuscany_lengths", "POST", "/api/chat",
            {"message": "Which trip lengths are still available for Tuscany Wine & Wellness?", "phase": 3, "customer_id": TRAVELER},
            ok=ok, package=lambda b, s: "Tuscany Wine & Wellness" in b["message"],
-           inventory=lambda b, s: "package places" in b["message"])
+           inventory=lambda b, s: reports_inventory(b["message"]))
     record("p3_stretch_recall", "POST", "/api/chat",
            {"message": RECALL, "phase": 3, "customer_id": TRAVELER},
            ok=ok, honest=lambda b, s: "Switch to Production" in b["message"], no_products=no_products)
@@ -316,10 +380,13 @@ def main() -> int:
            {"message": "Which trip lengths are still available for Amalfi Coast Villa Week?", "phase": 5, "customer_id": TRAVELER, "travelers_count": 2},
            ok=ok, complete=lambda b, s: b.get("workflow_status") == "complete", products=has_products)
 
-    # Phase 4 direct hold and confirmation (governed writes through Gateway + Cedar)
+    # Phase 4 direct hold and confirmation (governed writes through Gateway + Cedar). The
+    # confirmed booking is kept as evidence, so it goes to the roomiest affordable choice.
+    product, size = confirm_target(profile)
     hold, _ = record("p4_order_hold", "POST", "/api/chat/order",
-                     lambda: {"product_id": "CTY-002", "size": "7 nights", "quantity": 2, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4,
-                              "quote": hold_quote("CTY-002", "7 nights", 2)},
+                     lambda: {"product_id": product, "size": size, "quantity": 1, "phase": 4,
+                              "traveler_id": TRAVELER, "conversation_id": conv4,
+                              "quote": hold_quote(product, size, 1)},
                      ok=ok, held=lambda b, s: (b.get("order") or {}).get("status") == "held",
                      cedar=lambda b, s: any(
                          any(f.get("label") == "cedar_decision" and f.get("value") == "allow"
@@ -328,7 +395,7 @@ def main() -> int:
     booking_id = (hold.get("order") or {}).get("order_id")
     steps[-1]["checks"]["booking_recorded"] = bool(booking_id)
     record("p4_hold_readback", "GET", "/api/chat/holds",
-           {"conversation_id": conv4, "product_id": "CTY-002", "duration": "7 nights", "quantity": 2},
+           {"conversation_id": conv4, "product_id": product, "duration": size, "quantity": 1},
            ok=ok, same_booking=lambda b, s: (b.get("order") or {}).get("order_id") == booking_id)
     if booking_id:
         record("p4_booking_read", "GET", f"/api/chat/bookings/{booking_id}", None, ok=ok,
@@ -339,8 +406,9 @@ def main() -> int:
         record("p4_booking_read_after", "GET", f"/api/chat/bookings/{booking_id}", None, ok=ok,
                confirmed=lambda b, s: (b.get("order") or {}).get("status") == "confirmed")
     record("p4_hold_over_party_limit", "POST", "/api/chat/order",
-           lambda: {"product_id": "CTY-002", "size": "7 nights", "quantity": 8, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4,
-                    "quote": hold_quote("CTY-002", "7 nights", 8)},
+           lambda: {"product_id": product, "size": size, "quantity": 8, "phase": 4,
+                    "traveler_id": TRAVELER, "conversation_id": conv4,
+                    "quote": hold_quote(product, size, 8)},
            ok=ok, not_held=lambda b, s: not b.get("order"),
            denied=lambda b, s: any(((a.get("telemetry") or {}).get("status")) == "denied" for a in b["activities"]))
 
@@ -367,20 +435,48 @@ def main() -> int:
     return 0 if not summary["failures"] and not summary["over_browser_deadline"] else 1
 
 
-async def cleanup() -> None:
-    from backend.db.rds_data_client import get_rds_data_client
-    from scripts.kill_and_resume_proof import _purge
+def confirmed_bookings() -> list[str]:
+    """The booking ids this run confirmed, in the order they were confirmed."""
+    return [step["order"]["order_id"] for step in steps
+            if step["step"] == "p4_confirm_booking" and (step.get("order") or {}).get("status")
+            == "confirmed" and (step.get("order") or {}).get("order_id")]
 
-    db = get_rds_data_client()
-    conversations = {step["conversation_id"] for step in steps if step.get("conversation_id")}
-    bookings = {step["order"]["order_id"] for step in steps if step.get("order")}
-    for thread in conversations:
+
+async def run_threads(db, conversations: set[str]) -> list[tuple[str, str]]:
+    """The ``(journey, thread)`` pairs of this run's workflow and concierge conversations."""
+    pairs = []
+    for conversation in sorted(conversations):
         rows = await db.execute(
             "SELECT journey_id, thread_id FROM journey_threads WHERE thread_id IN (%s, %s)",
-            (thread, f"concierge:{thread}"),
+            (conversation, f"concierge:{conversation}"),
         )
-        for row in rows:
-            await _purge(db, row["journey_id"], row["thread_id"])
+        pairs.extend((row["journey_id"], row["thread_id"]) for row in rows)
+    return pairs
+
+
+async def release_run(db, conversations: set[str], bookings: set[str]) -> list[str]:
+    """Give back every active hold this run made; delete nothing. Returns the problems.
+
+    Each booking is handled once, whether it was found on one of the run's threads or among
+    the bookings its responses named.
+    """
+    from scripts.governed_release import CallLedger, release_bookings, release_holds, thread_holds
+
+    ledger, problems, seen = CallLedger(), [], set()
+    for _journey, thread in await run_threads(db, conversations):
+        holds, why = await thread_holds(db, thread)
+        holds = [hold for hold in holds if hold["booking_id"] not in seen]
+        seen.update(hold["booking_id"] for hold in holds)
+        problems += why + await release_holds(db, TRAVELER, holds, ledger)
+    return problems + await release_bookings(db, TRAVELER, sorted(bookings - seen), ledger)
+
+
+async def delete_run(db, conversations: set[str], bookings: set[str]) -> None:
+    """Administrative reset: delete this run's rows, audit rows included."""
+    from scripts.kill_and_resume_proof import _purge
+
+    for journey, thread in await run_threads(db, conversations):
+        await _purge(db, journey, thread)
     for booking in bookings:
         for table in ("booking_action_audit", "hold_requests", "booking_lines", "bookings"):
             await db.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,))
@@ -388,7 +484,33 @@ async def cleanup() -> None:
         await db.execute("DELETE FROM trip_interactions WHERE conversation_id = %s", (thread,))
         await db.execute("DELETE FROM conversation_messages WHERE conversation_id = %s", (thread,))
         await db.execute("DELETE FROM conversations WHERE conversation_id = %s", (thread,))
-    print(f"Cleanup: removed this run's {len(conversations)} conversations and {len(bookings)} direct booking receipts; cloud audit traces retained.")
+
+
+async def cleanup(delete: bool = False) -> bool:
+    """Release this run's holds and keep its rows, or with ``delete`` remove them; True if clean.
+
+    The one booking the confirmation exercise confirms is kept and named: a confirmed booking is
+    not a hold, so there is nothing to give back, and it uses package capacity.
+    """
+    from backend.db.rds_data_client import get_rds_data_client
+
+    db = get_rds_data_client()
+    conversations = {step["conversation_id"] for step in steps if step.get("conversation_id")}
+    bookings = {step["order"]["order_id"] for step in steps if step.get("order")}
+    if delete:
+        await delete_run(db, conversations, bookings)
+        print(f"Cleanup: deleted this run's {len(conversations)} conversations and "
+              f"{len(bookings)} direct bookings from the disposable database, audit rows too.")
+        return True
+    problems = await release_run(db, conversations, bookings)
+    for problem in problems:
+        print(f"Cleanup FAILED: {problem}", file=sys.stderr)
+    for booking in confirmed_bookings():
+        print(f"Cleanup: kept confirmed booking {booking}; it is not a hold and still uses "
+              "package capacity.")
+    print(f"Cleanup: released this run's active holds and kept every row of its "
+          f"{len(conversations)} conversations and {len(bookings)} direct bookings.")
+    return not problems
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -396,7 +518,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--base-url", default=BASE)
     parser.add_argument("--output", type=Path, default=OUT)
-    parser.add_argument("--keep", action="store_true", help="Keep this run's database records for inspection")
+    parser.add_argument("--keep", action="store_true",
+                        help="Leave this run's holds held and its rows in place")
+    parser.add_argument("--delete-from-disposable-database", action="store_true", dest="delete",
+                        help="Delete this run's rows, audit rows included: only for a database "
+                             "you discard")
     parser.add_argument("--allow-hosted-demo-writes", action="store_true",
                         help="Explicitly allow this script's scoped demo writes at the supplied HTTPS URL")
     return parser
@@ -421,9 +547,9 @@ if __name__ == "__main__":
     if hosted and not (auth or headers):
         parser.error("Hosted checks require authentication resolved through asm-exec")
     with httpx.Client(base_url=BASE, timeout=60.0, auth=auth, headers=headers) as client:
+        exit_code = 1
         try:
             exit_code = main()
         finally:
-            if not args.keep:
-                asyncio.run(cleanup())
-    sys.exit(exit_code)
+            clean = args.keep or asyncio.run(cleanup(args.delete))
+    sys.exit(final_code(exit_code, clean))

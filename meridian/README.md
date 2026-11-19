@@ -3,9 +3,10 @@
 Meridian is a travel concierge built on Amazon Aurora PostgreSQL, MCP, Strands Agents,
 and Amazon Bedrock AgentCore. This directory holds the runnable application:
 the FastAPI backend, the React frontend, the AgentCore project with its two
-Runtimes, the CDK apps, scripts and tests. A maintained second implementation of the
-workflow is in [examples/langgraph](examples/langgraph/README.md); the application does
-not import it.
+Runtimes, the CDK apps, scripts and tests. [examples/langgraph](examples/langgraph/README.md)
+is a separate persistence and pause/resume example: another graph framework saving its
+state in Aurora. It is not the governed workflow, which is the Strands path, and the
+application does not import it.
 
 A request flows from the browser to the FastAPI backend, which calls an AgentCore
 Runtime. The Runtime's tools go through the AgentCore Gateway, where Cedar policy decides
@@ -28,7 +29,7 @@ URL, so a reload restores a saved workflow.
 | Capability ladder | `/showcase?view=ladder` | The five phases, suggested prompts, and a trace of each reply |
 | Recovery desk | `/showcase?view=recovery` | The canceled-trip workflow: saved shortlist, resume, the 15-minute hold receipt, and the handoff back to Concierge |
 | System evidence | `/showcase?view=proof` | Aurora readback of the selected journey's snapshots, executions, leases, session stops, authorization decisions and holds |
-| Solution briefing | `/showcase?view=briefing` | Architecture, data preparation, phase diagrams, gateway tools and Cedar policies; makes no service calls |
+| Solution briefing | `/showcase?view=briefing` | Architecture, data preparation, phase diagrams, gateway tools and Cedar policies. Its own content is static, but the page shares the showcase's connection check, so while it is open the page still calls the health endpoint, reads the catalog and reads the traveler's opening profile, on load and every 30 seconds while the tab is visible |
 
 Concierge presents live trip options beside the conversation. **View travel brief**
 reveals saved context; unset dates stay distinct from remembered target dates.
@@ -426,7 +427,7 @@ package before a hold. It is not enabled.
 | Frontend | React 18, Vite, TypeScript |
 | Backend | FastAPI, Python 3.13 |
 | Agents | Strands Agents for Phases 1 to 4; the Phase 4 agent runs on AgentCore Runtime with tools from AgentCore Gateway |
-| Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases, calling the Gateway for search, hold and release. A second implementation is in `examples/langgraph/` |
+| Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases, calling the Gateway for search, hold and release. A separate persistence and pause/resume example, not this workflow, is in `examples/langgraph/` |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
 | Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge and the Phase 3 agent, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap and adaptive thinking at effort medium. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |

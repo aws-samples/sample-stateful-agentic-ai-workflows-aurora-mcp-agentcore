@@ -6,7 +6,7 @@ import pytest
 from scripts import init_aurora_schema, release_demo_bookings, seed_data
 
 
-async def test_reset_deletes_only_selected_action_audit_before_its_booking(monkeypatch):
+async def test_the_disposable_database_reset_deletes_only_the_selected_booking(monkeypatch):
     client = Mock()
     client.execute = AsyncMock(return_value=[{
         "booking_id": "owned", "status": "held", "total_amount": "100", "created_at": "now",
@@ -14,7 +14,7 @@ async def test_reset_deletes_only_selected_action_audit_before_its_booking(monke
     client.execute_one = AsyncMock(return_value={"booking_id": "owned"})
     client.begin_transaction.return_value = "reset-tx"
     monkeypatch.setattr(release_demo_bookings, "get_rds_data_client", lambda: client)
-    await release_demo_bookings.release("traveler", False, False, "owned")
+    await release_demo_bookings.release("traveler", False, False, "owned", True)
     deletes = [call for call in client.execute.call_args_list
                if call.args[0].startswith("DELETE")]
     assert deletes[0].args == (
@@ -84,7 +84,7 @@ async def test_booking_release_is_targeted_and_atomic_on_failure(monkeypatch):
     monkeypatch.setattr(release_demo_bookings, "get_rds_data_client", lambda: client)
 
     with pytest.raises(RuntimeError, match="database unavailable"):
-        await release_demo_bookings.release("traveler", False, False, "owned")
+        await release_demo_bookings.release("traveler", False, False, "owned", True)
 
     assert client.execute.call_args_list[0].args[1] == ("traveler", "owned", "owned")
     assert client.execute_one.call_args.kwargs["transaction_id"] == "release-tx"

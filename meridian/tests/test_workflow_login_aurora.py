@@ -18,6 +18,7 @@ from backend.db.journey_store import (
     create_journey,
 )
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
+from tests.live_support import delete_unaudited_fixture
 
 pytestmark = pytest.mark.database
 
@@ -51,7 +52,7 @@ async def made():
             "DELETE FROM journey_threads WHERE thread_id = %s",
         ):
             await master.execute(sql, (thread_id,))
-        await master.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
+        await delete_unaudited_fixture(master, journey_ids=[journey_id])
 
 
 async def _thread(made, traveler: str) -> str:
