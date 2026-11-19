@@ -61,8 +61,22 @@ booking grants.
   The render refuses to run without it. The `MeridianHolds` policy it writes may
   read only that secret, so the holds Lambda connects as the `meridian_gateway`
   login once [Publish the holds Lambda's settings](#7-publish-the-holds-lambdas-settings)
-  points its settings there.
-  The catalog Lambda runs as its own `meridian_catalog` login from the day you create it (step 2).
+  points its settings there. The catalog Lambda runs as its own `meridian_catalog` login from
+  the day you create it (step 2).
+- Migration 015 (`scripts/migrations/015_workflow_login.sql`) is applied, and the
+  `meridian_workflow` login is provisioned, so `meridian/.env` also sets
+  `AURORA_WORKFLOW_SECRET_ARN`. The render refuses to run without this secret ARN too
+  (it fails on the workflow secret first, then the gateway secret). Provision it here,
+  before the first render in section 1; the script also creates the
+  `MeridianWorkflowAuroraAccess` managed policy the Workflow Runtime's role references.
+  The command below applies it; leave out `--apply` and the script only reports what it would do:
+
+  ```bash
+  python meridian/scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env
+  ```
+
+  The [Workflow Runtime steps](#workflow-runtime-steps) repeat this command as their step 2;
+  if you ran it here, check `AURORA_WORKFLOW_SECRET_ARN` in `meridian/.env` and move on.
 - AWS credentials for the account that owns the cluster. Sign in with
   `aws login` or `aws sso login`, then confirm with
   `aws sts get-caller-identity`.
@@ -114,9 +128,8 @@ generated from the committed templates for your account:
 python meridian/scripts/render_agentcore_config.py
 ```
 
-The render needs `AURORA_GATEWAY_SECRET_ARN`, which
-`provision_service_logins.py --login gateway --apply --i-understand-this-changes-aws --write-env` sets and which
-requires migration 018 applied first (see Prerequisites).
+The render needs `AURORA_WORKFLOW_SECRET_ARN` and `AURORA_GATEWAY_SECRET_ARN`, which the two
+provisioning commands in Prerequisites write to `meridian/.env`. Run them first.
 
 On a new account the script reports that it left out the gateway ID variables
 and the Cedar policy engine: the policies name the gateway, which does not
@@ -324,14 +337,16 @@ Runtime, so confirm each before you run it.
 
 2. Give the login its password and its access policy. Without `--apply` the
    script only reports what it would do. `--write-env` writes
-   `AURORA_WORKFLOW_SECRET_ARN` into `meridian/.env`:
+   `AURORA_WORKFLOW_SECRET_ARN` into `meridian/.env`. Prerequisites already ran
+   this command before the first render; skip it if `AURORA_WORKFLOW_SECRET_ARN` is
+   set, because running it again rotates the login's password:
 
    ```bash
    python meridian/scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env
    ```
 
    The script creates the managed policy `MeridianWorkflowAuroraAccess`, which
-   the Runtime's role references, so run it before the deploy.
+   the Runtime's role references, so it must have run before the deploy.
 
 3. Render the configuration. The render also stages the backend modules the
    workflow imports into `meridian/meridian_agentcore/app/MeridianWorkflow/backend/`:

@@ -15,19 +15,21 @@ Secrets Manager secret for its database user. If you already have one, set
 `meridian/.env` and skip to [Prepare the database](#prepare-the-database).
 
 `infra/bin/meridian-aurora.ts` is a CDK app that creates an encrypted Aurora
-PostgreSQL 18 cluster: one private Serverless v2 writer and one failover reader in a
-second Availability Zone (1 to 16 ACUs), the Data API, TLS required, no inbound
+PostgreSQL 18 cluster: one private Serverless v2 writer and one failover reader whose
+Availability Zone you name (1 to 16 ACUs), the Data API, TLS required, no inbound
 database port, seven-day backups, deletion protection, and an RDS-managed master
-secret. It needs a VPC with two subnets in different Availability Zones, and you name
-the reader's zone: pick the zone the writer is not in (`aws rds describe-db-instances` shows it),
-and it must meet three conditions: it is one of the cluster's own Availability Zones, fixed when
+secret. It needs a VPC with two subnets in different Availability Zones. The stack pins only
+the reader's zone. The writer has no zone property, so RDS places it, and the two zones are
+different only when you have read them back and seen that they are (see
+[First deployment: place the reader](#first-deployment-place-the-reader)). The reader's zone
+must meet three conditions: it is one of the cluster's own Availability Zones, fixed when
 the cluster is created (`aws rds describe-db-clusters` lists them as `AvailabilityZones`); RDS
 offers `db.serverless` there for the engine version (`aws rds describe-orderable-db-instance-options
 --engine aurora-postgresql --engine-version 18.6 --db-instance-class db.serverless`; in US East
 (N. Virginia) on 14 Nov 2026 it did not list `us-east-1e`); and `subnetIds` includes a subnet in
 it. A zone that fails any of these makes CloudFormation roll the update back.
-The writer has no zone property, because adding one to an existing writer makes CloudFormation
-replace it. The reader is in promotion tier 1, so it scales
+The stack never gives the writer a zone, because adding one to an existing writer makes
+CloudFormation replace it. The reader is in promotion tier 1, so it scales
 with the writer and a failover lands on warm capacity. The Data API reaches only the
 writer, so the reader carries no application reads. The 1 ACU minimum lifts the 2,000
 `max_connections` cap that a 0 or 0.5 ACU minimum imposes; `max_connections` is static,
@@ -43,6 +45,14 @@ python scripts/provision_preflight.py --account <account-id> --region <region> \
   --engine-version 18.6 --output .local/provision-preflight.json
 ```
 
+The stack creates a writer and a reader, so a first creation needs room for two DB instances
+and the preflight fails with one. For a stack that is already deployed, add
+`--cluster-identifier <cluster-name>`: it then checks only the DB instances that cluster still
+lacks (none when it has both, one when the reader is missing). It does not count the one extra
+DB instance slot that replacing the reader needs (see
+[First deployment: place the reader](#first-deployment-place-the-reader)), so confirm that slot
+yourself before a replacement.
+
 Then review and deploy the stack:
 
 ```bash
@@ -50,7 +60,7 @@ cd infra
 npm ci && npm run build
 CONTEXT=(-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name>
   -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.6
-  -c readerAvailabilityZone=<az-not-the-writers>)
+  -c readerAvailabilityZone=<one-of-your-subnet-zones>)
 npx cdk diff   --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 npx cdk deploy --app 'node dist/bin/meridian-aurora.js' "${CONTEXT[@]}"
 ```
@@ -62,6 +72,74 @@ restored cluster keeps the snapshot's database users, so keep using the
 existing secret. Pass the same `-c snapshotArn` on every later `cdk diff` and
 `cdk deploy` of a stack created that way: without it the template drops
 `SnapshotIdentifier`, and the diff replaces the cluster and its writer.
+
+### First deployment: place the reader
+
+On a first deployment the writer does not exist yet, so its zone cannot be read before the
+deploy. Use two stages and trust only what you read back.
+
+1. Name either of your two subnet zones as `readerAvailabilityZone` and deploy as above. The
+   cluster's zones come from the subnet group, so a zone that has one of your two subnets is
+   the candidate; step 2 confirms it. If CloudFormation rolls the first deploy back on the
+   reader's zone, CloudFormation cannot update the stack, so delete the failed stack and deploy
+   again. Read its status first:
+
+   ```bash
+   aws cloudformation describe-stacks --region <region> --stack-name MeridianAurora \
+     --query 'Stacks[0].StackStatus' --output text
+   ```
+
+   The cluster is created with deletion protection and the stack with termination protection,
+   so the rollback may not have been able to remove the cluster.
+
+   - `ROLLBACK_COMPLETE`: the rollback removed everything. Turn off termination protection,
+     delete the stack and wait until it is gone:
+
+     ```bash
+     aws cloudformation update-termination-protection --region <region> \
+       --stack-name MeridianAurora --no-enable-termination-protection
+     aws cloudformation delete-stack --region <region> --stack-name MeridianAurora
+     aws cloudformation wait stack-delete-complete --region <region> --stack-name MeridianAurora
+     ```
+
+   - `ROLLBACK_FAILED`: the cluster and its writer were created before the reader failed, and
+     deletion protection kept the rollback from removing the cluster. Turn off the leftover
+     cluster's deletion protection, then turn off termination protection, delete the stack and
+     wait until it is gone:
+
+     ```bash
+     aws rds modify-db-cluster --region <region> --db-cluster-identifier <cluster-name> \
+       --no-deletion-protection --apply-immediately
+     aws cloudformation update-termination-protection --region <region> \
+       --stack-name MeridianAurora --no-enable-termination-protection
+     aws cloudformation delete-stack --region <region> --stack-name MeridianAurora
+     aws cloudformation wait stack-delete-complete --region <region> --stack-name MeridianAurora
+     ```
+
+   The cluster identifier is free again once the cluster is gone. Then name the other subnet
+   zone and deploy again. This failure path has not been run against AWS; read each status
+   and each command's result as you go.
+2. Read the cluster's zones, which instance is the writer, and each instance's zone:
+
+   ```bash
+   aws rds describe-db-clusters --region <region> --db-cluster-identifier <cluster-name> \
+     --query 'DBClusters[0].{zones:AvailabilityZones,members:DBClusterMembers[].[DBInstanceIdentifier,IsClusterWriter]}'
+   aws rds describe-db-instances --region <region> \
+     --filters Name=db-cluster-id,Values=<cluster-name> \
+     --query 'DBInstances[].[DBInstanceIdentifier,AvailabilityZone,DBInstanceStatus]' --output text
+   ```
+
+3. If the writer and the reader are in different zones, you can say the reader is in another
+   zone than the writer. If they are in the same zone, run the deploy again with
+   `-c readerAvailabilityZone=<the-other-subnet-zone>` and the same `CONTEXT` otherwise.
+   Read `cdk diff` first: it must show the `Reader` replaced and no change to `Writer`. Stop if
+   it names the writer. CloudFormation creates the replacement reader before it deletes the old
+   one, so the account needs one free DB instance slot during the update. Repeat step 2 until
+   the two zones differ.
+
+A failover swaps the two roles and moves neither instance, so the zones stay different. The
+existing-cluster procedure is unchanged: read the writer's zone with the commands above and
+name the other one.
 
 To delete the cluster, turn off the stack's termination protection and the
 cluster's deletion protection, then destroy the stack from `infra/` with the
@@ -98,6 +176,12 @@ python scripts/apply_migrations.py --dry-run --only <first-pending-migration.sql
 python scripts/apply_migrations.py --only <first-pending-migration.sql>
 python scripts/apply_migrations.py --pending
 ```
+
+The listing leaves out migration 034 (login rotation clones), which is opt-in: add
+`--with-rotation` to `--pending`, `--dry-run` and `--only` only when you adopt
+[automatic password rotation](#rotate-workload-passwords-automatically). Without it the
+migrations that follow 034 still apply in order, and a database that already has 034 applied
+lists it as done either way.
 
 Do not run the migration script bare. `--only` refuses any file other than the first pending
 migration. Dry runs acquire database locks and execute DDL before rolling back; they require
@@ -151,7 +235,8 @@ changes no existing policy or grant. Apply it only before provisioning that logi
 `meridian_rotator` role that sets their passwords, for
 [automatic rotation](#rotate-workload-passwords-automatically). The clones are members of their login
 and hold no grant of their own; no password is set and no running workload changes. Apply it only
-when you intend to use rotation.
+when you intend to use rotation: the default `apply_migrations.py` listing skips it, and
+`--with-rotation` includes it.
 
 Migrations 024 and 025 rename the `journeys` store column to `journeys.snapshot_store` in two
 steps. 024 adds `snapshot_store` beside the old column with a trigger that keeps them equal; 025
@@ -295,8 +380,8 @@ the write idempotent and the execution resumable:
 | Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
 | A step fails after the hold | The runner releases the hold through the Gateway's `release_hold` tool, for the hold this run placed only, with the run's execution ID | The booking reads `released` and its places count again. The Runtime's error event carries a `hold_release` phrase when the hold was left in place; read it in the Runtime output or log, because the backend log and the traveler see only the fixed reference message. `lost_response_proof.py` ends by doing this |
 
-**Stop the session from the browser.** Run the canceled-flight prompt in the
-Workflow phase; it pauses after `search`. Choose **Stop runtime session** on the
+**Stop the session from the browser.** Open the Recovery desk and click **Start recovery**
+once; the workflow pauses after `search`. Choose **Stop runtime session** on the
 continuity rail, then select **Resume and request hold** on the Recovery desk.
 The backend stays up. The workflow continues at `availability` on the same
 `thread_id` in a new microVM; `search` does not run again.
@@ -778,7 +863,10 @@ Each step that calls AWS needs the owner's approval. Run from `meridian/`.
    AWS. A recorded head that the chain does not reach, including one for an empty chain, is a
    `head-mismatch`. With `--compare-aurora`, a missing row that sorts before the watermark row in
    the database's `(timestamp, id)` order is `row-unexported`, also when it shares the
-   watermark's timestamp. Its identity needs `s3:ListBucketVersions`, `s3:GetObject`, `s3:GetObjectVersion` and
+   watermark's timestamp. The comparison reads the newest row's `(timestamp, id)` once at the
+   start, compares Aurora one page at a time up to that row, and keeps the exported rows in a
+   temporary SQLite file, so memory does not grow with the history and rows appended during the
+   scan are not read (they are not reported as missing or pending). Its identity needs `s3:ListBucketVersions`, `s3:GetObject`, `s3:GetObjectVersion` and
    `kms:Decrypt`.
 
 | Finding | Meaning |
@@ -915,9 +1003,9 @@ reports a failure.
 1. Apply migration 034 alone. Dry-run it, read the result, then apply:
 
    ```bash
-   python scripts/apply_migrations.py --pending
-   python scripts/apply_migrations.py --dry-run --only 034_login_rotation_clones.sql
-   python scripts/apply_migrations.py --only 034_login_rotation_clones.sql
+   python scripts/apply_migrations.py --pending --with-rotation
+   python scripts/apply_migrations.py --dry-run --only 034_login_rotation_clones.sql --with-rotation
+   python scripts/apply_migrations.py --only 034_login_rotation_clones.sql --with-rotation
    ```
 
    The migration changes no password and no running workload. It needs the migrations that create
@@ -2625,8 +2713,8 @@ Arrivals are open loop: requests start at `--rate` per second whether or not ear
 finished, so a slow stack shows up as high latency, not a lower rate. `--concurrency` caps the
 requests in flight; an arrival that finds every slot busy is counted as `shed` and not sent. The
 run stops early, exits 1 and says why when the error rate passes `--max-error-rate` (default 5%,
-judged after 10 requests) or `--max-streak` (default 3) requests in a row fail with 429, 5xx, an
-authorization error or no answer. Defaults are 2 requests per second for 60 seconds with 4 in
+judged after 10 requests, and again at the end of a shorter run) or `--max-streak` (default 3) requests in a row fail with 429, 5xx, an
+authorization error, no answer or a bad reply. Defaults are 2 requests per second for 60 seconds with 4 in
 flight. Rates above 20 per second, durations above 600 seconds, more than 16 in flight or more
 than 200 turns need `--allow-high-load`.
 
@@ -2646,7 +2734,8 @@ is set.
 
 Reading the result: the table and the JSON report in `.local/load-test-<scenario>-<time>.json`
 give, for each endpoint and in total, the request count, errors by status (`network` is no
-answer, `bad_reply` is a chat reply with a failed step or no text), the p50, p95 and p99 latency
+answer, `bad_reply` is a reply that is not the expected shape, has a failed step or has no
+text, or a reply check that raised), the p50, p95 and p99 latency
 in seconds, and the achieved rate. Percentiles use nearest rank over the successful (2xx)
 requests only; errors are counted separately. The report also records the Git commit, the target
 host with any account id masked, the scenario, the rate, the duration and the concurrency. A run

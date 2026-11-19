@@ -1561,7 +1561,7 @@ describe('Navigation, waits and focus', () => {
   it('does not label a chat request in the trip dialog as a hold', () => {
     const state = makeState({ selectedTrip: tokyo, tripDetailsOpen: true, isLoading: true });
     render(<TripDetailDrawer state={state} />);
-    expect(screen.getByRole('button', { name: 'Request 12-hour hold' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Request 12-hour hold/ })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Stop waiting' })).not.toBeInTheDocument();
   });
 

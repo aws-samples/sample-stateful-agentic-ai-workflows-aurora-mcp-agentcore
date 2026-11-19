@@ -181,7 +181,11 @@ def deny_reasons(args: dict, kind: str = "hold") -> list[str]:
         if int(args.get("travelers") or 0) > HOLD_LIMITS["travelers"]:
             reasons.append("more than 6 travelers")
     total, ceiling = int(args.get("totalCents") or 0), int(args.get("budgetCeilingCents") or 0)
-    if total > ceiling:
+    if total > ceiling and not ceiling:
+        reasons.append(
+            "the saved budget needs one dollar amount or one range before any total can fit"
+        )
+    elif total > ceiling:
         reasons.append(
             f"the total ${total / 100:,.2f} exceeds the saved budget ceiling ${ceiling / 100:,.2f}"
         )

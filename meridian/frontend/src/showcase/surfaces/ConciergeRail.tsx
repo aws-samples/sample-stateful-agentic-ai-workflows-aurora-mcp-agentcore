@@ -59,7 +59,7 @@ export function ConciergeRail({ state, onSaved, onRecovery, onPreferences }: {
         <dd>{party ? `${party} ${party === 1 ? 'adult' : 'adults'}` : <NotSet />}</dd>
       </div>
       <div><dt><CalendarDays size={16} aria-hidden="true" />Travel dates</dt><dd>{dates}</dd></div>
-      <div><dt>Usual budget</dt><dd><BudgetCeiling perTravelerCents={state.budgetCeilingPerTravelerCents} travelers={party} /></dd></div>
+      <div><dt>Usual budget</dt><dd><BudgetCeiling perTravelerCents={state.budgetCeilingPerTravelerCents} unclear={state.budgetUnclear} travelers={party} /></dd></div>
     </dl>
     <section className="mc-preferences" aria-label="Remembered preferences"><h3><Check size={16} aria-hidden="true" />The details that matter</h3>
       {preferences.length ? <ul>{preferences.map(({ value, icon: Icon }) => <li key={value}><Icon size={16} aria-hidden="true" /><span>{value}</span></li>)}</ul> : <p>Share your seat, dining, and stay preferences with the concierge.</p>}

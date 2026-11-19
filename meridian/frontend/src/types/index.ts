@@ -205,6 +205,8 @@ export interface MemoryProfileResponse {
   profile?: TravelerProfile;
   /** The saved per-traveler cap the gateway policy multiplies by the party size. */
   budget_ceiling_per_traveler_cents?: number | null;
+  /** A budget is saved but is not one dollar amount or range; older servers omit it. */
+  budget_unclear?: boolean;
 }
 
 export interface Message {
@@ -230,10 +232,21 @@ export interface PhaseInfo {
   color: string;
 }
 
+/** The terms the Hold action showed when the traveler clicked it. Amounts are in cents. */
+export interface HoldQuote {
+  unit_price_cents: number;
+  total_cents: number;
+  currency: 'USD';
+  size: string;
+  quantity: number;
+}
+
 export interface OrderRequest {
   product_id: string;
   size?: string;
   quantity?: number;
+  /** What the traveler saw; the backend refuses a hold without it (409 quote_required). */
+  quote?: HoldQuote;
   phase: Phase;
   traveler_id?: string;
   action?: 'hold';

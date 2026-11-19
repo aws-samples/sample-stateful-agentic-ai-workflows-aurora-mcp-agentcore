@@ -322,3 +322,198 @@ def test_rows_at_the_watermark_timestamp_are_split_by_their_place_in_database_or
     assert code == 1 and codes(out) == ["row-unexported"]
     assert "aud_0" in out.out and "aud_9" not in out.out
     assert "1 pending" in out.out
+
+
+@pytest.fixture
+def long_history(exporter, monkeypatch, world):
+    """Twelve more rows, four sharing each timestamp, exported in several objects."""
+    aurora, bucket = world
+    monkeypatch.setenv("AUDIT_EXPORT_BATCH_ROWS", "5")
+    for n in range(12):
+        aurora.add(TABLE, f"aud_t{n:02d}", f"2026-11-14 11:00:0{n // 4}", agent="a", rows=n)
+    exporter.lambda_handler({}, Context())
+    monkeypatch.setattr(verifier, "COMPARE_BATCH_ROWS", 2)
+    aurora.calls.clear()
+    return aurora, bucket
+
+
+def scan_calls(aurora):
+    return [c for c in aurora.calls if "DESC LIMIT 1" not in c["sql"]]
+
+
+def test_a_history_of_many_pages_with_tied_timestamps_verifies(long_history, capsys):
+    aurora, _bucket = long_history
+    code, out = run(capsys, "--compare-aurora")
+    assert code == 0 and codes(out) == []
+    assert "15 rows, 0 pending" in out.out
+    assert len(scan_calls(aurora)) <= 15 // 2 + 2
+
+
+def test_rows_appended_during_the_scan_are_beyond_the_boundary(long_history, capsys):
+    aurora, _bucket = long_history
+    added = []
+
+    def append(_aurora, request):
+        if "DESC LIMIT 1" not in request["sql"] and len(added) < 40:
+            added.append(1)
+            aurora.add(TABLE, f"aud_late{len(added):02d}", "2026-11-14 12:00:00", agent="a")
+
+    aurora.on_call = append
+    code, out = run(capsys, "--compare-aurora")
+    assert code == 0 and codes(out) == []
+    assert "0 pending" in out.out
+    assert len(scan_calls(aurora)) <= 15 // 2 + 2
+
+
+def test_differences_across_pages_are_still_reported_while_rows_arrive(long_history, capsys):
+    aurora, _bucket = long_history
+    aurora.tables[TABLE][1]["doc"]["agent"] = "changed"
+    del aurora.tables[TABLE][9]
+    aurora.add(TABLE, "aud_backdated", "2026-11-14 10:00:01.5")
+    aurora.on_call = lambda _a, request: (
+        "DESC LIMIT 1" in request["sql"] or aurora.add(TABLE, f"aud_x{len(aurora.calls)}",
+                                                       "2026-11-14 13:00:00"))
+    code, out = run(capsys, "--compare-aurora")
+    assert code == 1 and codes(out) == ["row-deleted", "row-edited", "row-unexported"]
+    assert "aud_backdated" in out.out
+
+
+def test_an_empty_aurora_table_reports_every_export_row_deleted(world, capsys):
+    aurora, _bucket = world
+    aurora.tables[TABLE].clear()
+    code, out = run(capsys, "--compare-aurora")
+    assert code == 1 and codes(out) == ["row-deleted"] * 3
+
+
+class Page(list):
+    """A page of Aurora rows that can be watched for release."""
+
+
+def test_the_comparison_holds_one_page_of_aurora_rows_at_a_time(long_history, exporter):
+    import gc
+    import weakref
+    aurora, bucket = long_history
+    walk_store = verifier.RowStore()
+    with walk_store as store:
+        walk = verifier.walk_chain(bucket, "audit-bucket", TABLE, exporter.KEY_PREFIX, store)
+        settings = exporter.Settings(CLUSTER, SECRET, "meridian", "", 2, 0, 1)
+        bound = verifier.aurora_bound(aurora, exporter, settings, exporter.TABLES[0])
+        refs, most_alive = [], 0
+
+        def watched():
+            nonlocal most_alive
+            for page in verifier.aurora_pages(aurora, exporter, settings, exporter.TABLES[0],
+                                              bound):
+                gc.collect()
+                most_alive = max(most_alive, sum(1 for r in refs if r() is not None))
+                page = Page(page)
+                refs.append(weakref.ref(page))
+                yield page
+                del page
+
+        findings, pending = verifier.compare_with_aurora(walk, watched())
+        assert store.count() == 15
+    assert findings == [] and pending == 0 and len(refs) >= 7
+    assert most_alive <= 1
+
+
+def test_the_temporary_store_is_removed_after_the_run(world, capsys, monkeypatch):
+    import os
+    made = []
+    real = verifier.RowStore
+
+    class Tracking(real):
+        def __init__(self):
+            super().__init__()
+            made.append(self._dir.name)
+
+    monkeypatch.setattr(verifier, "RowStore", Tracking)
+    assert run(capsys, "--compare-aurora")[0] == 0
+    assert made and not any(os.path.exists(path) for path in made)
+
+
+def test_a_deleted_bound_row_does_not_let_later_rows_at_its_timestamp_in(world, exporter):
+    aurora, _bucket = world
+    settings = exporter.Settings(CLUSTER, SECRET, "meridian", "", 2, 0, 1)
+    bound = verifier.aurora_bound(aurora, exporter, settings, exporter.TABLES[0])
+    assert bound[1] == "aud_3"
+    aurora.tables[TABLE] = [r for r in aurora.tables[TABLE] if r["id"] != "aud_3"]
+    aurora.add(TABLE, "aud_9", "2026-11-14 10:00:03")
+    aurora.add(TABLE, "aud_a", "2026-11-14 10:00:04")
+
+    pages = verifier.aurora_pages(aurora, exporter, settings, exporter.TABLES[0], bound)
+    ids = [row["wm_id"] for page in pages for row in page]
+
+    assert ids == ["aud_1", "aud_2"]
+
+
+def test_within_bound_stops_at_a_larger_id_with_the_same_timestamp():
+    ts = "2026-11-14 10:00:03"
+    rows = [{"wm_ts": ts, "wm_id": "aud_1"}, {"wm_ts": ts, "wm_id": "aud_9"}]
+
+    kept, ended = verifier._within_bound(rows, (ts, "aud_3"))
+
+    assert [r["wm_id"] for r in kept] == ["aud_1"] and ended
+
+
+def test_a_failed_sqlite_connect_removes_the_temporary_directory(monkeypatch):
+    import os
+    import tempfile
+    made = []
+    real = tempfile.TemporaryDirectory
+
+    class Tracking(real):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            made.append(self)
+
+    def refuse(*_a, **_k):
+        raise verifier.sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(verifier.tempfile, "TemporaryDirectory", Tracking)
+    monkeypatch.setattr(verifier.sqlite3, "connect", refuse)
+
+    with pytest.raises(verifier.sqlite3.OperationalError):
+        verifier.RowStore()
+
+    assert made and not any(os.path.exists(d.name) for d in made)
+
+
+@pytest.mark.parametrize("failing", ["PRAGMA", "CREATE TABLE"])
+def test_a_failed_row_store_setup_closes_the_connection_and_removes_its_directory(
+    monkeypatch, failing
+):
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    made, connections = [], []
+    real_dir, real_connect = tempfile.TemporaryDirectory, sqlite3.connect
+
+    class Wrapped:
+        def __init__(self, inner):
+            self.inner, self.closed = inner, False
+
+        def execute(self, sql, *args):
+            if sql.startswith(failing):
+                raise sqlite3.OperationalError("injected")
+            return self.inner.execute(sql, *args)
+
+        def close(self):
+            self.closed = True
+            self.inner.close()
+
+    def directory(*args, **kwargs):
+        made.append(real_dir(*args, **kwargs))
+        return made[-1]
+
+    def connect(*args, **kwargs):
+        connections.append(Wrapped(real_connect(*args, **kwargs)))
+        return connections[-1]
+
+    monkeypatch.setattr(verifier.tempfile, "TemporaryDirectory", directory)
+    monkeypatch.setattr(verifier.sqlite3, "connect", connect)
+    with pytest.raises(sqlite3.OperationalError):
+        verifier.RowStore()
+    assert connections[0].closed
+    assert not Path(made[0].name).exists()

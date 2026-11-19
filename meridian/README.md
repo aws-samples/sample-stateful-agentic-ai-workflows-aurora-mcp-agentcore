@@ -112,6 +112,10 @@ unit of work; it is not long-lived workflow state. See
 
 ## Recovery behavior
 
+To start the recovery, open the Recovery desk and click **Start recovery** once. That one action submits
+the canceled-flight prompt together with the explicit recovery intent; do not paste or resend
+the prompt. The same words in a fresh chat carry no intent and only read the catalog.
+
 The canceled-flight prompt runs `classify → search → availability →
 prepare_hold → hold → synthesize` as a Strands Graph in the `MeridianWorkflow`
 Runtime. It pauses after `search` so the saved snapshot is visible before the
@@ -181,8 +185,8 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | --- | --- | --- |
 | `POST` | `/api/chat/stream` | Phase 4 and Phase 5 SSE: progress, text deltas, conversation identity, then one completed response, with a keepalive every 10 seconds. Uses the same authentication and traveler authorization as chat. Disconnects are never automatically retried. |
 | `POST` | `/api/chat` | Chat by `phase` (1 to 5). Phase 5 invokes the `MeridianWorkflow` Runtime with the conversation, traveler count and resume request, and relays its result. The response includes the trace in `activities`. |
-| `POST` | `/api/chat/order` | Courtesy hold from any phase: Runtime, Gateway and Cedar, then the `MeridianHolds` Lambda. `order` is null when the hold is refused. |
-| `POST` | `/api/chat/order/stream` | The hold of `/api/chat/order` as SSE. It ends with one `complete` event, or an `error` event that carries the plain route's `status` and, for a worded hold failure, `code: governed_write`. |
+| `POST` | `/api/chat/order` | Courtesy hold from any phase: Runtime, Gateway and Cedar, then the `MeridianHolds` Lambda. The body carries `quote`, the terms the traveler saw (unit price and total in cents, `USD`, duration, party size). The hold is placed at the quoted price; without a quote, or when the catalog price changed after it was shown, the reply is 409 `quote_required` or `price_changed` with the current terms in `quote`, and no hold exists. `order` is null when the hold is refused. |
+| `POST` | `/api/chat/order/stream` | The hold of `/api/chat/order` as SSE. It ends with one `complete` event, or an `error` event that carries the plain route's `status` and, for a worded hold failure, `code: governed_write`. A 409 `error` event also carries `code` and the current terms in `quote`. |
 | `POST` | `/api/chat/book/stream` | The confirmation of `/api/chat/book` as SSE, with the same events. |
 | `POST` | `/api/chat/book` | Confirm a held booking. The backend reads the total under RLS so the policy judges what Aurora holds. `order` is null when the confirmation is refused. |
 | `GET` | `/api/chat/holds` | Read a direct-hold receipt by `conversation_id`, `product_id`, `duration` and `quantity`; no model call or write |
@@ -219,7 +223,7 @@ Every route except `/health` requires the HTTP principal described under
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Restricted role for scoped sessions. Default `meridian_app` |
 | `AGENTCORE_*` | Runtime, Gateway and Memory identifiers, written by `scripts/sync_agentcore_env.py` |
-| `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling when the traveler has no saved budget. Default `400000`. The `MeridianHolds` Lambda reads the same variable; set both or neither |
+| `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling when the traveler has no saved budget. Default `400000`. A saved budget that is not one dollar amount or one range does not fall back to it: the ceiling is zero until the traveler saves one. The `MeridianHolds` Lambda reads the same variable; set both or neither |
 | `AGENTCORE_WORKFLOW_RUNTIME_ARN` | ARN of the `MeridianWorkflow` Runtime that runs Phase 5. `scripts/sync_agentcore_env.py --write` sets it |
 | `AURORA_WORKFLOW_SECRET_ARN` | Secret for the `meridian_workflow` login, written by `scripts/provision_workflow_login.py --apply --i-understand-this-changes-aws --write-env` |
 | `AURORA_CATALOG_SECRET_ARN` | Secret for the `meridian_catalog` login the `meridian-catalog-tools` Lambda runs as, written by `scripts/provision_service_logins.py --login catalog --apply --i-understand-this-changes-aws --write-env` |
@@ -364,6 +368,8 @@ the journey reference on every hold and confirmation call from the request the
 backend authorized, so the model cannot confirm for the traveler or change the
 ceiling. The ceiling is the traveler's saved per-person budget multiplied by
 the party size, the same figure the travel brief and confirmation dialog show.
+A saved budget counts when it is one dollar amount or one range; any other value, such as
+two different amounts or another currency, is unclear, the ceiling is zero, and the screens ask for one dollar amount.
 Workload grant decisions, allow and deny, and the backend's 403 for another traveler are
 written to `traveler_access_audit`. Each Phase 4 turn that reaches the Runtime links the
 authorization subject to the RLS scope and its tool calls in `agent_iam_audit` (see

@@ -86,3 +86,9 @@ def test_the_turn_rules_name_what_only_the_runtime_knows():
     assert "Hold button" in turn_instructions(False, None)
     assert "no tools" in turn_instructions(True, {"package_id": "CTY-002"})
     assert "Confirm button" in turn_instructions(False, None, True, booking)
+
+
+def test_a_zero_ceiling_is_described_as_an_unclear_budget_not_as_unset():
+    prompt = narration_prompt("Hold refused", {"package_id": "CTY-002"}, 0)
+    assert "not set" not in prompt and "$0.00" not in prompt
+    assert "one dollar amount or one range" in prompt

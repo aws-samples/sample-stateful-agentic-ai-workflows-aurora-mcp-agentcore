@@ -55,7 +55,7 @@ DEFAULT_MAX_ERROR_RATE, DEFAULT_MAX_STREAK, MIN_SAMPLES = 0.05, 3, 10
 
 NETWORK_ERROR = 0
 BAD_REPLY = -1
-STREAK_STATUSES = frozenset({NETWORK_ERROR, 401, 403, 429})
+STREAK_STATUSES = frozenset({NETWORK_ERROR, BAD_REPLY, 401, 403, 429})
 CHAT_PHASES = (1, 2, 3)
 CHAT_BODY_KEYS = frozenset({"message", "phase", "customer_id"})
 CHAT_PATH = "/api/chat"
@@ -124,12 +124,24 @@ class Recorder:
             rate = sum(1 for s in self.samples if not s.ok) / total
             if self._streak >= self.max_streak:
                 self.abort_reason = (
-                    f"{self._streak} failures in a row (429, 5xx, auth or network); "
+                    f"{self._streak} failures in a row (429, 5xx, auth, network or bad reply); "
                     f"last status {sample.status}")
             elif total >= MIN_SAMPLES and rate > self.max_error_rate:
                 self.abort_reason = (
                     f"error rate {rate:.0%} above {self.max_error_rate:.0%} "
                     f"after {total} requests")
+
+    def finish(self) -> None:
+        """Judge a run that ended before ``MIN_SAMPLES``; keep any earlier abort reason."""
+        with self._lock:
+            total = len(self.samples)
+            if self.abort_reason or not total:
+                return
+            rate = sum(1 for s in self.samples if not s.ok) / total
+            if rate > self.max_error_rate:
+                self.abort_reason = (
+                    f"error rate {rate:.0%} above {self.max_error_rate:.0%} "
+                    f"at the end of a short run of {total} requests")
 
 
 @dataclass(frozen=True)
@@ -258,6 +270,8 @@ def run_load(
         started = clock()
         try:
             status = send(req)
+        except Exception:  # noqa: BLE001 - a sender bug is one failed sample, never a lost one
+            status = BAD_REPLY
         finally:
             slots.release()
         recorder.add(Sample(req.name, status, clock() - started))
@@ -275,7 +289,21 @@ def run_load(
                 continue
             pool.submit(work, plan.requests[counts["sent"] % len(plan.requests)])
             counts["sent"] += 1
-    return {**counts, "wall_s": max(clock() - start, 1e-9)}
+    recorded = len(recorder.samples)
+    if recorded != counts["sent"] and not recorder.abort_reason:
+        recorder.abort_reason = (
+            f"accounting mismatch: {counts['sent']} sent but {recorded} outcomes recorded")
+    return {**counts, "recorded": recorded, "wall_s": max(clock() - start, 1e-9)}
+
+
+def reply_problem(check: Callable[[dict], str | None], reply: object) -> str | None:
+    """Why ``reply`` fails ``check``; a non-object reply or a check that raises also fails."""
+    if not isinstance(reply, dict):
+        return "the reply is not a JSON object"
+    try:
+        return check(reply)
+    except Exception as error:  # noqa: BLE001 - an unreadable reply is a failed sample
+        return f"the reply check raised {type(error).__name__}"
 
 
 def make_sender(base: str, headers: dict[str, str]) -> Callable[[Req], int]:
@@ -288,9 +316,7 @@ def make_sender(base: str, headers: dict[str, str]) -> Callable[[Req], int]:
             return error.code
         except (OSError, http.client.HTTPException, ValueError):
             return NETWORK_ERROR
-        if req.check and isinstance(reply, dict) and req.check(reply):
-            return BAD_REPLY
-        return 200
+        return BAD_REPLY if req.check and reply_problem(req.check, reply) else 200
     return send
 
 
@@ -328,6 +354,7 @@ def build_report(plan: Plan, run: dict, recorder: Recorder, base: str, user: str
         "concurrency": plan.concurrency,
         "max_turns": plan.max_turns,
         "sent": run["sent"],
+        "recorded": run["recorded"],
         "shed": run["shed"],
         "wall_s": round(run["wall_s"], 3),
         "aborted": recorder.abort_reason,
@@ -347,8 +374,8 @@ def print_table(report: dict) -> None:
         errors = ", ".join(f"{k}:{v}" for k, v in row["errors_by_status"].items()) or "none"
         print(f"{name:<30}{row['count']:>6}{fmt(row['p50_s']):>8}{fmt(row['p95_s']):>8}"
               f"{fmt(row['p99_s']):>8}{row['achieved_rps']:>7.2f}  {errors}")
-    print(f"sent {report['sent']}, shed {report['shed']} (workers busy), "
-          f"wall {report['wall_s']} s")
+    print(f"sent {report['sent']}, recorded {report['recorded']}, "
+          f"shed {report['shed']} (workers busy), wall {report['wall_s']} s")
     print(f"STOPPED EARLY: {report['aborted']}" if report["aborted"] else "Run finished.")
 
 
@@ -369,7 +396,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="most chat turns to send; required for retrieval and chat")
     parser.add_argument("--max-error-rate", type=float, default=DEFAULT_MAX_ERROR_RATE)
     parser.add_argument("--max-streak", type=int, default=DEFAULT_MAX_STREAK,
-                        help="stop after this many 429, 5xx, auth or network failures in a row")
+                        help="stop after this many 429, 5xx, auth, network or bad-reply failures "
+                        "in a row")
     parser.add_argument("--as", dest="as_user", choices=sorted(set(TRAVELER_USERS.values())),
                         default=warm_demo.DEFAULT_USER, help="the seeded user to sign in as")
     parser.add_argument("--report", type=Path, help="write the JSON report here (inside .local)")
@@ -461,6 +489,7 @@ def main(argv: list[str] | None = None, environ: dict[str, str] | None = None) -
     headers = warm_demo.request_headers(args.hosted, args.as_user)
     recorder = Recorder(args.max_error_rate, args.max_streak)
     run = run_load(plan, make_sender(base, headers), recorder)
+    recorder.finish()
     report = build_report(plan, run, recorder, base, args.as_user)
     path = args.report or default_report_path(plan.scenario)
     path.parent.mkdir(parents=True, exist_ok=True)

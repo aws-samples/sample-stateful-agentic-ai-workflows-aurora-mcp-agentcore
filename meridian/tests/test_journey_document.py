@@ -316,9 +316,8 @@ async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(
 # --------------------------------------------------------------------- hold
 
 
-async def test_the_hold_is_reported_with_a_count_of_its_records(
-    journey: Fixture,
-) -> None:
+async def _place_hold(journey: Fixture) -> str:
+    """Create one 12-hour hold on the journey through the Gateway login; return its request id."""
     from backend.agents.phase_05_workflow.hold_intent import (
         fingerprint_terms,
         normalize_hold_terms,
@@ -357,7 +356,13 @@ async def test_the_hold_is_reported_with_a_count_of_its_records(
                 1949.00,
             ),
         )
+    return request_id
 
+
+async def test_the_hold_is_reported_with_a_count_of_its_records(
+    journey: Fixture,
+) -> None:
+    request_id = await _place_hold(journey)
     doc = await _document(journey)
     hold = doc["hold"]
     assert hold["status"] == "held"
@@ -366,6 +371,21 @@ async def test_the_hold_is_reported_with_a_count_of_its_records(
     assert hold["booking_id"] == journey.booking_id
     assert hold["hold_records"] == 1
     assert hold["hold_expires_at"]
+
+
+async def test_a_held_row_past_its_expiry_is_reported_as_expired(journey: Fixture) -> None:
+    """Aurora's clock decides: the stored status stays held, the document says expired."""
+    await _place_hold(journey)
+    await journey.client.execute(
+        "UPDATE bookings SET hold_expires_at = CURRENT_TIMESTAMP - interval '1 minute' "
+        "WHERE booking_id = %s",
+        (journey.booking_id,),
+    )
+    stored = await journey.client.execute(
+        "SELECT status FROM bookings WHERE booking_id = %s", (journey.booking_id,)
+    )
+    assert stored[0]["status"] == "held"
+    assert (await _document(journey))["hold"]["status"] == "expired"
 
 
 # ------------------------------------------------------------ authorization

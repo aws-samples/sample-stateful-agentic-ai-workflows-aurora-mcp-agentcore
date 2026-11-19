@@ -214,7 +214,7 @@ def test_a_workflow_caller_replays_its_saved_identity_under_its_lease(config, mo
         **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
-        "FROM journey_executions": [{"execution_id": "exe_1"}],
+        "FROM journey_executions": [{"execution_id": "exe_1", "journey_id": "jrn_1"}],
         "FROM create_courtesy_hold": [{
             "booking_id": "HLD-CHK", "status": "held", "replayed": True,
             "seats_available": None, "seats_reserved": None, "seats_remaining": None,
@@ -1366,3 +1366,188 @@ def test_a_seeded_booking_never_reaches_the_action_audit_without_a_hold_request(
     seeding = seed[start:seed.index("\ndef ", start + 1)]
     assert "hold_expires_at" not in seeding
     assert {booking["status"] for booking in DEMO_BOOKINGS} <= {"completed", "held"}
+
+
+# ------------------------------- explicit small budgets and an unclear budget, at the target
+
+
+def _budget_checker(monkeypatch, value, key="budget_cap"):
+    api = FakeDataApi({"FROM traveler_preferences": [
+        {"preference_key": key, "preference_value": value},
+    ]})
+    monkeypatch.setattr(holds, "RDS", api)
+    monkeypatch.setattr(
+        holds, "CONFIG", holds.AuroraConfig("arn:cluster", "arn:secret", "meridian")
+    )
+    return lambda total, travelers: holds._within_saved_budget("trv_1", total, travelers, "tx-1")
+
+
+@pytest.mark.parametrize(("value", "travelers", "total"), [
+    ("$75", 1, 7500), ("$75", 2, 15000), ("US$75", 2, 15000), ("75 USD", 1, 7500),
+    ("$2k", 1, 200000), ("$125", 1, 12500),
+])
+def test_a_hold_total_at_the_explicit_budget_passes_and_one_cent_more_is_refused(
+    monkeypatch, value, travelers, total
+):
+    check = _budget_checker(monkeypatch, value)
+    check(total, travelers)
+    with pytest.raises(RuntimeError, match="budget_ceiling_exceeded"):
+        check(total + 1, travelers)
+
+
+def test_a_small_cap_with_a_secondary_range_stays_the_small_cap(monkeypatch):
+    api = FakeDataApi({"FROM traveler_preferences": [
+        {"preference_key": "budget_cap", "preference_value": "$75"},
+        {"preference_key": "per_person_range", "preference_value": "$100 to $200"},
+    ]})
+    monkeypatch.setattr(holds, "RDS", api)
+    monkeypatch.setattr(
+        holds, "CONFIG", holds.AuroraConfig("arn:cluster", "arn:secret", "meridian")
+    )
+    holds._within_saved_budget("trv_1", 15000, 2, "tx-1")
+    with pytest.raises(RuntimeError, match="budget_ceiling_exceeded"):
+        holds._within_saved_budget("trv_1", 15001, 2, "tx-1")
+
+
+@pytest.mark.parametrize("value", ["flexible", "$75 or $5000", "\u20ac500", "$75 or \u20ac80", ""])
+def test_an_unclear_saved_budget_refuses_by_name_and_never_falls_to_the_default(
+    monkeypatch, value
+):
+    check = _budget_checker(monkeypatch, value)
+    with pytest.raises(RuntimeError, match="budget_unclear"):
+        check(1, 1)
+
+
+def test_the_unclear_budget_error_is_a_named_business_error():
+    assert "budget_unclear" in holds.BUSINESS_ERRORS
+    assert "budget_unclear" in CODE_CLASSES
+
+
+def test_a_new_hold_is_refused_by_name_when_the_saved_budget_is_unclear(config, monkeypatch):
+    api = _authorized_api(**CATALOG_PRICE, **_saved_cap("flexible"), **HOLD_ROW)
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "budgetCeilingCents": 9_999_999_00}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "budget_unclear"}
+    assert api.tx == ["begin", "rollback"]
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_a_confirmation_is_refused_by_name_when_the_saved_budget_is_unclear(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        **BOOKED_PARTY, **_saved_cap("flexible"),
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result == {"error": "budget_unclear"}
+    assert not any("FROM confirm_booking" in s for s in api.statements)
+
+
+# --------------------------------- the worker lease is bound to the journey the hold targets
+
+
+def _lease_api(thread_rows, execution_rows):
+    return _authorized_api(**{
+        **CATALOG_PRICE, **SAVED_BUDGET, **HOLD_ROW,
+        "FROM journey_threads": thread_rows,
+        "INSERT INTO journey_threads": [{"thread_id": "unknown"}],
+        "FROM journey_executions": execution_rows,
+    })
+
+
+def _workflow_hold(api, monkeypatch, **overrides):
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "journeyRef": "phase5-thread-a", "executionId": "exe_b", **overrides}
+    return holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+
+
+def test_a_live_lease_of_another_journey_of_the_same_traveler_cannot_create_a_hold(
+    config, monkeypatch
+):
+    api = _lease_api(
+        [{"journey_id": "jrn_a"}], [{"execution_id": "exe_b", "journey_id": "jrn_b"}]
+    )
+    assert _workflow_hold(api, monkeypatch) == {"error": "journey_not_owned"}
+    assert api.tx == ["begin", "rollback"]
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_a_live_lease_of_the_hold_journey_creates_the_hold(config, monkeypatch):
+    api = _lease_api(
+        [{"journey_id": "jrn_a"}], [{"execution_id": "exe_b", "journey_id": "jrn_a"}]
+    )
+    result = _workflow_hold(api, monkeypatch)
+    assert result["hold"]["bookingId"] == "HLD-NEW"
+    assert result["hold"]["journeyId"] == "jrn_a"
+    assert api.tx == ["begin", "commit"]
+
+
+def test_an_expired_lease_is_refused_even_for_the_right_journey(config, monkeypatch):
+    api = _lease_api([{"journey_id": "jrn_a"}], [])
+    assert _workflow_hold(api, monkeypatch) == {"error": "execution_lease_lost"}
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_a_call_with_an_execution_never_creates_a_journey_for_an_unknown_thread(
+    config, monkeypatch
+):
+    api = _lease_api([], [{"execution_id": "exe_b", "journey_id": "jrn_b"}])
+    assert _workflow_hold(api, monkeypatch) == {"error": "journey_not_owned"}
+    assert not any("INSERT INTO journeys" in s for s in api.statements)
+    assert not any("INSERT INTO journey_threads" in s for s in api.statements)
+    assert api.tx == ["begin", "rollback"]
+
+
+def test_the_lease_is_claimed_for_the_journey_in_the_hold_transaction(config, monkeypatch):
+    api = _lease_api(
+        [{"journey_id": "jrn_a"}], [{"execution_id": "exe_b", "journey_id": "jrn_a"}]
+    )
+    _workflow_hold(api, monkeypatch)
+    order = ("FROM journey_executions", "FROM journey_threads", "FROM create_courtesy_hold")
+    marks = [next(i for i, sql in enumerate(api.statements) if marker in sql) for marker in order]
+    assert marks == sorted(marks)
+    assert api.tx == ["begin", "commit"]
+
+
+def test_the_execution_row_is_locked_before_the_thread_advisory_lock(config, monkeypatch):
+    """The workflow locks the execution row, then the thread; the Lambda must do the same."""
+    api = _lease_api(
+        [{"journey_id": "jrn_a"}], [{"execution_id": "exe_b", "journey_id": "jrn_a"}]
+    )
+    _workflow_hold(api, monkeypatch)
+    execution = next(i for i, s in enumerate(api.statements) if "FROM journey_executions" in s)
+    advisory = next(i for i, s in enumerate(api.statements) if "pg_advisory_xact_lock" in s)
+    assert "FOR UPDATE" in api.statements[execution]
+    assert execution < advisory
+
+
+def test_an_unknown_thread_with_a_lapsed_lease_reports_the_lost_lease(config, monkeypatch):
+    api = _lease_api([], [])
+    assert _workflow_hold(api, monkeypatch) == {"error": "execution_lease_lost"}
+    assert not any("pg_advisory_xact_lock" in s for s in api.statements)
+    assert not any("INSERT INTO journey" in s for s in api.statements)
+
+
+def test_a_phase_4_hold_without_an_execution_still_creates_its_journey(config, monkeypatch):
+    api = _lease_api([], [])
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]["bookingId"] == "HLD-NEW"
+    assert any("INSERT INTO journeys" in s for s in api.statements)
+    assert not any("FROM journey_executions" in s for s in api.statements)
+
+
+def test_the_built_data_api_client_sends_each_call_once_and_fails_inside_the_lambda_timeout(
+    monkeypatch,
+):
+    """A re-sent statement or commit inside a Data API transaction must never happen."""
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setattr(holds, "CONFIG", holds.AuroraConfig("arn:cluster", "arn:secret", "m"))
+    monkeypatch.setattr(holds, "SUBJECT", ("cognito", "meridian-holds"))
+    monkeypatch.setattr(holds, "RDS", None)
+    holds._boot()
+    built = holds.RDS.meta.config
+    assert built.retries["total_max_attempts"] == 1
+    assert built.retries["mode"] == "standard"
+    assert (built.connect_timeout, built.read_timeout) == (5, 25)

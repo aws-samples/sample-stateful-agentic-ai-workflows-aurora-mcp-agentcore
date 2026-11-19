@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.budget import budget_ceiling_per_traveler_cents
+from backend.agents.budget import (
+    BUDGET_KEYS,
+    budget_ceiling_per_traveler_cents,
+    budget_is_unclear,
+    parse_usd_amounts,
+)
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import (
@@ -29,6 +34,10 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 # reading wider only changes which facts the ceiling is computed from.
 GOVERNANCE_FACT_LIMIT = 50
 DISPLAY_FACT_LIMIT = 8
+BUDGET_AMOUNT_PROMPT = (
+    "Enter the budget as one dollar amount or one range, for example $75 per traveler "
+    "or $2k-3.5k. More than one amount, or another currency, cannot be applied."
+)
 
 
 class MemoryFactResponse(BaseModel):
@@ -46,6 +55,10 @@ class MemoryProfileResponse(BaseModel):
     # UI shows this rather than the profile's budget column, so what a traveler
     # reads on screen is the basis Cedar actually judged. None when unsaved.
     budget_ceiling_per_traveler_cents: Optional[int] = None
+    # True when a budget is saved but is not one dollar amount or one range, so the cap above
+    # is None and the gateway authorizes nothing. Lets the UI ask for an amount rather than
+    # show "Not set". Older clients ignore it.
+    budget_unclear: bool = False
 
 
 class MemoryFactUpdate(BaseModel):
@@ -87,6 +100,7 @@ async def get_memory_profile(
         ],
         profile=profile,
         budget_ceiling_per_traveler_cents=budget_ceiling_per_traveler_cents(facts),
+        budget_unclear=budget_is_unclear(facts),
     )
 
 
@@ -109,6 +123,8 @@ async def update_memory_fact(
         raise HTTPException(status_code=422, detail="Preference value cannot be empty")
     if len(preference_key) > 100:
         raise HTTPException(status_code=422, detail="Preference is too long")
+    if preference_key.lower() in BUDGET_KEYS and parse_usd_amounts(value) is None:
+        raise HTTPException(status_code=422, detail=BUDGET_AMOUNT_PROMPT)
 
     store = get_memory_store()
     db = get_rds_data_client()

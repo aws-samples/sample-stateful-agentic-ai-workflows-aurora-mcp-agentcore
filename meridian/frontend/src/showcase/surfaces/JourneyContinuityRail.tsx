@@ -96,7 +96,12 @@ function stepsFor(document: JourneyDocument | null): Step[] {
 }
 
 function StopSessionControl(
-  { onStop, onStopped }: { onStop: () => Promise<void>; onStopped: () => void },
+  { onStop, onStopped, onSettled }: {
+    onStop: () => Promise<void>;
+    onStopped: () => void;
+    /** Runs after every stop attempt, so a failed one still shows the journey as it is. */
+    onSettled?: () => void;
+  },
 ) {
   const [phase, setPhase] = useState<'idle' | 'confirm' | 'stopping'>('idle');
   const [failure, setFailure] = useState<string | null>(null);
@@ -123,6 +128,8 @@ function StopSessionControl(
       setFailure(err instanceof Error ? err.message : 'Stopping the session failed.');
       setPhase('idle');
       return;
+    } finally {
+      onSettled?.();
     }
     // The stop is recorded and this control is about to unmount; keep focus in the rail.
     opened.current = false;
@@ -167,6 +174,7 @@ export function JourneyContinuityRail({
   thread = null,
   running = false,
   onStopSession,
+  onStopSettled,
 }: {
   document: JourneyDocument | null;
   error: string | null;
@@ -177,6 +185,8 @@ export function JourneyContinuityRail({
   running?: boolean;
   /** Stops the journey's Runtime session; offered while it runs or waits. */
   onStopSession?: () => Promise<void>;
+  /** Re-reads the journey after a stop attempt, whether it succeeded or failed. */
+  onStopSettled?: () => void;
 }) {
   const steps = stepsFor(document);
   const region = useRef<HTMLDivElement>(null);
@@ -250,7 +260,8 @@ export function JourneyContinuityRail({
           </code>
         )}
         {onStopSession && canStopSession(document) ? (
-          <StopSessionControl onStop={onStopSession} onStopped={() => region.current?.focus()} />
+          <StopSessionControl onStop={onStopSession} onSettled={onStopSettled}
+            onStopped={() => region.current?.focus()} />
         ) : null}
         <span className="mds-continuity-source">
           <ShieldCheck size={13} aria-hidden="true" />

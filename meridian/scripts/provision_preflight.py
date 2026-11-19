@@ -25,6 +25,53 @@ def storage_encryption(cluster: dict) -> dict:
             "kmsKeyArn": cluster.get("KmsKeyId"), "encryptionMigrationNeeded": mode == "none"}
 
 
+INSTANCES_PER_STACK = 2  # the stack creates a writer and a failover reader
+QUOTA_NAMES = frozenset({"DBClusters", "DBInstances", "DBSubnetGroups", "DBClusterParameterGroups"})
+
+
+def existing_instance_count(rds, cluster_identifier: str | None) -> int | None:
+    """The DB instances an existing cluster already has, or None when it is not there yet."""
+    if not cluster_identifier:
+        return None
+    try:
+        cluster = rds.describe_db_clusters(DBClusterIdentifier=cluster_identifier)["DBClusters"][0]
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "DBClusterNotFoundFault":
+            return None
+        raise
+    return len(cluster.get("DBClusterMembers", []))
+
+
+def assess_rds_quotas(rds, cluster_identifier: str | None = None) -> list[dict]:
+    """Check RDS quota for what the stack still has to create.
+
+    A first creation needs one cluster, one subnet group, one parameter group and two DB
+    instances (writer and reader). An existing cluster needs only the instances it lacks.
+
+    Raises:
+        ValueError: When a quota is missing from the response or lacks room.
+    """
+    values = [a for a in rds.describe_account_attributes()["AccountQuotas"]
+              if a["AccountQuotaName"] in QUOTA_NAMES]
+    if {a["AccountQuotaName"] for a in values} != QUOTA_NAMES:
+        raise ValueError("RDS did not return all required account quotas")
+    existing = existing_instance_count(rds, cluster_identifier)
+    if existing is None:
+        need = {name: 1 for name in QUOTA_NAMES} | {"DBInstances": INSTANCES_PER_STACK}
+    else:
+        need = {name: 0 for name in QUOTA_NAMES} | {
+            "DBInstances": max(0, INSTANCES_PER_STACK - existing)}
+    for quota in values:
+        wanted = need[quota["AccountQuotaName"]]
+        if quota["Used"] + wanted > quota["Max"]:
+            if quota["AccountQuotaName"] == "DBInstances":
+                raise ValueError(
+                    f"Insufficient RDS quota: need {wanted} DB instance{'s' if wanted > 1 else ''} "
+                    "(writer and reader) and the account has fewer free")
+            raise ValueError(f"Insufficient RDS quota for {quota['AccountQuotaName']}")
+    return values
+
+
 def inspect(args) -> dict:
     session = boto3.Session(region_name=args.region)
     identity = session.client("sts", config=CONFIG).get_caller_identity()
@@ -62,13 +109,7 @@ def inspect(args) -> dict:
         return {"engineVersion": args.engine_version, "class": "db.serverless"}
 
     def quotas():
-        relevant = {"DBClusters", "DBInstances", "DBSubnetGroups", "DBClusterParameterGroups"}
-        values = [a for a in rds.describe_account_attributes()["AccountQuotas"] if a["AccountQuotaName"] in relevant]
-        if {a["AccountQuotaName"] for a in values} != relevant:
-            raise ValueError("RDS did not return all required account quotas")
-        if any(a["Used"] + 1 > a["Max"] for a in values):
-            raise ValueError("Insufficient RDS quota for one isolated cluster/writer/subnet group/parameter group")
-        return values
+        return assess_rds_quotas(rds, args.cluster_identifier)
 
     def bootstrap():
         stack = cfn.describe_stacks(StackName="CDKToolkit")["Stacks"][0]
@@ -117,6 +158,10 @@ def main() -> int:
     parser.add_argument("--vpc-id", required=True)
     parser.add_argument("--subnet-ids", nargs="+", required=True)
     parser.add_argument("--engine-version", required=True)
+    parser.add_argument("--cluster-identifier",
+                        help="the clusterIdentifier of an already deployed stack, so quota is "
+                             "checked only for the DB instances it still lacks; omit on first "
+                             "creation, which needs room for a writer and a reader")
     parser.add_argument("--source-cluster", help="Inspect an existing cluster's actual encryption type before planning a migration")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

@@ -6,10 +6,13 @@ import { NotSet } from './NotSet';
  * that cap times the party. Showing only one of the two invites the wrong
  * subtraction, so every surface shows both, in the same words.
  */
-export function BudgetCeiling({ perTravelerCents, travelers }: {
+export function BudgetCeiling({ perTravelerCents, unclear = false, travelers }: {
   perTravelerCents?: number | null;
+  /** A budget is saved but is not one dollar amount or range, so no ceiling applies. */
+  unclear?: boolean;
   travelers: number;
 }) {
+  if (unclear) return <span className="mc-unset">Needs one dollar amount or range</span>;
   if (perTravelerCents == null || !Number.isFinite(perTravelerCents)) return <NotSet />;
   const perTraveler = perTravelerCents / 100;
   const party = Math.max(1, travelers);

@@ -10,9 +10,11 @@ export interface MeridianAuroraStackProps extends StackProps {
   subnetIds: string[];
   engineVersion: string;
   /**
-   * The failover reader's zone. Choose one the writer is not in: read the writer's zone with
-   * describe-db-instances. The writer itself takes no zone property, because adding one to an
-   * existing writer would make CloudFormation replace it.
+   * The failover reader's zone. On an existing cluster, name a zone the writer is not in: read
+   * the writer's zone with describe-db-instances. On a first deployment the writer does not
+   * exist yet, so deploy, read both zones back, and redeploy with the other zone if they match
+   * (docs/OPERATIONS.md, "First deployment: place the reader"). The writer itself takes no zone
+   * property, because adding one to an existing writer would make CloudFormation replace it.
    */
   readerAvailabilityZone: string;
   /** Restore creates a separate cluster; it never redirects application traffic. */

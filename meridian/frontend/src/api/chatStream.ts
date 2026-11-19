@@ -1,4 +1,4 @@
-import { ApiError, isServerReply } from './request';
+import { ApiError, QuoteReviewRequired, isServerReply, readHoldQuote } from './request';
 
 export type ChatStreamEvent =
   | { type: 'delta' | 'status'; text: string }
@@ -91,6 +91,10 @@ export async function readEventStream<T extends StreamedResult>(
           if (event.type === 'error' && event.code === 'token_expired') throw new TokenExpiredError(contentDelivered);
           if (event.type === 'error') {
             const message = typeof event.message === 'string' ? event.message : 'The response was interrupted.';
+            const quote = event.status === 409 ? readHoldQuote(event.quote) : null;
+            if (quote && (event.code === 'price_changed' || event.code === 'quote_required')) {
+              throw new QuoteReviewRequired(message, event.code, quote);
+            }
             if (typeof event.status === 'number') {
               throw new ApiError(message, event.status, isServerReply(
                 { error: message, ...(typeof event.code === 'string' ? { code: event.code } : {}) }, event.status));

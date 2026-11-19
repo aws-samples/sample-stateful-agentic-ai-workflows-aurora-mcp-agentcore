@@ -186,3 +186,132 @@ def test_the_ownership_lookup_opens_no_scoped_session_of_its_own(monkeypatch):
     _receipt(monkeypatch, db, "thread-mine")
 
     assert db.sessions == ["memory_agent", "booking_agent"]
+
+
+@pytest.mark.parametrize("key", ["budget_cap", "Budget", "per_person_range"])
+@pytest.mark.parametrize("value", [
+    "flexible", "$75 or $5000", "$75 per traveler, $3200 total", "75 for 3 kids",
+    "\u20ac500", "500 CAD", "$0",
+])
+def test_a_budget_that_is_not_one_amount_or_range_is_refused_with_a_dollar_prompt(
+    monkeypatch, key, value
+):
+    calls = []
+
+    async def authorize(principal, traveler_id):
+        return "trv_meridian_demo"
+
+    class Store:
+        async def update_preference(self, *args, **kwargs):
+            calls.append(args)
+
+    monkeypatch.setattr(memory_mod, "authorize_traveler", authorize)
+    monkeypatch.setattr(memory_mod, "get_memory_store", lambda: Store())
+
+    with pytest.raises(HTTPException) as refused:
+        asyncio.run(memory_mod.update_memory_fact(
+            "me", key, memory_mod.MemoryFactUpdate(value=value), principal=_principal()))
+
+    assert refused.value.status_code == 422
+    assert "one dollar amount or one range" in refused.value.detail
+    assert "$75 per traveler" in refused.value.detail
+    assert calls == []
+
+
+@pytest.mark.parametrize("value", [
+    "$75", "$3,200", "Prefers $2k-3.5k per person", "US$75", "75 USD", "75", "around 3k",
+    "3000 per person", "2000-3500", "USD3000", "$75 for 3 kids",
+])
+def test_a_budget_with_a_dollar_amount_is_saved_as_typed(monkeypatch, value):
+    saved = []
+
+    async def authorize(principal, traveler_id):
+        return "trv_meridian_demo"
+
+    class Store:
+        async def update_preference(self, traveler, key, text, transaction_id=None):
+            saved.append((key, text))
+            return {"key": key, "value": text}
+
+    class Db:
+        @contextlib.asynccontextmanager
+        async def scoped_session(self, **kwargs):
+            yield "tx"
+
+    monkeypatch.setattr(memory_mod, "authorize_traveler", authorize)
+    monkeypatch.setattr(memory_mod, "get_memory_store", lambda: Store())
+    monkeypatch.setattr(memory_mod, "get_rds_data_client", lambda: Db())
+    monkeypatch.setattr(memory_mod, "get_agentcore_identity", lambda: SimpleNamespace(
+        authorization_context=lambda: None))
+
+    result = asyncio.run(memory_mod.update_memory_fact(
+        "me", "budget_cap", memory_mod.MemoryFactUpdate(value=value), principal=_principal()))
+
+    assert saved == [("budget_cap", value)]
+    assert result.value == value
+
+
+def test_a_non_budget_preference_needs_no_dollar_amount(monkeypatch):
+    saved = []
+
+    async def authorize(principal, traveler_id):
+        return "trv_meridian_demo"
+
+    class Store:
+        async def update_preference(self, traveler, key, text, transaction_id=None):
+            saved.append((key, text))
+            return {"key": key, "value": text}
+
+    class Db:
+        @contextlib.asynccontextmanager
+        async def scoped_session(self, **kwargs):
+            yield "tx"
+
+    monkeypatch.setattr(memory_mod, "authorize_traveler", authorize)
+    monkeypatch.setattr(memory_mod, "get_memory_store", lambda: Store())
+    monkeypatch.setattr(memory_mod, "get_rds_data_client", lambda: Db())
+    monkeypatch.setattr(memory_mod, "get_agentcore_identity", lambda: SimpleNamespace(
+        authorization_context=lambda: None))
+
+    asyncio.run(memory_mod.update_memory_fact(
+        "me", "seat", memory_mod.MemoryFactUpdate(value="aisle"), principal=_principal()))
+    assert saved == [("seat", "aisle")]
+
+
+def _profile_with(monkeypatch, facts):
+    async def authorize(principal, traveler_id):
+        return "trv_meridian_demo"
+
+    class Store:
+        async def recall_preferences(self, traveler, limit=50, transaction_id=None):
+            return facts
+
+        async def recall_profile(self, traveler, transaction_id=None):
+            return None
+
+    class Db:
+        @contextlib.asynccontextmanager
+        async def scoped_session(self, **kwargs):
+            yield "tx"
+
+    monkeypatch.setattr(memory_mod, "authorize_traveler", authorize)
+    monkeypatch.setattr(memory_mod, "get_memory_store", lambda: Store())
+    monkeypatch.setattr(memory_mod, "get_rds_data_client", lambda: Db())
+    monkeypatch.setattr(memory_mod, "get_agentcore_identity", lambda: SimpleNamespace(
+        authorization_context=lambda: None))
+    return asyncio.run(memory_mod.get_memory_profile("me", _principal()))
+
+
+@pytest.mark.parametrize(("facts", "cents", "unclear"), [
+    ([{"key": "budget_cap", "value": "$3,200"}], 320000, False),
+    ([{"key": "budget_cap", "value": "$75 or $5000"}], None, True),
+    ([{"key": "budget", "value": "flexible"}], None, True),
+    ([{"key": "seat", "value": "aisle"}], None, False),
+    ([], None, False),
+])
+def test_the_profile_says_when_a_saved_budget_is_unclear(monkeypatch, facts, cents, unclear):
+    profile = _profile_with(monkeypatch, [
+        {**fact, "source": None, "confidence": None} for fact in facts
+    ])
+    assert profile.budget_ceiling_per_traveler_cents == cents
+    assert profile.budget_unclear is unclear

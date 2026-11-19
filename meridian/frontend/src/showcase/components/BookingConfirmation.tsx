@@ -6,13 +6,14 @@ import { firstNameOf, type TravelerIdentity } from '../lib/travelerIdentity';
 
 /** The traveler's confirmation, restated in full before the platform carries it to the gateway. */
 export function BookingConfirmation({
-  product, traveler, hold, budgetPerTravelerCents, busy, onConfirm, onCancel,
+  product, traveler, hold, budgetPerTravelerCents, budgetUnclear, busy, onConfirm, onCancel,
 }: {
   product: Product;
   traveler: TravelerIdentity;
   hold: TripHold;
   /** The saved per-traveler cap; the policy judges this total against it times the party. */
   budgetPerTravelerCents?: number | null;
+  budgetUnclear?: boolean;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -31,7 +32,7 @@ export function BookingConfirmation({
         <div><dt>Duration</dt><dd>{line?.size ?? 'As held'}</dd></div>
         <div><dt>Travelers</dt><dd>{quantity}</dd></div>
         <div><dt>Total</dt><dd>${hold.order.total.toLocaleString('en-US')}</dd></div>
-        <div><dt>Budget ceiling</dt><dd><BudgetCeiling perTravelerCents={budgetPerTravelerCents} travelers={quantity} /></dd></div>
+        <div><dt>Budget ceiling</dt><dd><BudgetCeiling perTravelerCents={budgetPerTravelerCents} unclear={budgetUnclear} travelers={quantity} /></dd></div>
         <div><dt>Hold</dt><dd>{hold.order.order_id}</dd></div>
       </dl>
       <p>

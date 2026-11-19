@@ -92,6 +92,7 @@ class FakeAurora:
         self.calls = []
         self.fail_with = None
         self.max_rows = None
+        self.on_call = None
         # The Data API's own wording, "Database response exceeded size limit", from the
         # troubleshooting page https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/
         # data-api.troubleshooting.html (the 1 MiB result set limit).
@@ -105,6 +106,10 @@ class FakeAurora:
         self.calls.append(request)
         if self.fail_with:
             raise self.fail_with
+        if self.on_call:
+            self.on_call(self, request)
+        if "DESC LIMIT 1" in request["sql"]:
+            return self._newest(request)
         params = {p["name"]: next(iter(p["value"].values())) for p in request["parameters"]}
         table = re.search(r"FROM (\w+) AS t", request["sql"]).group(1)
         assert request["resourceArn"] == CLUSTER and request["secretArn"] == SECRET
@@ -120,6 +125,14 @@ class FakeAurora:
         return {"formattedRecords": json.dumps([
             {"wm_ts": r["ts"], "wm_id": r["id"], "row_json": json.dumps(r["doc"]),
              "age_seconds": str(r["age"])} for r in rows[:limit]])}
+
+
+    def _newest(self, request):
+        """The newest row's timestamp and id, as the verifier's boundary read asks for."""
+        table = re.search(r"FROM (\w+) ORDER BY", request["sql"]).group(1)
+        rows = sorted(self.tables.get(table, []), key=lambda r: (r["ts"], r["id"]))
+        newest = [{"wm_ts": rows[-1]["ts"], "wm_id": rows[-1]["id"]}] if rows else []
+        return {"formattedRecords": json.dumps(newest)}
 
 
 class Context:

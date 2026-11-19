@@ -84,7 +84,14 @@ at its own boundary.
 
 ## 05 - Workflow: snapshots, workers and the hold
 
-Prompt: `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
+To run it, open the Recovery desk (`/showcase?view=recovery`) and click **Start recovery** once.
+That one action submits the canceled-flight prompt together with the explicit recovery intent, so
+there is nothing to paste or resend. Prompt:
+`My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
+
+The same words typed into a fresh conversation carry no intent. They take the read path, which
+searches and answers without a pause or a hold. Once a recovery has paused, a recognized resume
+command such as `Resume workflow` answers the pending review and lets the run continue.
 
 The recovery path has six nodes and pauses after `search` for the traveler's review:
 

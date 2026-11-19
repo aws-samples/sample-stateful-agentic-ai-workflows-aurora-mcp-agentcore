@@ -1,6 +1,13 @@
 import type { HoldLookup } from '../../api/client';
+import { readHoldQuote } from '../../api/request';
+import type { HoldQuote } from '../../types';
 
-export type SavedHoldIntent = HoldLookup & { replacesBookingId?: string };
+/**
+ * `quote` is the terms the request was sent with. A retry of a request whose outcome is unknown
+ * sends the same quote, so Aurora replays a committed hold at its original price. It is absent
+ * on identities saved before quotes existed and after a 409 proved nothing was committed.
+ */
+export type SavedHoldIntent = HoldLookup & { replacesBookingId?: string; quote?: HoldQuote };
 export interface BookingRecovery {
   intents: Record<string, SavedHoldIntent>;
   bookings: Record<string, string>;
@@ -9,6 +16,13 @@ export interface BookingRecovery {
 const keyFor = (travelerId: string) => `meridian:booking-recovery:v1:${travelerId}`;
 export const holdIntentKey = (productId: string, duration: string, quantity: number) =>
   JSON.stringify([productId, duration, quantity]);
+
+/** The quote only when it is for this intent's trip length and quantity and adds up. */
+function quoteFor(intent: SavedHoldIntent, quote: HoldQuote | null): HoldQuote | undefined {
+  if (!quote || quote.size !== intent.duration || quote.quantity !== intent.quantity
+    || quote.total_cents !== quote.unit_price_cents * quote.quantity) return undefined;
+  return quote;
+}
 
 /** Only identifiers/terms are cached. Displayed receipts are always read from Aurora. */
 export function loadBookingRecovery(travelerId: string): BookingRecovery {
@@ -25,6 +39,7 @@ export function loadBookingRecovery(travelerId: string): BookingRecovery {
       || key !== holdIntentKey(intent.productId, intent.duration, intent.quantity)) {
       throw new Error('Saved hold identity is invalid. Inspect the saved journey before making another request.');
     }
+    intent.quote = quoteFor(intent, readHoldQuote(intent.quote));
   }
   if (Object.values(value.bookings).some(id => typeof id !== 'string' || !id)) throw new Error('Saved booking identity is invalid.');
   return value;
@@ -72,5 +87,23 @@ export function allocateHoldIntent(
     const intent = create();
     saveBookingRecovery(travelerId, { intents: { [intentKey]: intent }, bookings: {} });
     return intent;
+  });
+}
+
+/**
+ * Saves the quote an intent is sent with, or clears it with `undefined`. Runs under the same
+ * per-traveler lock as allocation. Returns the saved intent, or undefined when none is saved.
+ */
+export function recordHoldQuote(
+  travelerId: string,
+  intentKey: string,
+  quote: HoldQuote | undefined,
+): Promise<SavedHoldIntent | undefined> {
+  return withTravelerLock(travelerId, () => {
+    const current = loadBookingRecovery(travelerId).intents[intentKey];
+    if (!current) return undefined;
+    const next: SavedHoldIntent = { ...current, quote };
+    saveBookingRecovery(travelerId, { intents: { [intentKey]: next }, bookings: {} });
+    return next;
   });
 }

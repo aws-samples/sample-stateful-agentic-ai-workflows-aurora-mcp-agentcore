@@ -1,4 +1,5 @@
 import { getAccessToken, withBearer } from '../auth/accessToken';
+import type { HoldQuote } from '../types';
 
 /** Browser deadlines end the wait, not a server-side transaction. */
 export const REQUEST_TIMEOUT_MS = 55_000;
@@ -108,6 +109,38 @@ export class ApiError extends Error {
     this.status = status;
     this.worded = worded;
   }
+}
+
+export type QuoteReviewCode = 'price_changed' | 'quote_required';
+
+/**
+ * The backend refused a hold with 409 because the traveler has not approved its current terms.
+ * No hold exists; `quote` carries the terms to show and approve.
+ */
+export class QuoteReviewRequired extends ApiError {
+  readonly code: QuoteReviewCode;
+  readonly quote: HoldQuote;
+
+  constructor(message: string, code: QuoteReviewCode, quote: HoldQuote) {
+    super(message, 409, true);
+    this.name = 'QuoteReviewRequired';
+    this.code = code;
+    this.quote = quote;
+  }
+}
+
+/** The quote a 409 event carries, or null when it is not a well-formed quote. */
+export function readHoldQuote(value: unknown): HoldQuote | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const quote = value as Record<string, unknown>;
+  const isCount = (field: unknown): field is number =>
+    typeof field === 'number' && Number.isInteger(field) && field > 0;
+  if (!isCount(quote.unit_price_cents) || !isCount(quote.total_cents) || !isCount(quote.quantity)
+    || quote.currency !== 'USD' || typeof quote.size !== 'string' || !quote.size) return null;
+  return {
+    unit_price_cents: quote.unit_price_cents, total_cents: quote.total_cents,
+    currency: 'USD', size: quote.size, quantity: quote.quantity,
+  };
 }
 
 /** A failure raised here before any request was sent, so its text is true as written. */

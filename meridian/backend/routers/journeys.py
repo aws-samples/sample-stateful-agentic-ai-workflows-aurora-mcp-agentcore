@@ -8,7 +8,7 @@ claim is authorized against it, and the journey's persisted owner is checked
 inside the scoped session. A journey id grants nothing on its own.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -79,8 +79,11 @@ def _scoped(client, owner: str):
     )
 
 
-async def _stop_target(client, journey_id: str, owner: str) -> str:
-    """Return the thread to stop, refusing a journey with nothing live to stop."""
+async def _stop_target(client, journey_id: str, owner: str) -> Tuple[str, str]:
+    """Return the thread and the execution to stop, refusing a journey with nothing live.
+
+    The execution is the one live when the stop is issued; the settle step fences on it.
+    """
     async with _scoped(client, owner) as tx:
         rows = await client.execute(ACTIVE_THREAD_SQL, (journey_id,), transaction_id=tx)
         thread_id = rows[0]["active_thread_id"] if rows else None
@@ -96,12 +99,16 @@ async def _stop_target(client, journey_id: str, owner: str) -> str:
             )
         if latest[0]["already_stopped"]:
             raise HTTPException(status_code=409, detail="This session was already stopped.")
-    return thread_id
+    return thread_id, latest[0]["execution_id"]
 
 
 async def _settle_execution(tx_execute, journey_id: str, thread_id: str,
-                            graph_status: Optional[str]):
+                            stopped_execution_id: str, graph_status: Optional[str]):
     """Lock the thread's newest execution and close it as the stop found it.
+
+    The newest execution must still be ``stopped_execution_id``, the one live when the
+    stop was issued. A different one was claimed after that, by another tab's resume, so
+    the stop did not reach it: it is left running and the stop is refused with 409.
 
     Returns ``(stopped_during, released_execution_id)``. The newest execution
     is read here, under the lock, because a worker may have paused, finished or
@@ -113,6 +120,12 @@ async def _settle_execution(tx_execute, journey_id: str, thread_id: str,
     """
     rows = await tx_execute(LOCK_LATEST_EXECUTION_SQL, (thread_id,))
     latest = rows[0] if rows else None
+    if latest and latest["execution_id"] != stopped_execution_id:
+        raise HTTPException(
+            status_code=409,
+            detail="A newer workflow session started while the stop was in flight, "
+            "so it was left running. Stop it again to end it.",
+        )
     if latest:
         # A separate statement: the lock query's snapshot predates the wait, so a stop
         # committed by the lock's previous holder is only visible to a fresh statement.
@@ -132,8 +145,8 @@ async def _settle_execution(tx_execute, journey_id: str, thread_id: str,
 
 
 async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
-                       stop: Any, *, requested_by: str) -> Dict[str, Any]:
-    """Settle the newest execution and record the stop in one transaction.
+                       stop: Any, *, execution_id: str, requested_by: str) -> Dict[str, Any]:
+    """Settle the execution the stop was issued against and record the stop in one transaction.
 
     Settling is safe once StopRuntimeSession has returned. The stopped worker
     can no longer save a snapshot, because the snapshot INSERT is fenced on a
@@ -141,8 +154,10 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
     checks the lease FOR UPDATE. A hold that committed just before the stop is
     reused on resume through the same holdRequestId.
 
-    Nothing here trusts the read made before the stop. The newest execution is
-    locked and read after it; the snapshot is read just before that lock, and a
+    Nothing here trusts the read made before the stop, except which execution it was
+    issued against. The newest execution is locked and read after the stop and must still
+    be that one: a replacement claimed since was not stopped and is left running (409).
+    The snapshot is read just before that lock, and a
     stopped worker cannot write another. A running execution whose
     snapshot shows the graph completed only lost its release, so it closes as
     ``succeeded`` and the stop is ``finished``. Any other running execution is
@@ -157,7 +172,7 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
         last_step = snap[0]["last_step"] if snap else None
         graph_status = snap[0]["graph_status"] if snap else None
         during, released_id = await _settle_execution(
-            tx_execute, journey_id, thread_id, graph_status)
+            tx_execute, journey_id, thread_id, execution_id, graph_status)
         row = (await tx_execute(
             RECORD_STOP_SQL,
             (journey_id, thread_id, stop.runtime_session_id, stop.outcome,
@@ -254,7 +269,7 @@ async def stop_session(
     owner = await authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
     try:
-        thread_id = await _stop_target(client, journey_id, owner)
+        thread_id, execution_id = await _stop_target(client, journey_id, owner)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
@@ -263,7 +278,8 @@ async def stop_session(
         raise HTTPException(status_code=503, detail=str(exc).splitlines()[0]) from exc
     try:
         recorded = await _record_stop(
-            client, owner, journey_id, thread_id, stop, requested_by=principal.subject_id
+            client, owner, journey_id, thread_id, stop,
+            execution_id=execution_id, requested_by=principal.subject_id
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

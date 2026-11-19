@@ -32,6 +32,8 @@ SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DATABASE = os.getenv("AURORA_DATABASE", "meridian")
 REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+# Applied only when the operator adopts automatic password rotation (docs/OPERATIONS.md).
+OPT_IN_MIGRATIONS = frozenset({"034_login_rotation_clones.sql"})
 
 
 def _execute(client, sql: str, transaction_id: str | None = None, **kwargs):
@@ -80,11 +82,13 @@ def _applied_migrations_read_only(client) -> set[str]:
     return _applied_migrations(client)
 
 
-def _pending_paths(applied: set[str]) -> list[Path]:
+def _pending_paths(applied: set[str], with_rotation: bool = False) -> list[Path]:
+    """Unapplied migrations in order; opt-in ones appear only when asked for."""
     return [
         path
         for path in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
         if path.name not in applied
+        and (with_rotation or path.name not in OPT_IN_MIGRATIONS)
     ]
 
 
@@ -148,16 +152,20 @@ def _dry_run_migration(client, path: Path) -> int:
     return len(statements)
 
 
-def _select_pending(client, only: str | None = None) -> list[Path]:
-    pending = _pending_paths(_applied_migrations_read_only(client))
+def _select_pending(
+    client, only: str | None = None, with_rotation: bool = False
+) -> list[Path]:
+    pending = _pending_paths(_applied_migrations_read_only(client), with_rotation)
     if only and (not pending or pending[0].name != only):
         first = pending[0].name if pending else "none"
         raise ValueError(f"--only must name the first pending migration ({first})")
     return pending[:1] if only else pending
 
 
-def _dry_run_pending(client, only: str | None = None) -> int:
-    pending = _select_pending(client, only)
+def _dry_run_pending(
+    client, only: str | None = None, with_rotation: bool = False
+) -> int:
+    pending = _select_pending(client, only, with_rotation)
     if not pending:
         print("No pending migrations.")
         return 0
@@ -180,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--only", metavar="MIGRATION.sql",
                         help="run only the first pending migration, named explicitly")
+    parser.add_argument("--with-rotation", action="store_true",
+                        help="also include 034_login_rotation_clones.sql; only when adopting "
+                             "automatic password rotation")
     args = parser.parse_args(argv)
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN[/red]")
@@ -190,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
 
     client = boto3.client("rds-data", region_name=REGION)
     try:
-        pending = _select_pending(client, args.only)
+        pending = _select_pending(client, args.only, args.with_rotation)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         return 2
@@ -199,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(pending_names) or "No pending migrations.")
         return 0
     if args.dry_run:
-        return _dry_run_pending(client, args.only)
+        return _dry_run_pending(client, args.only, args.with_rotation)
     _ensure_migration_table(client)
 
     if not pending:

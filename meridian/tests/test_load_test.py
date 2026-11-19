@@ -365,3 +365,138 @@ def test_a_hosted_record_url_with_a_path_is_refused_too(monkeypatch, no_traffic)
     monkeypatch.setattr(published, "release_url", lambda _r: "https://svc.example.com/x?y=1")
 
     assert load_test.main(["--hosted", "--scenario", "catalog", *LIVE], environ={}) == 3
+
+
+CHAT = Req("c", "POST", "/api/chat", {"message": "m", "phase": 1}, warm_demo.check_turn)
+GOOD_REPLY = {"message": "Here are trips.", "activities": [{"title": "Search", "telemetry": None}]}
+
+
+@pytest.mark.parametrize("reply", [
+    [{"message": "hi"}],
+    {"message": "hi", "activities": None},
+    {"message": "hi", "activities": "none"},
+    {"message": "hi", "activities": [None]},
+    "text",
+])
+def test_an_unexpected_reply_shape_is_a_bad_reply(monkeypatch, reply):
+    monkeypatch.setattr(warm_demo, "call", lambda *a: reply)
+
+    assert load_test.make_sender("https://example.com", {})(CHAT) == load_test.BAD_REPLY
+
+
+def test_a_valid_reply_is_a_success(monkeypatch):
+    monkeypatch.setattr(warm_demo, "call", lambda *a: GOOD_REPLY)
+
+    assert load_test.make_sender("https://example.com", {})(CHAT) == 200
+
+
+def test_an_exception_in_the_response_check_is_a_bad_reply(monkeypatch):
+    def broken(_reply):
+        raise RuntimeError("check bug")
+
+    monkeypatch.setattr(warm_demo, "call", lambda *a: GOOD_REPLY)
+    req = Req("c", "POST", "/api/chat", {"message": "m", "phase": 1}, broken)
+
+    assert load_test.make_sender("https://example.com", {})(req) == load_test.BAD_REPLY
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("boom"), WriteRefused("no")])
+def test_an_exception_in_a_worker_still_records_one_failed_sample(failure):
+    def send(_req):
+        raise failure
+
+    result, recorder, _c = run(plan(rate=10, duration=1), send, Recorder(1.0, 1000))
+
+    assert result["sent"] == 10
+    assert len(recorder.samples) == result["sent"]
+    assert all(s.status == load_test.BAD_REPLY for s in recorder.samples)
+
+
+def test_dispatched_requests_reconcile_to_recorded_outcomes_plus_shed():
+    gate = threading.Event()
+
+    def slow(_req):
+        gate.wait(5)
+        return 200
+
+    clock = FakeClock()
+
+    def sleep_then_release(seconds):
+        clock.sleep(seconds)
+        if len(clock.sleeps) == 9:
+            gate.set()
+
+    recorder = Recorder(0.05, 3)
+    result = load_test.run_load(plan(rate=10, duration=1, concurrency=1), slow, recorder,
+                                clock=clock, sleep=sleep_then_release)
+
+    assert result["recorded"] == result["sent"] == len(recorder.samples)
+    assert result["sent"] + result["shed"] == 10
+
+
+def test_malformed_replies_stop_the_run_and_show_in_the_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(load_test, "LOCAL_DIR", tmp_path)
+    monkeypatch.setattr(load_test.published, "head_commit", lambda: "abc")
+    monkeypatch.setattr(warm_demo, "request_headers", lambda *a: {})
+    monkeypatch.setattr(warm_demo, "call", lambda *a: {"message": "hi", "activities": None})
+    out = tmp_path / "r.json"
+
+    code = load_test.main(["--base-url", "http://localhost:9", "--scenario", "chat",
+                           "--max-turns", "5", "--rate", "20", "--duration", "1",
+                           "--report", str(out), *LIVE], environ={})
+
+    report = json.loads(out.read_text())
+    assert code == load_test.EXIT_ABORTED
+    assert report["aborted"]
+    assert report["total"]["ok"] == 0
+    assert report["total"]["errors_by_status"]["bad_reply"] == report["total"]["count"]
+    assert report["recorded"] == report["sent"] == report["total"]["count"]
+
+
+def test_finish_flags_a_short_run_whose_error_rate_is_above_the_limit():
+    recorder = Recorder(0.05, 3)
+    recorder.add(Sample("a", 404, 0.1))
+    recorder.add(Sample("a", 200, 0.1))
+    recorder.finish()
+
+    assert recorder.abort_reason and "50%" in recorder.abort_reason
+
+
+def test_finish_leaves_a_short_clean_run_and_an_empty_run_alone():
+    clean = Recorder(0.05, 3)
+    clean.add(Sample("a", 200, 0.1))
+    clean.finish()
+    empty = Recorder(0.05, 3)
+    empty.finish()
+
+    assert clean.abort_reason is None and empty.abort_reason is None
+
+
+def test_finish_keeps_the_first_abort_reason():
+    recorder = Recorder(0.05, 1)
+    recorder.add(Sample("a", 503, 0.1))
+    first = recorder.abort_reason
+    recorder.finish()
+
+    assert recorder.abort_reason == first
+
+
+def test_a_short_live_run_at_a_full_error_rate_exits_one(monkeypatch, tmp_path):
+    monkeypatch.setattr(load_test, "LOCAL_DIR", tmp_path / ".local")
+    monkeypatch.setattr(published, "head_commit", lambda: "abc123")
+    monkeypatch.setattr(warm_demo, "call", raising(urllib.error.HTTPError("u", 404, "m", {}, None)))
+    monkeypatch.setattr(warm_demo, "request_headers", lambda *a: {})
+    argv = ["--base-url", "http://127.0.0.1:9", "--scenario", "catalog", "--rate", "2",
+            "--duration", "1", *LIVE]
+
+    assert load_test.main(argv, environ={}) == 1
+
+
+def test_the_streak_help_and_abort_message_name_bad_replies():
+    recorder = Recorder(0.5, 2)
+    recorder.add(Sample("a", load_test.BAD_REPLY, 0.1))
+    recorder.add(Sample("a", load_test.BAD_REPLY, 0.1))
+    help_text = "".join(load_test.build_parser().format_help().split())
+
+    assert "bad reply" in recorder.abort_reason
+    assert "bad-replyfailures" in help_text

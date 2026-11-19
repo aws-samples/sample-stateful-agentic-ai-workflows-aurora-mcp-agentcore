@@ -98,6 +98,11 @@ async def test_a_concierge_turn_stopped_by_an_expired_token_is_a_retryable_401(m
     assert_retryable(caught.value)
 
 
+# The terms the traveler saw: 7 nights for two at $1,000 each, as the fake catalog below prices it.
+ORDER_QUOTE = {"unit_price_cents": 100000, "total_cents": 200000, "currency": "USD",
+               "size": "7 nights", "quantity": 2}
+
+
 def agent_raising(method):
     async def raise_expired(*args, **kwargs):
         raise CallerTokenExpired("expired")
@@ -114,7 +119,8 @@ def test_a_hold_stopped_by_an_expired_token_is_a_retryable_401(monkeypatch):
     monkeypatch.setattr(
         production_agent_mod, "create_production_agent", agent_raising("process_hold")
     )
-    request = OrderRequest(product_id="CTY-002", quantity=2, size="7 nights", phase=4)
+    request = OrderRequest(
+        product_id="CTY-002", quantity=2, size="7 nights", phase=4, quote=ORDER_QUOTE)
     with pytest.raises(HTTPException) as caught:
         asyncio.run(chat_mod.production_hold(request))
     assert_retryable(caught.value)
@@ -215,7 +221,8 @@ def test_the_order_route_answers_the_sign_in_body(client, monkeypatch, error, co
     monkeypatch.setattr(production_agent_mod, "create_production_agent",
                         agent_failing("process_hold", error))
     response = client.post("/api/chat/order", json={
-        "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4})
+        "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4,
+        "quote": ORDER_QUOTE})
     assert_sign_in_response(response, code, message, challenge)
 
 
@@ -244,7 +251,7 @@ def test_the_journeys_route_answers_the_sign_in_body(client, monkeypatch, error,
         stop_session = staticmethod(raising(error))
 
     async def stop_target(db, journey_id, owner):
-        return "thread-1"
+        return "thread-1", "exe_1"
 
     monkeypatch.setattr(journeys, "_stop_target", stop_target)
     monkeypatch.setattr(journeys, "get_rds_data_client", lambda: object())
@@ -279,7 +286,8 @@ def test_a_token_expired_event_from_the_runtime_reaches_the_order_route_as_the_e
     monkeypatch.setattr(chat_mod, "_requested_duration", lambda row, size: "7 nights")
     monkeypatch.setattr(production_agent_mod, "create_production_agent", lambda: Agent())
     response = client.post("/api/chat/order", json={
-        "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4})
+        "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4,
+        "quote": ORDER_QUOTE})
     assert_sign_in_response(response, "token_expired", MESSAGE, CHALLENGE)
 
 

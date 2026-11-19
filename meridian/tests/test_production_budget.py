@@ -7,6 +7,7 @@ import pytest
 from backend.agents.budget import (
     budget_ceiling_from_facts,
     budget_ceiling_per_traveler_cents,
+    budget_is_unclear,
 )
 
 
@@ -35,9 +36,9 @@ def test_no_budget_fact_falls_back_to_the_default(monkeypatch):
     assert budget_ceiling_from_facts([], travelers=1) == 123400
 
 
-def test_unparseable_budget_falls_back_to_the_default(monkeypatch):
+def test_unparseable_budget_authorizes_nothing_instead_of_the_default(monkeypatch):
     monkeypatch.delenv("MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS", raising=False)
-    assert budget_ceiling_from_facts([{"key": "budget", "value": "flexible"}], travelers=3) == 400000
+    assert budget_ceiling_from_facts([{"key": "budget", "value": "flexible"}], travelers=3) == 0
 
 
 def test_the_per_traveler_cap_is_the_party_ceiling_divided_by_the_party():
@@ -56,6 +57,8 @@ def test_an_unsaved_budget_is_none_rather_than_the_trip_default():
     """The default is a whole-trip figure, so showing it per traveler would lie."""
     assert budget_ceiling_per_traveler_cents([]) is None
     assert budget_ceiling_per_traveler_cents([{"key": "budget", "value": "flexible"}]) is None
+    assert budget_is_unclear([{"key": "budget", "value": "flexible"}])
+    assert not budget_is_unclear([])
 
 
 def test_the_governing_budget_fact_survives_confidence_ranking():
@@ -87,11 +90,11 @@ def test_no_saved_budget_leaves_the_context_untouched():
 
 @pytest.mark.parametrize("text, largest", [
     ("under $1500, 3 kids", 1500.0),
-    ("budget 200 keep it low", 200.0),
+    ("budget $200 keep it low", 200.0),
     ("Prefers $2k-3.5k per person", 3500.0),
     ("$2K", 2000.0),
 ])
 def test_a_k_suffix_belongs_to_the_number_not_the_next_word(text, largest):
-    from backend.agents.budget import _dollars
+    from backend.agents.budget import parse_usd_amounts
 
-    assert max(_dollars(text)) == largest
+    assert max(parse_usd_amounts(text)) == largest

@@ -110,6 +110,18 @@ async def holds() -> AsyncIterator[_Holds]:
         await tracker.purge()
 
 
+async def _quote(client, package_id: str, duration: str, quantity: int) -> dict:
+    """The terms the Hold action shows for this package, read from the live catalog."""
+    row = await client.execute_one(
+        "SELECT ROUND(price_per_person * 100)::BIGINT AS cents FROM trip_packages "
+        "WHERE package_id = %s",
+        (package_id,),
+    )
+    unit = int(row["cents"])
+    return {"unit_price_cents": unit, "total_cents": unit * quantity, "currency": "USD",
+            "size": duration, "quantity": quantity}
+
+
 async def _a_package_with_room(client, needed: int, *, oversell=False) -> tuple[str, str, int]:
     """Select live inventory inside the saved budget and Cedar party limit.
 
@@ -152,7 +164,8 @@ async def test_a_hold_writes_a_booking_line_for_the_published_duration(
     package_id, duration, _seats = await _a_package_with_room(holds.client, 2)
 
     response = await process_order(
-        OrderRequest(product_id=package_id, size=duration, quantity=2, phase=4),
+        OrderRequest(product_id=package_id, size=duration, quantity=2, phase=4,
+                     quote=await _quote(holds.client, package_id, duration, 2)),
         PRINCIPAL,
     )
 
@@ -173,7 +186,8 @@ async def test_a_hold_is_recorded_under_a_journey_and_a_request_identity(
     package_id, duration, _seats = await _a_package_with_room(holds.client, 1)
 
     request = OrderRequest(product_id=package_id, size=duration, quantity=1, phase=4,
-                           conversation_id=f"hold-test-{uuid.uuid4().hex[:12]}")
+                           conversation_id=f"hold-test-{uuid.uuid4().hex[:12]}",
+                           quote=await _quote(holds.client, package_id, duration, 1))
     response = await process_order(
         request,
         PRINCIPAL,
@@ -197,7 +211,8 @@ async def test_the_response_reports_the_seats_the_database_counted(
     package_id, duration, seats = await _a_package_with_room(holds.client, 2)
 
     response = await process_order(
-        OrderRequest(product_id=package_id, size=duration, quantity=2, phase=4),
+        OrderRequest(product_id=package_id, size=duration, quantity=2, phase=4,
+                     quote=await _quote(holds.client, package_id, duration, 2)),
         PRINCIPAL,
     )
     assert response.order is not None
@@ -218,7 +233,8 @@ async def test_asking_for_more_places_than_exist_reserves_nothing(
 
     response = await process_order(
         OrderRequest(
-            product_id=package_id, size=duration, quantity=seats + 1, phase=4
+            product_id=package_id, size=duration, quantity=seats + 1, phase=4,
+            quote=await _quote(holds.client, package_id, duration, seats + 1),
         ),
         PRINCIPAL,
     )
@@ -240,7 +256,8 @@ async def test_an_unpublished_duration_is_refused_before_any_hold(
     with pytest.raises(HTTPException) as exc:
         await process_order(
             OrderRequest(
-                product_id=package_id, size="900 nights", quantity=1, phase=4
+                product_id=package_id, size="900 nights", quantity=1, phase=4,
+                quote=await _quote(holds.client, package_id, "900 nights", 1),
             ),
             PRINCIPAL,
         )
@@ -250,3 +267,42 @@ async def test_an_unpublished_duration_is_refused_before_any_hold(
         "SELECT count(*) AS n FROM booking_lines WHERE duration = %s", ("900 nights",)
     )
     assert int(left[0]["n"]) == 0
+
+
+async def _lines_for(client, package_id: str, duration: str) -> int:
+    rows = await client.execute(
+        "SELECT count(*) AS n FROM booking_lines WHERE package_id = %s AND duration = %s",
+        (package_id, duration),
+    )
+    return int(rows[0]["n"])
+
+
+async def test_a_quote_the_catalog_no_longer_matches_reserves_nothing_until_it_is_renewed(
+    holds: _Holds,
+) -> None:
+    """The traveler saw an older price: 409 with the current terms, then the new approval holds."""
+    package_id, duration, _seats = await _a_package_with_room(holds.client, 1)
+    current = await _quote(holds.client, package_id, duration, 1)
+    stale = {**current, "unit_price_cents": current["unit_price_cents"] - 100,
+             "total_cents": current["total_cents"] - 100}
+    conversation = f"hold-test-{uuid.uuid4().hex[:12]}"
+    lines = await _lines_for(holds.client, package_id, duration)
+
+    with pytest.raises(HTTPException) as refused:
+        await process_order(OrderRequest(
+            product_id=package_id, size=duration, quantity=1, phase=4,
+            conversation_id=conversation, quote=stale), PRINCIPAL)
+
+    assert refused.value.status_code == 409
+    assert refused.value.detail["code"] == "price_changed"
+    assert refused.value.detail["quote"] == current
+    assert await _lines_for(holds.client, package_id, duration) == lines
+
+    renewed = await process_order(OrderRequest(
+        product_id=package_id, size=duration, quantity=1, phase=4,
+        conversation_id=conversation, quote=current), PRINCIPAL)
+    assert renewed.order is not None
+    holds.track(renewed.order.order_id)
+    line = await holds.booking_line(renewed.order.order_id)
+    assert int(round(float(line["unit_price"]) * 100)) == current["unit_price_cents"]
+    assert renewed.order.total == current["total_cents"] / 100

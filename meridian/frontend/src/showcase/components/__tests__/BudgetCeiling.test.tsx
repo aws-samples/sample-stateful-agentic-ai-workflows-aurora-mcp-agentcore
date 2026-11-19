@@ -20,4 +20,16 @@ describe('Budget ceiling', () => {
     expect(container).toHaveTextContent('Not set');
     expect(container).not.toHaveTextContent('$');
   });
+
+  it('asks for a dollar amount when the saved budget is unclear, instead of saying Not set', () => {
+    const { container } = render(<BudgetCeiling perTravelerCents={null} unclear travelers={2} />);
+    expect(container).toHaveTextContent('Needs one dollar amount or range');
+    expect(container).not.toHaveTextContent('Not set');
+    expect(container).not.toHaveTextContent('$');
+  });
+
+  it('still says Not set when nothing is saved and the budget is not unclear', () => {
+    const { container } = render(<BudgetCeiling perTravelerCents={null} unclear={false} travelers={2} />);
+    expect(container).toHaveTextContent('Not set');
+  });
 });

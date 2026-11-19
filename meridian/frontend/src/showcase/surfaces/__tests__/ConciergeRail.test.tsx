@@ -15,6 +15,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     previewFacts: [],
     memoryFacts: [],
     budgetCeilingPerTravelerCents: null,
+    budgetUnclear: false,
     savedTrips: [],
     ...overrides,
   } as unknown as MeridianShowcaseState;
@@ -59,6 +60,12 @@ describe('ConciergeRail traveler', () => {
 });
 
 describe('ConciergeRail unset values', () => {
+  it('asks for a dollar amount when the saved budget is unclear, not Not set', () => {
+    render(<ConciergeRail state={makeState({ budgetUnclear: true })} />);
+    expect(screen.getByText('Needs one dollar amount or range')).toBeInTheDocument();
+    expect(screen.getAllByText('Not set')).toHaveLength(1);
+  });
+
   it('renders every unset value as quiet words, never as display type or a dash', () => {
     const { container } = render(<ConciergeRail state={makeState()} />);
     const unset = screen.getAllByText('Not set');

@@ -2,6 +2,7 @@ import type { JourneyDocument } from '../../journey/types';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMeridianShowcase } from '../useMeridianShowcase';
+import { ApiError } from '../../../api/request';
 import { deleteMemoryFact, fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, readHold, readBooking, sendChatMessage, updateMemoryFact } from '../../../api/client';
 
 vi.mock('../../../api/client', () => ({
@@ -81,6 +82,36 @@ describe('Concierge request context', () => {
     });
     await waitFor(() => expect(result.current.budgetCeilingPerTravelerCents).toBe(action === 'update' ? 200000 : null));
     expect(result.current.previewFacts.some(fact => fact.value === '$3,200')).toBe(false);
+  });
+
+  it('carries the server flag that a saved budget is unclear', async () => {
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({
+      traveler_id: 'trv_meridian_demo', profile: { party_size: 2 },
+      facts: [{ key: 'budget_cap', value: '$75 or $5000' }],
+      budget_ceiling_per_traveler_cents: null, budget_unclear: true,
+    });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.budgetUnclear).toBe(true));
+    expect(result.current.budgetCeilingPerTravelerCents).toBeNull();
+  });
+
+  it('shows the dollar prompt the server gives when a budget has no dollar amount', async () => {
+    const prompt = 'Enter the budget as a dollar amount, for example $75 per traveler.';
+    vi.mocked(updateMemoryFact).mockRejectedValue(new ApiError(prompt, 422, true));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    await act(async () => { await result.current.setMemoryEnabled(true); });
+    await act(async () => { await result.current.updateMemoryPreference('budget_cap', 'flexible'); });
+    expect(result.current.memoryMutationError).toBe(prompt);
+  });
+
+  it('keeps the generic message for a preference update the server did not word', async () => {
+    vi.mocked(updateMemoryFact).mockRejectedValue(new ApiError('Request failed (503).', 503, false));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    await act(async () => { await result.current.setMemoryEnabled(true); });
+    await act(async () => { await result.current.updateMemoryPreference('budget_cap', '$75'); });
+    expect(result.current.memoryMutationError).toBe('That preference could not be updated. Try again.');
   });
 
   it.each(['disable', 'phase'] as const)('ignores a pending memory read after %s', async action => {

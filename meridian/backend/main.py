@@ -25,6 +25,7 @@ from backend.agentcore.caller_credential import CallerCredentialMiddleware
 from backend.agentcore.errors import CallerCredentialError
 from backend.authorization import TravelerAuthorizationError
 from backend.http_auth import require_http_principal
+from backend.hold_quote import HoldQuoteReply
 from backend.token_expiry import credential_error, error_code
 
 # Load environment variables from .env file
@@ -258,6 +259,8 @@ async def caller_credential_exception_handler(request, exc: CallerCredentialErro
 async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent error format."""
     from fastapi.responses import JSONResponse
+    if isinstance(exc, HoldQuoteReply):
+        return JSONResponse(status_code=exc.status_code, content=exc.body(), headers=exc.headers)
     content = {"error": exc.detail}
     code = error_code(exc) or getattr(exc, "code", None)
     if code:

@@ -58,3 +58,19 @@ def test_the_warm_up_fails_a_step_whose_reply_is_the_error_fallback(monkeypatch)
     passed, failed = warm_demo.run_steps("http://testserver", {}, "trv_meridian_demo")
 
     assert passed == [] and failed == ["Phase 1 SQL"]
+
+
+@pytest.mark.parametrize("check", [
+    warm_demo.check_health, warm_demo.check_turn, warm_demo.check_catalog,
+    warm_demo.check_profile, warm_demo.check_journeys,
+])
+@pytest.mark.parametrize("reply", [[], [{"message": "hi"}], "text", None])
+def test_a_reply_that_is_not_an_object_fails_every_check(check, reply):
+    assert check(reply) == warm_demo.NOT_AN_OBJECT
+
+
+@pytest.mark.parametrize("activities", [None, "none", [None], ["x"]])
+def test_a_turn_with_malformed_activities_fails_the_check(activities):
+    problem = warm_demo.check_turn({"message": "hi", "activities": activities})
+
+    assert problem == "the activities field is not a list of objects"

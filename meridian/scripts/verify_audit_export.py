@@ -17,7 +17,10 @@ What it checks, per table:
    alone cannot show that the newest objects were removed, so keep that value off this bucket;
 7. with --compare-aurora, every exported row is still in Aurora and unchanged (an edit or a
    deletion made after the export), and no Aurora row at or before the export's watermark is
-   missing from it. Rows after the watermark are only counted as pending.
+   missing from it. Rows after the watermark are only counted as pending. The comparison
+   reads Aurora up to the newest row present when it starts, so rows appended during the scan
+   are neither read nor reported, and it keeps exported rows in a temporary SQLite file, not in
+   memory.
 
 Exit codes: 0 verified, 1 findings, 2 could not run or read, 3 usage error.
 
@@ -35,11 +38,13 @@ import importlib.util
 import json
 import os
 import re
+import sqlite3
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -81,12 +86,71 @@ class Walk:
 
     table: str
     objects: int = 0
-    rows: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    store: "RowStore" = None  # type: ignore[assignment]
     head_seq: int = 0
     head_sha256: str = "0" * 64
     watermark_ts: str = ""
     watermark_id: str = ""
     findings: List[Finding] = field(default_factory=list)
+
+
+class RowStore:
+    """Exported rows in a temporary SQLite file, so memory does not grow with the history.
+
+    Use as a context manager: the file is created in the system temp directory and removed on
+    exit. Rows keep the order they were first added in.
+    """
+
+    def __init__(self) -> None:
+        self._dir = tempfile.TemporaryDirectory(prefix="audit-verify-")
+        self._db = None
+        try:
+            self._db = sqlite3.connect(str(Path(self._dir.name) / "rows.db"))
+            self._db.execute("PRAGMA journal_mode = OFF")
+            self._db.execute("PRAGMA synchronous = OFF")
+            self._db.execute("CREATE TABLE exported (id TEXT PRIMARY KEY, ts TEXT NOT NULL, "
+                             "row TEXT NOT NULL, seen INTEGER NOT NULL DEFAULT 0)")
+        except BaseException:
+            if self._db is not None:
+                self._db.close()
+            self._dir.cleanup()
+            raise
+
+    def __enter__(self) -> "RowStore":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._db.close()
+        self._dir.cleanup()
+
+    def add(self, ident: str, ts: str, row: Dict[str, Any]) -> bool:
+        """Store a row; return False and keep the newer copy when the id was stored before."""
+        text = json.dumps(row)
+        try:
+            self._db.execute("INSERT INTO exported (id, ts, row) VALUES (?, ?, ?)",
+                             (ident, ts, text))
+        except sqlite3.IntegrityError:
+            self._db.execute("UPDATE exported SET ts = ?, row = ? WHERE id = ?", (ts, text, ident))
+            return False
+        return True
+
+    def count(self) -> int:
+        """How many distinct rows are stored."""
+        return self._db.execute("SELECT COUNT(*) FROM exported").fetchone()[0]
+
+    def take(self, ident: str) -> Optional[Tuple[int, Dict[str, Any]]]:
+        """Mark ``ident`` as seen in Aurora; return its position and row, or None if unknown."""
+        found = self._db.execute(
+            "SELECT rowid, row FROM exported WHERE id = ?", (ident,)).fetchone()
+        if found is None:
+            return None
+        self._db.execute("UPDATE exported SET seen = 1 WHERE id = ?", (ident,))
+        return found[0], json.loads(found[1])
+
+    def unseen(self) -> Iterator[Tuple[int, str]]:
+        """The position and id of every stored row never taken, in the order added."""
+        yield from self._db.execute(
+            "SELECT rowid, id FROM exported WHERE seen = 0 ORDER BY rowid")
 
 
 def redact(text: str) -> str:
@@ -155,10 +219,10 @@ def check_object(walk: Walk, key: str, header: Dict[str, Any],
 
 def _record_rows(walk: Walk, seq: int, rows: List[Dict[str, Any]]) -> None:
     for row in rows:
-        if row["id"] in walk.rows:
+        if not walk.store.add(row["id"], row["ts"], row["row"]):
             walk.findings.append(Finding(walk.table, "duplicate-row",
                                          f"seq {seq}: row {row['id']} was exported before"))
-        walk.rows[row["id"]] = {"ts": row["ts"], "row": row["row"]}
+
 
 
 def _check_key_state(walk: Walk, versions: Dict[str, List[str]], markers: List[str]) -> None:
@@ -170,9 +234,12 @@ def _check_key_state(walk: Walk, versions: Dict[str, List[str]], markers: List[s
                                          f"{key} has {len(ids)} versions"))
 
 
-def walk_chain(s3, bucket: str, table: str, prefix: str) -> Walk:
-    """Read every object of the table in sequence order and check the chain."""
-    walk = Walk(table)
+def walk_chain(s3, bucket: str, table: str, prefix: str, store: RowStore) -> Walk:
+    """Read every object of the table in sequence order and check the chain.
+
+    Every exported row goes into ``store``, which the Aurora comparison reads afterwards.
+    """
+    walk = Walk(table, store=store)
     versions, markers = list_versions(s3, bucket, f"{prefix}/{table}/")
     _check_key_state(walk, versions, markers)
     previous, expected = "0" * 64, 1
@@ -217,15 +284,61 @@ def check_expected_head(walk: Walk, expected: Optional[Tuple[int, str]]) -> None
             " with that hash"))
 
 
-def aurora_rows(rds, exporter, settings, table) -> List[Dict[str, str]]:
-    """Every row of the table now, in export order, read as the audit export login."""
+def aurora_bound(rds, exporter, settings, table) -> Optional[Tuple[str, str]]:
+    """The newest row's ``(ts, id)`` in the table now, read once; None for an empty table.
+
+    Uses the exporter's ordering (timestamp, then id, both under the database collation) so the
+    comparison stops at the same row the export order would.
+    """
+    ts, ident = table.ts_column, table.id_column
+    sql = (f"SELECT {ts}::text AS wm_ts, {ident}::text AS wm_id FROM {table.name} "
+           f"ORDER BY {ts} DESC, {ident} DESC LIMIT 1")
+    try:
+        response = rds.execute_statement(
+            resourceArn=settings.cluster_arn, secretArn=settings.secret_arn,
+            database=settings.database, sql=sql, formatRecordsAs="JSON")
+        rows = json.loads(response.get("formattedRecords") or "[]")
+    except (ClientError, BotoCoreError, ValueError) as error:
+        exporter.LOGGER.error("Aurora read failed: %s", type(error).__name__)
+        raise exporter.ExportError(exporter.PHRASE_READ) from None
+    return (rows[0]["wm_ts"], rows[0]["wm_id"]) if rows else None
+
+
+def _within_bound(rows: List[Dict[str, str]], bound: Tuple[str, str]) -> Tuple[
+        List[Dict[str, str]], bool]:
+    """The leading rows at or before ``bound``, and whether the bound ended the page."""
+    kept: List[Dict[str, str]] = []
+    bound_ts = parse_ts(bound[0])
+    for row in rows:
+        row_ts = parse_ts(row["wm_ts"])
+        # Ids compare as strings: real ids share a prefix within a table, so code-point
+        # order matches Aurora's collation for them.
+        if row_ts > bound_ts or (row_ts == bound_ts and row["wm_id"] > bound[1]):
+            return kept, True
+        kept.append(row)
+        if row["wm_id"] == bound[1]:
+            return kept, True
+    return kept, False
+
+
+def aurora_pages(rds, exporter, settings, table,
+                 bound: Optional[Tuple[str, str]]) -> Iterator[List[Dict[str, str]]]:
+    """Yield the table's rows in export order, one page at a time, up to ``bound`` inclusive.
+
+    Pages are read lazily, so only the page being compared is in memory. Rows appended after
+    ``bound`` was read are never returned.
+    """
+    if bound is None:
+        return
     head = exporter.GENESIS
-    out: List[Dict[str, str]] = []
+    size = COMPARE_BATCH_ROWS
     while True:
-        rows, _ = exporter.fetch_rows(rds, settings, table, head, COMPARE_BATCH_ROWS)
-        if not rows:
-            return out
-        out.extend(rows)
+        rows, size = exporter.fetch_rows(rds, settings, table, head, size)
+        kept, ended = _within_bound(rows, bound)
+        if kept:
+            yield kept
+        if ended or not rows:
+            return
         head = exporter.ChainHead(0, "", rows[-1]["wm_ts"], rows[-1]["wm_id"])
 
 
@@ -234,53 +347,76 @@ def differing_columns(exported: Dict[str, Any], current: Dict[str, Any]) -> List
     return sorted(k for k in set(exported) | set(current) if exported.get(k) != current.get(k))
 
 
-def _watermark_position(walk: Walk, rows: List[Dict[str, str]]) -> int:
-    """How many of ``rows`` (in the database's order) are at or before the watermark.
+class _Scan:
+    """What the page-by-page comparison has seen so far."""
 
-    The exporter resumes after ``(ts, id)`` in the database's order, where ids compare as text
-    under the database collation, so the position comes from the order Aurora returned. When the
-    watermark row itself is gone from Aurora (reported as ``row-deleted``), fall back to the
-    timestamp, then the id as Python text.
-    """
-    if not walk.watermark_ts:
-        return 0
-    for position, row in enumerate(rows):
-        if row["wm_id"] == walk.watermark_id:
-            return position + 1
-    mark = (parse_ts(walk.watermark_ts), walk.watermark_id)
-    return sum(1 for row in rows if (parse_ts(row["wm_ts"]), row["wm_id"]) <= mark)
+    def __init__(self, walk: Walk) -> None:
+        self.walk = walk
+        self.behind = bool(walk.watermark_ts)
+        self.pending = 0
+        self.ordered: List[Tuple[int, Finding]] = []
+        self.unexported: List[Finding] = []
+
+    def _is_behind(self, row: Dict[str, str]) -> bool:
+        """Whether ``row`` is at or before the watermark, in database order.
+
+        The watermark row itself is found by id, and the span ends right after it. When that row
+        is gone from Aurora (reported as ``row-deleted``), the first row stamped after the
+        watermark's timestamp ends the span.
+        """
+        if not self.behind:
+            return False
+        if row["wm_id"] == self.walk.watermark_id:
+            self.behind = False
+            return True
+        if parse_ts(row["wm_ts"]) > parse_ts(self.walk.watermark_ts):
+            self.behind = False
+            return False
+        return True
+
+    def page(self, rows: List[Dict[str, str]]) -> None:
+        """Compare one page of Aurora rows, in database order, with the stored export."""
+        walk = self.walk
+        for now in rows:
+            ident = now["wm_id"]
+            was_behind = self._is_behind(now)
+            found = walk.store.take(ident)
+            if found is None:
+                if was_behind:
+                    self.unexported.append(Finding(
+                        walk.table, "row-unexported",
+                        f"row {ident} is behind the watermark and not exported"))
+                else:
+                    self.pending += 1
+                continue
+            position, exported = found
+            columns = differing_columns(exported, json.loads(now["row_json"]))
+            if columns:
+                self.ordered.append((position, Finding(
+                    walk.table, "row-edited",
+                    f"row {ident} changed after export: {', '.join(columns)}")))
+
+    def finish(self) -> Tuple[List[Finding], int]:
+        """Add the exported rows Aurora never returned, then order the findings."""
+        for position, ident in self.walk.store.unseen():
+            self.ordered.append((position, Finding(
+                self.walk.table, "row-deleted",
+                f"row {ident} was exported and is not in Aurora")))
+        self.ordered.sort(key=lambda item: item[0])
+        return [f for _, f in self.ordered] + self.unexported, self.pending
 
 
-def compare_with_aurora(walk: Walk, rows: List[Dict[str, str]]) -> Tuple[List[Finding], int]:
+def compare_with_aurora(walk: Walk,
+                        pages: Iterable[List[Dict[str, str]]]) -> Tuple[List[Finding], int]:
     """Find exported rows that were edited or deleted, and rows missing behind the watermark.
 
-    ``rows`` are in the database's ``(ts, id)`` order. Returns the findings and the count of
-    rows after the watermark, which are only pending.
+    ``pages`` yield Aurora rows in the database's ``(ts, id)`` order, one bounded page at a
+    time. Returns the findings and the count of rows after the watermark, which are only pending.
     """
-    findings: List[Finding] = []
-    current = {row["wm_id"]: row for row in rows}
-    for ident, exported in walk.rows.items():
-        now = current.get(ident)
-        if now is None:
-            findings.append(Finding(walk.table, "row-deleted",
-                                    f"row {ident} was exported and is not in Aurora"))
-            continue
-        columns = differing_columns(exported["row"], json.loads(now["row_json"]))
-        if columns:
-            findings.append(Finding(walk.table, "row-edited",
-                                    f"row {ident} changed after export: {', '.join(columns)}"))
-    pending = 0
-    behind = _watermark_position(walk, rows)
-    for position, now in enumerate(rows):
-        ident = now["wm_id"]
-        if ident in walk.rows:
-            continue
-        if position < behind:
-            findings.append(Finding(walk.table, "row-unexported",
-                                    f"row {ident} is behind the watermark and not exported"))
-        else:
-            pending += 1
-    return findings, pending
+    scan = _Scan(walk)
+    for rows in pages:
+        scan.page(rows)
+    return scan.finish()
 
 
 def parse_heads(values: List[str]) -> Dict[str, Tuple[int, str]]:
@@ -352,16 +488,18 @@ def verify(args, exporter, tables) -> List[Finding]:
     rds, settings = _aurora_clients(exporter) if args.compare_aurora else (None, None)
     findings: List[Finding] = []
     for table in tables:
-        walk = walk_chain(s3, args.bucket, table.name, exporter.KEY_PREFIX)
-        check_expected_head(walk, heads.get(table.name))
-        pending = None
-        if rds:
-            extra, pending = compare_with_aurora(
-                walk, aurora_rows(rds, exporter, settings, table))
-            walk.findings.extend(extra)
-        suffix = f", {pending} pending" if pending is not None else ""
-        print(f"{table.name}: {walk.objects} objects, {len(walk.rows)} rows{suffix}, "
-              f"{len(walk.findings)} findings")
+        with RowStore() as store:
+            walk = walk_chain(s3, args.bucket, table.name, exporter.KEY_PREFIX, store)
+            check_expected_head(walk, heads.get(table.name))
+            pending = None
+            if rds:
+                bound = aurora_bound(rds, exporter, settings, table)
+                extra, pending = compare_with_aurora(
+                    walk, aurora_pages(rds, exporter, settings, table, bound))
+                walk.findings.extend(extra)
+            suffix = f", {pending} pending" if pending is not None else ""
+            print(f"{table.name}: {walk.objects} objects, {store.count()} rows{suffix}, "
+                  f"{len(walk.findings)} findings")
         findings.extend(walk.findings)
     return findings
 

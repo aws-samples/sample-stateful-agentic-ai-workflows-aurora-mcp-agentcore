@@ -7,6 +7,7 @@ that output into the delta Strands persists.
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.agentcore.caller_claims import CallerClaimsError
@@ -38,6 +39,7 @@ from backend.agents.phase_05_workflow.governed_tools import (
     recording,
 )
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_intent
+from backend.agents.phase_05_workflow.hold_status import effective_hold_status
 from backend.agents.phase_05_workflow.packages import package_to_dict
 from backend.agents.phase_05_workflow.routing import classify_intent
 from backend.agents.phase_05_workflow.state import (
@@ -62,7 +64,10 @@ RELEASE_UNCONFIRMED = "hold release unconfirmed: the release call failed"
 
 StepFn = Callable[..., Awaitable[Any]]
 GatewayCall = Callable[[str, Dict[str, Any]], Dict[str, Any]]
-BOOKING_STATUS_SQL = "SELECT status FROM bookings WHERE booking_id = %s"
+BOOKING_STATUS_SQL = (
+    "SELECT status, (hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed "
+    "FROM bookings WHERE booking_id = %s"
+)
 # The holds Lambda takes this lock for its whole transaction, so a read that takes it first
 # waits for any hold still in flight on the journey, then sees it committed or gone.
 JOURNEY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
@@ -81,6 +86,17 @@ SELECT hr.booking_id, hr.fingerprint, b.status,
 CLEAR_REJECTION_CODES = frozenset({"unauthorized", "throttled"})
 UNSENT_ERRORS = (CallerCredentialError, CallerClaimsError, AgentCoreNotConfiguredError)
 UNKNOWN_ANSWERS = (UNREADABLE_RESULT, NO_RELEASE_RECEIPT)
+
+
+def hold_has_lapsed(expires_at: Any, now: datetime) -> bool:
+    """True when the hold's expiry is at or before ``now``; an unreadable expiry has not lapsed."""
+    try:
+        expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return expiry <= now
 
 
 def _unreleased_note(error: Optional[str]) -> str:
@@ -533,9 +549,9 @@ class WorkflowNodes:
     @staticmethod
     def _committed_receipt(committed: Dict[str, Any], journey_id: str) -> Dict[str, Any]:
         """A receipt from the booking Aurora holds for the request, reported as the Lambda would."""
-        status = str(committed["status"])
-        if status == "held" and committed.get("lapsed"):
-            status = "expired"
+        status = effective_hold_status(
+            str(committed["status"]), lapsed=bool(committed.get("lapsed"))
+        )
         return {
             "hold_id": str(committed["booking_id"]),
             "journey_id": journey_id,
@@ -1038,7 +1054,10 @@ class WorkflowNodes:
             )
         )
         activities.append(self._snapshot_activity("synthesize"))
-        return {"response": response, "activities": activities}
+        result: Dict[str, Any] = {"response": response, "activities": activities}
+        if state.get("hold_id") and hold_status:
+            result["hold_status"] = hold_status
+        return result
 
     @staticmethod
     def _hold_paragraph(state: Dict[str, Any], hold_status: Optional[str]) -> str:
@@ -1057,8 +1076,7 @@ class WorkflowNodes:
                 f"\n\nAurora recorded courtesy hold {state['hold_id']} for "
                 f"{state.get('hold_package')}, {state.get('hold_duration')}. "
                 f"Recorded status: {hold_status or 'held'}. "
-                f"Expires at {state.get('hold_expires_at')}. "
-                "Read the current receipt before confirming the trip."
+                + WorkflowNodes._hold_advice(state, hold_status)
             )
         if state.get("hold_unavailable"):
             return (
@@ -1072,11 +1090,26 @@ class WorkflowNodes:
             )
         return ""
 
+    @staticmethod
+    def _hold_advice(state: Dict[str, Any], hold_status: Optional[str]) -> str:
+        """What the traveler does next, given the hold's current status."""
+        if hold_status == "expired":
+            return (
+                f"The hold lapsed at {state.get('hold_expires_at')}, so those seats are no "
+                "longer held. Place a new hold before confirming the trip."
+            )
+        return (
+            f"Expires at {state.get('hold_expires_at')}. "
+            "Read the current receipt before confirming the trip."
+        )
+
     async def _current_hold_status(self, state: Dict[str, Any]) -> Optional[str]:
         """The hold's status now: the Aurora booking row, else the status the hold step saved.
 
         The booking row is the record of truth, since compensation may have released
-        it after the hold step saved "held".
+        it after the hold step saved "held". Aurora's read already applies the expiry by
+        its own clock. Only the saved fallback is judged by this worker's clock: a stored
+        "held" whose expiry has passed reads as "expired", the same rule reconciliation applies.
         """
         saved = state.get("hold_status")
         hold_id = state.get("hold_id")
@@ -1093,11 +1126,17 @@ class WorkflowNodes:
                 "could not read booking %s back from Aurora; reporting its saved status: %s",
                 hold_id, exc,
             )
-            return saved
-        return current or saved
+            current = None
+        if current is not None:
+            return current  # Aurora already judged the lapse by its own clock
+        lapsed = hold_has_lapsed(state.get("hold_expires_at"), utc_now())
+        return effective_hold_status(saved, lapsed=lapsed)
 
     async def _booking_status(self, traveler_id: str, booking_id: str) -> Optional[str]:
-        """The booking's current status, read under the traveler's RLS scope."""
+        """The booking's current status, read under the traveler's RLS scope.
+
+        A held booking past its expiry by Aurora's clock reads as ``expired``.
+        """
         from backend.agentcore.identity import get_agentcore_identity
         from backend.db.rds_data_client import get_rds_data_client
 
@@ -1107,4 +1146,6 @@ class WorkflowNodes:
             authorization=get_agentcore_identity().authorization_context(),
         ) as tx:
             rows = await db.execute(BOOKING_STATUS_SQL, (booking_id,), transaction_id=tx)
-        return str(rows[0]["status"]) if rows else None
+        if not rows:
+            return None
+        return effective_hold_status(str(rows[0]["status"]), lapsed=bool(rows[0].get("lapsed")))

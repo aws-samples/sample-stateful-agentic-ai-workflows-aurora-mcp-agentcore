@@ -135,8 +135,7 @@ export function DesktopMeridianApp({
   const stopSession = useCallback(async () => {
     if (!journeyIdForStop) return;
     await stopRuntimeSession(journeyIdForStop);
-    refreshJourney();
-  }, [journeyIdForStop, refreshJourney]);
+  }, [journeyIdForStop]);
   const latestWorkflowRead = useRef<string | null>(null);
   useEffect(() => {
     // Recovery polling owns its final read; other views refresh after a workflow reply.
@@ -657,6 +656,7 @@ export function DesktopMeridianApp({
             thread={runPhase === 5 ? state.conversationId : null}
             running={runPhase === 5 && state.isLoading}
             onStopSession={stopSession}
+            onStopSettled={refreshJourney}
           />
         </aside>
       )}

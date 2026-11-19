@@ -172,6 +172,27 @@ describe('JourneyContinuityRail', () => {
     expect(rows()).not.toContain('Session stopped while waiting');
   });
 
+  it('refreshes the journey after a failed stop so the rail shows the live state', async () => {
+    const onStop = vi.fn().mockRejectedValue(
+      new Error('A newer session started for this journey.'));
+    const onStopSettled = vi.fn();
+    render(<JourneyContinuityRail document={pausedDocument()} error={null}
+      onStopSession={onStop} onStopSettled={onStopSettled} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A newer session started');
+    expect(onStopSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the journey once after a successful stop as well', async () => {
+    const onStopSettled = vi.fn();
+    render(<JourneyContinuityRail document={pausedDocument()} error={null}
+      onStopSession={vi.fn().mockResolvedValue(undefined)} onStopSettled={onStopSettled} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    await waitFor(() => expect(onStopSettled).toHaveBeenCalledTimes(1));
+  });
+
   it('records the stop only from Aurora, naming the case', () => {
     const document = pausedDocument();
     const stopped = (item: Partial<SessionStop>) => ({

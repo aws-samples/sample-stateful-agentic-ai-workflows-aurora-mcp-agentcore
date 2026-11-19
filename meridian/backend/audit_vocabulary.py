@@ -88,6 +88,7 @@ CODE_CLASSES = {
     "hold_price_mismatch": DATABASE_GUARD,
     "hold_total_mismatch": DATABASE_GUARD,
     "budget_ceiling_exceeded": BUSINESS_RULE,
+    "budget_unclear": BUSINESS_RULE,
     "hold_failed": ERROR,
     "booking_failed": ERROR,
     "release_failed": ERROR,

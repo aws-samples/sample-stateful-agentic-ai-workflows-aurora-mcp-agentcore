@@ -74,7 +74,7 @@ def narration_prompt(
     ceiling = (
         f"${budget_ceiling_cents / 100:,.2f} for this party"
         if budget_ceiling_cents
-        else "not set"
+        else "none usable: the saved budget needs one dollar amount or one range"
     )
     return (
         f"The traveler confirmed {ACTION_LABELS[action]} for these terms:\n"

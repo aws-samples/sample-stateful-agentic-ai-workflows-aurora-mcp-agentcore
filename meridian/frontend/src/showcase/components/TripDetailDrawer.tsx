@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Bookmark, GitCompareArrows, ShieldCheck, X } from 'lucide-react';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -8,9 +8,32 @@ import { TripHoldReceipt } from './TripHoldReceipt';
 import { BookingConfirmation } from './BookingConfirmation';
 import { useHoldClock } from '../hooks/useHoldClock';
 import { firstNameOf } from '../lib/travelerIdentity';
+import {
+  defaultDuration, dollars, holdTerms, placesLabel, publishedDurations, termsLabel,
+} from '../lib/holdTerms';
 
-function duration(product: Product) {
-  return product.available_sizes?.[0] ?? 'Flexible duration';
+const NO_DURATION = 'Flexible duration';
+
+/**
+ * The duration the traveler picked for this trip and party, or the default. A pick for another
+ * trip or party size, or for a duration the trip no longer lists, is ignored.
+ */
+function useDurationChoice(product: Product | null, party: number) {
+  const [picked, setPicked] = useState<{ key: string; duration: string } | null>(null);
+  const key = `${product?.product_id}|${party}`;
+  const durations = product ? publishedDurations(product) : [];
+  const valid = picked !== null && picked.key === key && durations.includes(picked.duration);
+  const chosen = valid ? picked.duration : product ? defaultDuration(product, party) : undefined;
+  return { chosen, durations, choose: (duration: string) => setPicked({ key, duration }) };
+}
+
+/** Arrow keys, Home and End move the choice through the options, wrapping at the ends. */
+function nextOption(key: string, index: number, count: number): number | null {
+  if (key === 'ArrowRight' || key === 'ArrowDown') return (index + 1) % count;
+  if (key === 'ArrowLeft' || key === 'ArrowUp') return (index - 1 + count) % count;
+  if (key === 'Home') return 0;
+  if (key === 'End') return count - 1;
+  return null;
 }
 
 export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
@@ -25,6 +48,16 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const stopRef = useRef<HTMLButtonElement>(null);
   const firstName = firstNameOf(state.traveler);
   const confirmLabel = firstName ? `Confirm this trip for ${firstName}` : 'Confirm this trip';
+  const party = state.travelersCount;
+  const { chosen, durations, choose } = useDurationChoice(product ?? null, party);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const reviewed = state.holdReview;
+  const review = product && reviewed?.productId === product.product_id
+    && reviewed.quote.size === chosen && reviewed.quote.quantity === party ? reviewed : null;
+  // A review belongs to one duration and party size; changing either drops it.
+  useEffect(() => {
+    if (reviewed && !review) state.clearHoldReview();
+  }, [reviewed, review, state]);
   // Confirming removes the focused button, and a finished write removes Stop
   // waiting. Keep keyboard focus in the dialog instead of dropping it on the page.
   useEffect(() => {
@@ -39,10 +72,21 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const receiptItem = activeHold || confirmed
     ? hold?.order.items.find(item => item.product_id === product.product_id)
     : undefined;
-  const party = receiptItem?.quantity ?? state.travelersCount;
-  const unitPrice = receiptItem?.unit_price ?? product.price;
-  const tripDuration = receiptItem?.size ?? duration(product);
-  const total = receiptItem && hold ? hold.order.total : product.price * party;
+  const catalogCents = Math.round(product.price * 100);
+  const terms = review?.quote ?? (chosen ? holdTerms(product, chosen, party) : undefined);
+  const shownParty = receiptItem?.quantity ?? party;
+  const unitPrice = receiptItem
+    ? `$${receiptItem.unit_price.toLocaleString()}` : dollars(terms?.unit_price_cents ?? catalogCents);
+  const tripDuration = receiptItem?.size ?? chosen ?? NO_DURATION;
+  const total = receiptItem && hold
+    ? `$${hold.order.total.toLocaleString()}` : dollars(terms?.total_cents ?? catalogCents * party);
+  const onOptionKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const target = nextOption(event.key, index, durations.length);
+    if (target === null) return;
+    event.preventDefault();
+    choose(durations[target]);
+    optionRefs.current[target]?.focus();
+  };
   const availability = Object.entries(product.availability ?? {});
   const highlights = product.highlights?.length
     ? product.highlights
@@ -79,16 +123,39 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               traveler={state.traveler}
               hold={hold}
               budgetPerTravelerCents={state.budgetCeilingPerTravelerCents}
+              budgetUnclear={state.budgetUnclear}
               busy={state.isLoading}
               onConfirm={() => void state.confirmTrip(product)}
               onCancel={state.dismissBookingConfirmation}
             />
           )}
           <div className="mds-trip-facts">
-            <div><span>Package</span><b>${unitPrice.toLocaleString()} / traveler</b></div>
+            <div><span>Package</span><b>{unitPrice} / traveler</b></div>
             <div><span>Duration</span><b>{tripDuration}</b></div>
-            <div><span>{receiptItem ? 'Recorded total' : 'Estimate'} for {party} {party === 1 ? 'traveler' : 'travelers'}</span><b>${total.toLocaleString()}</b></div>
+            <div><span>{receiptItem ? 'Recorded total' : 'Total'} for {shownParty} {shownParty === 1 ? 'traveler' : 'travelers'}</span><b>{total}</b></div>
           </div>
+          {!receiptItem && durations.length > 1 && (
+            <section className="mds-trip-section">
+              <h3 id="trip-length-title">Trip length</h3>
+              <div className="mds-duration-options" role="radiogroup" aria-labelledby="trip-length-title">
+                {durations.map((option, index) => (
+                  <button
+                    key={option}
+                    ref={(node) => { optionRefs.current[index] = node; }}
+                    className="mds-duration-option"
+                    type="button"
+                    role="radio"
+                    aria-checked={option === chosen}
+                    tabIndex={option === chosen ? 0 : -1}
+                    onClick={() => choose(option)}
+                    onKeyDown={(event) => onOptionKey(event, index)}
+                  >
+                    <b>{option}</b>{' '}<span>{placesLabel(product, option)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           <section className="mds-trip-section">
             <h3>What is included</h3>
             <ul>{highlights.slice(0, 6).map((item) => <li key={item}>{item}</li>)}</ul>
@@ -117,6 +184,17 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               <span>{state.actionDrawer.message}</span>
             </div>
           )}
+          {review && (
+            <div className="mds-hold-review" role="alert">
+              <b>{review.message}</b>
+              <span>
+                Now {dollars(review.quote.unit_price_cents)} per traveler, {dollars(review.quote.total_cents)} total
+                for {review.quote.quantity} {review.quote.quantity === 1 ? 'traveler' : 'travelers'}.
+                {review.code === 'price_changed' && catalogCents !== review.quote.unit_price_cents
+                  && ` Before: ${dollars(catalogCents)} per traveler.`}
+              </span>
+            </div>
+          )}
           {state.error && <div className="mds-error-banner" role="alert">{state.error}</div>}
           <footer className="mds-trip-modal-actions">
             <button type="button" onClick={() => state.saveTrip(product)} aria-pressed={saved}>
@@ -138,14 +216,19 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             )}
             {!confirming && (
               <button
-                className="is-primary"
+                className="is-primary mds-hold-action"
                 type="button"
-                onClick={() => activeHold ? state.requestBookingConfirmation(product) : void state.holdTrip(product)}
+                onClick={() => activeHold ? state.requestBookingConfirmation(product) : void state.holdTrip(product, terms)}
                 disabled={state.isLoading || confirmed}
               >
                 {state.pendingWrite === 'confirm' ? 'Confirming…'
                   : state.pendingWrite === 'hold' ? 'Creating hold…'
-                  : confirmed ? 'Trip confirmed' : activeHold ? confirmLabel : 'Request 12-hour hold'}
+                  : confirmed ? 'Trip confirmed' : activeHold ? confirmLabel : (
+                    <>
+                      <span>{review ? 'Approve the new price and request hold' : 'Request 12-hour hold'}</span>
+                      {terms && <small>{termsLabel(terms)}</small>}
+                    </>
+                  )}
               </button>
             )}
           </footer>

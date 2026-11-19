@@ -68,6 +68,7 @@ from backend.agents.budget import (
     BUDGET_KEYS,
     budget_ceiling_from_facts,
     budget_ceiling_per_traveler_cents,
+    budget_is_unclear,
 )
 from backend.agents.phase_04_production.audit_outcome import (
     REFUSED_STATUS,
@@ -239,6 +240,7 @@ class HoldOutcome:
     message: str
     conv_id: str
     trace_id: Optional[str]
+    error: Optional[str] = None
 
 
 def _with_budget_fact(
@@ -738,6 +740,11 @@ class ProductionAgent:
             if per_traveler is not None
             else "No saved per-traveler budget is available; the platform default applies."
         )
+        if budget_is_unclear(read.budget_facts):
+            saved_budget = (
+                "The saved budget has no clear US dollar amount, so no hold or booking can be "
+                "placed until the traveler states one, for example $75 per traveler."
+            )
         # Put the current, calculated basis before recalled prose so it survives
         # context truncation and cannot be confused with an earlier party size.
         budget_context = (
@@ -1175,6 +1182,7 @@ class ProductionAgent:
             message=decision.message,
             conv_id=read.conv_id,
             trace_id=decision.trace_id,
+            error=decision.hold_error,
         )
 
     async def process_booking(

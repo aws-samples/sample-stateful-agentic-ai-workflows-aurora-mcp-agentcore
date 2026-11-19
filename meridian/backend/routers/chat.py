@@ -54,6 +54,15 @@ from backend.http_auth import (
     authorize_traveler,
     require_http_principal,
 )
+from backend.hold_quote import (
+    PRICE_CHANGED,
+    PRICE_CHANGED_MESSAGE,
+    PRICE_MISMATCH_ERROR,
+    HoldQuote,
+    HoldQuoteReply,
+    current_terms,
+    require_agreeing_quote,
+)
 from backend.token_expiry import credential_error, error_code
 from backend.search_utils import (
     PACKAGE_COLUMNS,
@@ -1636,6 +1645,10 @@ def _stream_error_event(error: HTTPException) -> dict:
     code = error_code(error)
     if code:
         return {"type": "error", "message": str(error.detail), "code": code}
+    if isinstance(error, HoldQuoteReply):
+        body = error.body()
+        return {"type": "error", "message": body["error"], "status": error.status_code,
+                "code": body["code"], "quote": body["quote"]}
     worded = getattr(error, "code", None)
     return {
         "type": "error", "message": str(error.detail), "status": error.status_code,
@@ -2329,6 +2342,9 @@ class OrderRequest(BaseModel):
     # Phase 4 holds run inside the conversation's AgentCore Memory session, so
     # the showcase passes the active conversation id along with the hold.
     conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    # The terms the traveler saw on the Hold action. An older client sends none and is told to
+    # review the current price (409 quote_required); an unseen price is never approved.
+    quote: Optional[HoldQuote] = None
 
 
 class OrderResponse(BaseModel):
@@ -2405,12 +2421,21 @@ def _requested_duration(row: dict, requested: Optional[str]) -> str:
     return duration
 
 
-def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: dict) -> Order:
-    total = round(float(pkg["price"]) * request.quantity, 2)
+def _reserved_total(hold: dict, quote: HoldQuote) -> float:
+    """The amount the hold reserved: the Lambda's ``totalAmount``, else the quoted total."""
+    reported = hold.get("totalAmount")
+    return float(reported) if reported is not None else quote.total_cents / 100
+
+
+def _order_from_hold(
+    pkg: dict, request: "OrderRequest", duration: str, hold: dict, quote: HoldQuote
+) -> Order:
+    total = round(_reserved_total(hold, quote), 2)
     return Order(
         order_id=str(hold["bookingId"]),
         items=[OrderItem(product_id=pkg["product_id"], name=pkg["name"], size=duration,
-                         quantity=request.quantity, unit_price=pkg["price"])],
+                         quantity=request.quantity,
+                         unit_price=round(total / request.quantity, 2))],
         subtotal=total,
         tax=0.0,
         shipping=0.0,
@@ -2425,15 +2450,31 @@ def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: di
     )
 
 
+async def _price_changed(request: "OrderRequest", duration: str) -> HoldQuoteReply:
+    """The 409 for a hold the Lambda refused at the quoted price, with the catalog's price now."""
+    _, fresh = await _package_for_hold(request.product_id)
+    return HoldQuoteReply(
+        PRICE_CHANGED, PRICE_CHANGED_MESSAGE,
+        current_terms(fresh["price"], duration, request.quantity),
+    )
+
+
 async def production_hold(
     request: "OrderRequest", *, authorization_subject: Optional[str] = None
 ) -> OrderResponse:
     """Phase 4 hold: the runtime asks the gateway, Cedar decides, the Lambda writes.
 
-    The traveler's click is the confirmation. The backend passes it to the runtime
-    as ``hold_confirmed``; the runtime pins it onto the tool call; the gateway's
-    Cedar policy permits the hold only with it. Nothing here writes to Aurora.
+    The traveler's click is the confirmation of the terms on the Hold action. The backend passes
+    the quoted price to the runtime as the hold's price and ``hold_confirmed``; the runtime pins
+    it onto the tool call; the gateway's Cedar policy permits the hold only with it, and the
+    Lambda refuses a new write whose quoted price is no longer the catalog price. Nothing here
+    writes to Aurora.
     ``authorization_subject`` is the verified Cognito subject the audit row names, or None.
+
+    Raises:
+        HoldQuoteReply: 409 ``quote_required`` when the request carries no quote, and 409
+            ``price_changed`` when the catalog price moved after the traveler saw it. No hold
+            exists in either case.
     """
     from backend.agents.phase_04_production.production_agent import (
         HoldTarget,
@@ -2442,11 +2483,14 @@ async def production_hold(
 
     row, pkg = await _package_for_hold(request.product_id)
     duration = _requested_duration(row, request.size)
+    quote = require_agreeing_quote(
+        request.quote, current_terms(pkg["price"], duration, request.quantity)
+    )
     target = HoldTarget(
         package_id=pkg["product_id"],
         duration=duration,
         travelers=request.quantity,
-        unit_price_cents=int(round(float(pkg["price"]) * 100)),
+        unit_price_cents=quote.unit_price_cents,
     )
     try:
         outcome = await create_production_agent().process_hold(
@@ -2466,9 +2510,11 @@ async def production_hold(
     activities = [_memory_activity_to_entry(a) for a in outcome.activities]
     for act in activities:
         log_activity_entry(act)
+    if not outcome.hold and outcome.error == PRICE_MISMATCH_ERROR:
+        raise await _price_changed(request, duration)
     if not outcome.hold:
         return OrderResponse(message=outcome.message, order=None, activities=activities)
-    order = _order_from_hold(pkg, request, duration, outcome.hold)
+    order = _order_from_hold(pkg, request, duration, outcome.hold, quote)
     log_order(phase=4, order_id=order.order_id, product_id=request.product_id,
               total=order.total, status=order.status)
     return OrderResponse(message=outcome.message, order=order, activities=activities)

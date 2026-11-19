@@ -855,3 +855,15 @@ def test_a_workflow_only_tool_stays_withheld_even_when_it_gains_a_span(monkeypat
 
     assert only and sorted(withheld) == only
     assert not {t.tool_name for t in callable_tools} & set(only)
+
+
+def test_a_denial_at_a_zero_ceiling_names_the_unclear_budget_not_a_zero_dollar_ceiling():
+    from turn_trace import deny_reasons
+
+    reasons = deny_reasons({"travelerConfirmed": True, "totalCents": 500000,
+                            "budgetCeilingCents": 0})
+    text = " ".join(reasons)
+    assert "$0.00" not in text
+    assert "one dollar amount or one range" in text
+    assert "exceeds the saved budget ceiling $3,000.00" in " ".join(deny_reasons(
+        {"travelerConfirmed": True, "totalCents": 500000, "budgetCeilingCents": 300000}))

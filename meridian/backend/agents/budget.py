@@ -17,10 +17,24 @@ from collections.abc import Mapping
 DEFAULT_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_CENTS = 400000
 # Jordan's seeded facts carry budget_cap ("$3,200") and per_person_range
-# ("Prefers $2k-3.5k per person"). The cap wins when both are present.
+# ("Prefers $2k-3.5k per person"). The first key present in this order decides; a lower
+# key never overrides it, even when the first one cannot be read.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
-AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)(k\b)?", re.I)
-
+NUMBER = re.compile(r"(\d+(?:\.\d+)?)(k\b)?", re.I)
+THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}\b)")
+US_PREFIX = re.compile(r"(?<![A-Za-z])US\s?\$", re.I)
+OTHER_CURRENCY = re.compile(
+    r"[A-Za-z]\$|[\u20a0-\u20bf\u00a2-\u00a5]"
+    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR)\b",
+    re.I,
+)
+USD_SUFFIX = re.compile(r"\s*USD\b", re.I)
+USD_BEFORE = re.compile(r"(?<![A-Za-z])USD\s*$", re.I)
+RANGE_JOIN = re.compile(
+    r"\s*(?:USD)?\s*(?:-|\u2013|\u2014|to)\s*\$?\s*(?:USD)?\s*", re.I
+)
+# A saved budget is one dollar amount or one range: marked amounts ($, US$, USD) win over bare
+# figures; a single bare figure or range counts as dollars. Anything else is unclear.
 
 def default_budget_cents(env: Mapping[str, str | None] | None = None) -> int:
     """Validate the whole-trip default shared by release configuration and callers."""
@@ -33,17 +47,76 @@ def default_budget_cents(env: Mapping[str, str | None] | None = None) -> int:
     return ceiling
 
 
-def _dollars(text: str) -> list[float]:
-    values = []
-    for number, thousands in AMOUNT.findall(text.replace(",", "")):
-        value = float(number) * (1000 if thousands else 1)
-        if value >= 100:
-            values.append(value)
-    return values
+def _is_marked(text: str, match: re.Match) -> bool:
+    """Whether a figure carries ``$`` or ``USD`` before or after it."""
+    before = text[:match.start()]
+    return (
+        before.rstrip().endswith("$")
+        or USD_BEFORE.search(before) is not None
+        or USD_SUFFIX.match(text, match.end()) is not None
+    )
+
+
+def _spread_marks(marked: list[bool], joined: list[bool]) -> list[bool]:
+    """A figure joined to a marked one is marked too: the later figure of ``$100 to 200``."""
+    spread = list(marked)
+    for i in range(1, len(spread)):
+        spread[i] = spread[i] or (joined[i - 1] and spread[i - 1])
+    for i in reversed(range(len(spread) - 1)):
+        spread[i] = spread[i] or (joined[i] and spread[i + 1])
+    return spread
+
+
+def parse_usd_amounts(text: str) -> list[float] | None:
+    """The one US dollar amount or one joined range in ``text``, or None when it is not clear.
+
+    Figures that carry ``$``, ``US$`` or ``USD`` (before or after) are the only ones used when
+    any exist. Otherwise a single bare figure, or a single bare joined range, counts as dollars.
+    A range is two figures joined by ``-``, an en dash or ``to``. A ``k`` suffix means thousands.
+    More than one amount or range, a figure of zero, another currency, or no figure is None.
+
+    Returns:
+        ``[amount]`` or ``[low, high]`` in dollars, or None.
+    """
+    text = US_PREFIX.sub("$", THOUSANDS_COMMA.sub("", text))
+    found = list(NUMBER.finditer(text))
+    if not found or OTHER_CURRENCY.search(text):
+        return None
+    joined = [
+        RANGE_JOIN.fullmatch(text[a.end():b.start()]) is not None
+        for a, b in zip(found, found[1:], strict=False)
+    ]
+    marked = [_is_marked(text, match) for match in found]
+    chosen = _spread_marks(marked, joined) if any(marked) else [True] * len(found)
+    picked = [i for i, keep in enumerate(chosen) if keep]
+    amounts = [
+        float(found[i].group(1)) * (1000 if found[i].group(2) else 1) for i in picked
+    ]
+    one_range = len(picked) == 2 and picked[1] == picked[0] + 1 and joined[picked[0]]
+    if min(amounts) <= 0 or not (len(picked) == 1 or one_range):
+        return None
+    return amounts
+
+
+def _first_budget_text(facts: list[dict]) -> str | None:
+    """The value of the highest-priority budget fact present, or None when there is none."""
+    by_key: dict[str, str] = {}
+    for fact in facts:
+        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
+    return next((by_key[key] for key in BUDGET_KEYS if key in by_key), None)
+
+
+def budget_is_unclear(facts: list[dict]) -> bool:
+    """Whether the first budget fact present has no unambiguous US dollar amount.
+
+    A lower-priority fact or the default never stands in for it.
+    """
+    text = _first_budget_text(facts)
+    return text is not None and parse_usd_amounts(text) is None
 
 
 def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
-    """Return the saved per-traveler cap in cents, or None when nothing is saved.
+    """Return the saved per-traveler cap in cents, or None when no cap can be read.
 
     This is the figure the traveler actually saved. The party ceiling the policy
     judges is this times the party size, so any surface that shows a budget can
@@ -54,17 +127,13 @@ def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
             confidence first. When rows share a key, the first one wins.
 
     Returns:
-        The largest dollar figure in the first budget fact present, in cents, or
-        ``None`` when the traveler has saved no budget fact at all.
+        The largest US dollar figure in the first budget fact present, in cents. ``None`` when
+        the traveler has saved no budget fact, or when the first one has no unambiguous US
+        dollar amount; :func:`budget_is_unclear` tells the two apart.
     """
-    by_key: dict[str, str] = {}
-    for fact in facts:
-        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
-    for key in BUDGET_KEYS:
-        amounts = _dollars(by_key.get(key, ""))
-        if amounts:
-            return int(round(max(amounts) * 100))
-    return None
+    text = _first_budget_text(facts)
+    amounts = parse_usd_amounts(text) if text is not None else None
+    return int(round(max(amounts) * 100)) if amounts else None
 
 
 def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
@@ -75,10 +144,14 @@ def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
         travelers: Party size; the saved budget is per person.
 
     Returns:
-        The largest dollar figure in the budget fact, per person, times the party
-        size, in cents. Falls back to ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS``,
-        which is a whole-trip default and is not multiplied by the party.
+        The largest US dollar figure in the budget fact, per person, times the party size,
+        in cents. ``0`` when the first budget fact present is unclear: every priced hold
+        is above it, so the gateway policy authorizes nothing. Falls back to
+        ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS``, a whole-trip default that is not multiplied
+        by the party, only when no budget fact is saved at all.
     """
+    if budget_is_unclear(facts):
+        return 0
     per_traveler = budget_ceiling_per_traveler_cents(facts)
     if per_traveler is not None:
         return per_traveler * max(1, int(travelers))

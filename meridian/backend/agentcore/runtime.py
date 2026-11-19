@@ -83,6 +83,8 @@ class RuntimeDecision:
     packages: list[dict[str, Any]] = field(default_factory=list)
     hold: Optional[dict[str, Any]] = None
     hold_refused: Optional[str] = None
+    # The target's own error code when it refused the hold, such as ``hold_price_mismatch``.
+    hold_error: Optional[str] = None
     booking: Optional[dict[str, Any]] = None
     booking_refused: Optional[str] = None
     policy_decision: Optional[str] = None
@@ -512,6 +514,7 @@ def _apply_event(decision: RuntimeDecision, event: dict[str, Any]) -> None:
     elif kind == "hold":
         decision.hold = event.get("hold")
         decision.hold_refused = event.get("refused")
+        decision.hold_error = event.get("error")
         decision.policy_decision = event.get("policyDecision")
     elif kind == "booking":
         decision.booking = event.get("booking")

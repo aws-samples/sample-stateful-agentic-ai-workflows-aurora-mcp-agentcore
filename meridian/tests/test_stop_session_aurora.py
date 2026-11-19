@@ -270,28 +270,28 @@ async def test_a_run_that_pauses_while_the_stop_lands_is_recorded_as_waiting(jou
     assert (await _stop_rows(journey))[0]["released_execution_id"] is None
 
 
-async def test_a_newer_claim_during_the_stop_is_the_execution_that_is_released(journey_with):
+async def test_a_replacement_claimed_during_the_stop_keeps_its_lease(journey_with):
     make, runtime = journey_with
-    journey, thread = await make(status="running", completed=["intake", "retrieve"])
+    journey, thread = await make(status="paused", completed=["intake", "retrieve"])
 
-    async def resume_claims_first(thread_id):
-        await _master(
-            "UPDATE journey_executions SET status = 'abandoned', lease_expires_at = NULL "
-            "WHERE thread_id = %s", (thread_id,))
+    async def another_tab_resumes(thread_id):
         await _master(
             "INSERT INTO journey_executions (execution_id, journey_id, thread_id, attempt, "
             "worker_id, status, lease_expires_at) VALUES (%s, %s, %s, 2, 'w2', 'running', "
             "CURRENT_TIMESTAMP + interval '300 seconds')",
             (f"exec-{uuid.uuid4().hex[:12]}", journey, thread_id))
 
-    runtime.while_stopping = resume_claims_first
-    reply = await journeys.stop_session(journey, JORDAN, None)
-    assert reply["stopped_during"] == "running"
+    runtime.while_stopping = another_tab_resumes
+    with pytest.raises(HTTPException) as caught:
+        await journeys.stop_session(journey, JORDAN, None)
+    assert caught.value.status_code == 409
     rows = await _statuses(thread)
-    assert [r["status"] for r in rows] == ["abandoned", "abandoned"]
-    assert (await _stop_rows(journey))[0]["released_execution_id"] == rows[1]["execution_id"]
-    fresh = await claim_execution(get_rds_data_client(), journey, thread, "resumer")
-    assert fresh.claimed is True and fresh.attempt == 3
+    assert [r["status"] for r in rows] == ["paused", "running"]
+    assert rows[1]["lease_expires_at"] is not None
+    assert await _stop_rows(journey) == []
+    again = await journeys.stop_session(journey, JORDAN, None)
+    assert again["stopped_during"] == "running"
+    assert [r["status"] for r in await _statuses(thread)] == ["paused", "abandoned"]
 
 
 async def test_a_repeat_stop_is_refused_and_adds_no_row(journey_with):

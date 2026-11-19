@@ -88,3 +88,29 @@ describe('saveBookingRecovery merges', () => {
     expect(saved.bookings).toEqual({ prod_1: 'ord_1', prod_2: 'ord_2' });
   });
 });
+
+describe('a saved quote is trusted only when it matches its intent', () => {
+  beforeEach(() => window.localStorage.clear());
+  const quote = (over: Record<string, unknown> = {}) =>
+    ({ unit_price_cents: 100000, total_cents: 200000, currency: 'USD', size: 'standard', quantity: 2, ...over });
+  const quoteAfterLoad = (saved: unknown) => {
+    window.localStorage.setItem(`meridian:booking-recovery:v1:${TRAVELER}`, JSON.stringify({
+      intents: { [KEY]: { ...make('conv_hold_q'), quote: saved } }, bookings: {},
+    }));
+    return loadBookingRecovery(TRAVELER).intents[KEY].quote;
+  };
+
+  it('keeps a quote whose total is the unit price times the quantity for the same trip length', () => {
+    expect(quoteAfterLoad(quote())).toEqual(quote());
+  });
+
+  it.each([
+    ['a total that is not unit times quantity', { total_cents: 150000 }],
+    ['a different trip length', { size: 'premium' }],
+    ['a different quantity', { quantity: 3, total_cents: 300000 }],
+  ])('discards a quote with %s', (_name, over) => {
+    const intent = (() => { quoteAfterLoad(quote(over)); return loadBookingRecovery(TRAVELER).intents[KEY]; })();
+    expect(intent.quote).toBeUndefined();
+    expect(intent.conversationId).toBe('conv_hold_q');
+  });
+});

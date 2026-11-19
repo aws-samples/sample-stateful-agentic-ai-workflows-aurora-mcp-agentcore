@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import boto3
+from botocore.config import Config
 
 PARAMETERS = (
     "/meridian/aurora/cluster_arn",
@@ -86,10 +87,27 @@ BOOKED_PARTY_SQL = (
     "WHERE bl.booking_id = :b AND b.traveler_id = :t"
 )
 MAX_REQUEST_CHAIN = 50
+# One attempt in all: a re-sent statement or commit would run twice inside one Data API
+# transaction. The read timeout stays under the Lambda's 30 s timeout.
+DATA_API_CONFIG = Config(
+    retries={"mode": "standard", "total_max_attempts": 1}, connect_timeout=5, read_timeout=25
+)
 # The ceiling derivation in backend/agents/budget.py, repeated here because this
-# function deploys alone. tests/test_holds_lambda.py keeps the two in step.
+# function deploys alone. tests/test_budget_parity.py runs one table of cases against both.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
-AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)(k\b)?", re.I)
+NUMBER = re.compile(r"(\d+(?:\.\d+)?)(k\b)?", re.I)
+THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}\b)")
+US_PREFIX = re.compile(r"(?<![A-Za-z])US\s?\$", re.I)
+OTHER_CURRENCY = re.compile(
+    r"[A-Za-z]\$|[\u20a0-\u20bf\u00a2-\u00a5]"
+    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR)\b",
+    re.I,
+)
+USD_SUFFIX = re.compile(r"\s*USD\b", re.I)
+USD_BEFORE = re.compile(r"(?<![A-Za-z])USD\s*$", re.I)
+RANGE_JOIN = re.compile(
+    r"\s*(?:USD)?\s*(?:-|\u2013|\u2014|to)\s*\$?\s*(?:USD)?\s*", re.I
+)
 DEFAULT_BUDGET_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_BUDGET_CENTS = 400000
 BINDING_SQL = (
@@ -148,6 +166,7 @@ BUSINESS_ERRORS = (
     "hold_price_mismatch",
     "hold_total_mismatch",
     "budget_ceiling_exceeded",
+    "budget_unclear",
     "hold_not_found",
 )
 
@@ -187,7 +206,7 @@ def _boot() -> None:
     if SUBJECT is None:
         SUBJECT = _load_subject()
     if RDS is None:
-        RDS = boto3.client("rds-data")
+        RDS = boto3.client("rds-data", config=DATA_API_CONFIG)
 
 
 def _parameters(values: dict) -> list[dict]:
@@ -351,13 +370,19 @@ def _pin_traveler_scope(traveler_id: str, tx: str) -> None:
     query(f"SET LOCAL ROLE {APP_ROLE}", None, tx)
 
 
-def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
+def _thread_journey(journey_ref: str, tx: str) -> str | None:
+    """The journey this thread already belongs to, or None. Serialized per thread."""
     query("SELECT pg_advisory_xact_lock(hashtextextended(:thread, 0))", {"thread": journey_ref}, tx)
     rows = query(
         "SELECT journey_id FROM journey_threads WHERE thread_id = :thread", {"thread": journey_ref}, tx
     )
-    if rows:
-        return str(rows[0]["journey_id"])
+    return str(rows[0]["journey_id"]) if rows else None
+
+
+def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
+    existing = _thread_journey(journey_ref, tx)
+    if existing:
+        return existing
     journey_id = f"jrn_{uuid.uuid4().hex[:12]}"
     query(
         "INSERT INTO journeys (journey_id, traveler_id, snapshot_store) VALUES (:j, :t, :b)",
@@ -424,13 +449,72 @@ def _verify_catalog_terms(args: dict, catalog_cents: int | None) -> None:
         raise RuntimeError("hold_total_mismatch")
 
 
-def _dollars(text: str) -> list[float]:
-    values = []
-    for number, thousands in AMOUNT.findall(text.replace(",", "")):
-        value = float(number) * (1000 if thousands else 1)
-        if value >= 100:
-            values.append(value)
-    return values
+def _is_marked(text: str, match: re.Match) -> bool:
+    """Whether a figure carries ``$`` or ``USD`` before or after it."""
+    before = text[:match.start()]
+    return (
+        before.rstrip().endswith("$")
+        or USD_BEFORE.search(before) is not None
+        or USD_SUFFIX.match(text, match.end()) is not None
+    )
+
+
+def _spread_marks(marked: list[bool], joined: list[bool]) -> list[bool]:
+    """A figure joined to a marked one is marked too: the later figure of ``$100 to 200``."""
+    spread = list(marked)
+    for i in range(1, len(spread)):
+        spread[i] = spread[i] or (joined[i - 1] and spread[i - 1])
+    for i in reversed(range(len(spread) - 1)):
+        spread[i] = spread[i] or (joined[i] and spread[i + 1])
+    return spread
+
+
+def parse_usd_amounts(text: str) -> list[float] | None:
+    """The one US dollar amount or one joined range in ``text``, or None when it is not clear.
+
+    Figures that carry ``$``, ``US$`` or ``USD`` (before or after) are the only ones used when
+    any exist. Otherwise a single bare figure, or a single bare joined range, counts as dollars.
+    A range is two figures joined by ``-``, an en dash or ``to``. A ``k`` suffix means thousands.
+    More than one amount or range, a figure of zero, another currency, or no figure is None.
+
+    Returns:
+        ``[amount]`` or ``[low, high]`` in dollars, or None.
+    """
+    text = US_PREFIX.sub("$", THOUSANDS_COMMA.sub("", text))
+    found = list(NUMBER.finditer(text))
+    if not found or OTHER_CURRENCY.search(text):
+        return None
+    joined = [
+        RANGE_JOIN.fullmatch(text[a.end():b.start()]) is not None
+        for a, b in zip(found, found[1:], strict=False)
+    ]
+    marked = [_is_marked(text, match) for match in found]
+    chosen = _spread_marks(marked, joined) if any(marked) else [True] * len(found)
+    picked = [i for i, keep in enumerate(chosen) if keep]
+    amounts = [
+        float(found[i].group(1)) * (1000 if found[i].group(2) else 1) for i in picked
+    ]
+    one_range = len(picked) == 2 and picked[1] == picked[0] + 1 and joined[picked[0]]
+    if min(amounts) <= 0 or not (len(picked) == 1 or one_range):
+        return None
+    return amounts
+
+
+def _first_budget_text(facts: list[dict]) -> str | None:
+    """The value of the highest-priority budget fact present, or None when there is none."""
+    by_key: dict[str, str] = {}
+    for fact in facts:
+        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
+    return next((by_key[key] for key in BUDGET_KEYS if key in by_key), None)
+
+
+def budget_is_unclear(facts: list[dict]) -> bool:
+    """The first budget fact present has no unambiguous US dollar amount.
+
+    A lower-priority fact or the default never stands in for it.
+    """
+    text = _first_budget_text(facts)
+    return text is not None and parse_usd_amounts(text) is None
 
 
 def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
@@ -441,23 +525,26 @@ def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
         travelers: Party size; the saved budget is per person.
 
     Returns:
-        The largest dollar figure in the first budget fact present, times the party. Without
-        a budget fact, ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS`` for the whole trip.
+        The largest US dollar figure in the first budget fact present, times the party; ``0``
+        when that fact is unclear. Without a budget fact,
+        ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS`` for the whole trip.
     """
-    by_key: dict[str, str] = {}
-    for fact in facts:
-        by_key.setdefault(str(fact.get("key", "")).lower(), str(fact.get("value", "")))
-    for key in BUDGET_KEYS:
-        amounts = _dollars(by_key.get(key, ""))
-        if amounts:
-            return int(round(max(amounts) * 100)) * max(1, int(travelers))
-    return int(os.getenv(DEFAULT_BUDGET_ENV, str(DEFAULT_BUDGET_CENTS)))
+    text = _first_budget_text(facts)
+    if text is None:
+        return int(os.getenv(DEFAULT_BUDGET_ENV, str(DEFAULT_BUDGET_CENTS)))
+    amounts = parse_usd_amounts(text)
+    return int(round(max(amounts) * 100)) * max(1, int(travelers)) if amounts else 0
 
 
 def _within_saved_budget(traveler_id: str, total_cents: int, travelers: int, tx: str) -> None:
-    """Refuse a total above the traveler's saved budget, whatever ceiling the caller sent."""
+    """Refuse a total above the traveler's saved budget, whatever ceiling the caller sent.
+
+    A saved budget with no unambiguous US dollar amount is refused as ``budget_unclear``.
+    """
     rows = query(PREFERENCES_SQL, {"traveler": traveler_id}, tx)
     facts = [{"key": row["preference_key"], "value": row["preference_value"]} for row in rows]
+    if budget_is_unclear(facts):
+        raise RuntimeError("budget_unclear")
     if total_cents > saved_ceiling_cents(facts, travelers):
         raise RuntimeError("budget_ceiling_exceeded")
 
@@ -470,11 +557,12 @@ def _is_replay(journey_id: str, hold: dict, tx: str) -> bool:
     return bool(rows) and rows[0]["fingerprint"] == hold["fingerprint"]
 
 
-def _claim_execution(execution_id: str, tx: str, journey_id: str | None = None) -> None:
+def _claim_execution(execution_id: str, tx: str, journey_id: str | None = None) -> str:
     """A workflow worker must still own its lease when the hold is written.
 
-    When the call names a journey, the execution must belong to that journey too; a live lease
-    on another journey is refused as ``journey_not_owned``.
+    Locks the execution row and returns the journey it belongs to. When the call names a
+    journey, the execution must belong to that journey too; a live lease on another journey is
+    refused as ``journey_not_owned``.
     """
     rows = query(
         "SELECT execution_id, journey_id FROM journey_executions WHERE execution_id = :e "
@@ -484,9 +572,11 @@ def _claim_execution(execution_id: str, tx: str, journey_id: str | None = None) 
     )
     if not rows:
         raise RuntimeError("execution_lease_lost")
-    if journey_id is not None and rows[0].get("journey_id") != journey_id:
+    owner = str(rows[0].get("journey_id"))
+    if journey_id is not None and owner != journey_id:
         raise RuntimeError("journey_not_owned")
     query("SELECT set_config('app.execution_id', :e, true)", {"e": execution_id}, tx)
+    return owner
 
 
 def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
@@ -551,6 +641,24 @@ def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx:
     return rows[0]
 
 
+def _hold_journey(args: dict, traveler_id: str, journey_ref: str, tx: str) -> str:
+    """The journey the hold belongs to, with a worker's lease bound to it.
+
+    A call with an ``executionId`` is a workflow worker, whose journey already exists. The
+    execution row is locked first, as the workflow does, then the thread's journey is resolved
+    without creating one: an unknown thread, or a journey other than the execution's, is
+    ``journey_not_owned``; a lapsed lease is ``execution_lease_lost``. A call without one
+    (Phase 4) resolves or creates its journey as before.
+    """
+    if not args.get("executionId"):
+        return _journey(traveler_id, journey_ref, tx)
+    owner = _claim_execution(str(args["executionId"]), tx)
+    journey_id = _thread_journey(journey_ref, tx)
+    if journey_id is None or journey_id != owner:
+        raise RuntimeError("journey_not_owned")
+    return journey_id
+
+
 def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[str, dict, dict]:
     """Inside the authorized transaction: reconcile a committed request, or check and hold.
 
@@ -561,9 +669,7 @@ def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[st
     _pin_traveler_scope(traveler_id, tx)
     journey_ref = str(args["journeyRef"])
     query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
-    if args.get("executionId"):
-        _claim_execution(str(args["executionId"]), tx)
-    journey_id = _journey(traveler_id, journey_ref, tx)
+    journey_id = _hold_journey(args, traveler_id, journey_ref, tx)
     if not args.get("holdRequestId"):
         hold["request_id"] = _live_request_id(hold["request_id"], journey_id, tx)
     if not _is_replay(journey_id, hold, tx):

@@ -28,6 +28,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from functools import partial
 from pathlib import Path
 
@@ -87,7 +88,12 @@ def call(base: str, headers: dict[str, str], path: str, body: dict | None = None
         return json.loads(response.read() or b"{}")
 
 
+NOT_AN_OBJECT = "the reply is not a JSON object"
+
+
 def check_health(result: dict) -> str | None:
+    if not isinstance(result, dict):
+        return NOT_AN_OBJECT
     if result.get("status") != "healthy" or not result.get("aurora_reachable"):
         return f"not healthy: {result.get('degraded_component') or result.get('status')}"
     return None
@@ -99,8 +105,13 @@ def check_turn(result: dict) -> str | None:
     The backend answers HTTP 200 with an "I encountered an error" message and an activity of
     type ``error`` when a route hits its catch-all, so the status alone does not prove success.
     """
+    if not isinstance(result, dict):
+        return NOT_AN_OBJECT
+    activities = result.get("activities", [])
+    if not isinstance(activities, list) or not all(isinstance(a, dict) for a in activities):
+        return "the activities field is not a list of objects"
     failed = [
-        a.get("title", "?") for a in result.get("activities", [])
+        a.get("title", "?") for a in activities
         if a.get("activity_type") == "error"
         or (a.get("telemetry") or {}).get("status") in {"error", "failed"}
     ]
@@ -111,12 +122,16 @@ def check_turn(result: dict) -> str | None:
 
 def check_catalog(result: dict) -> str | None:
     """The catalog must list at least one product."""
+    if not isinstance(result, dict):
+        return NOT_AN_OBJECT
     products = result.get("products")
     return None if isinstance(products, list) and products else "the catalog is empty"
 
 
 def check_profile(result: dict, traveler: str = TRAVELER_ID) -> str | None:
     """The profile read under RLS must be this traveler's and carry a facts list."""
+    if not isinstance(result, dict):
+        return NOT_AN_OBJECT
     if result.get("traveler_id") != traveler:
         return f"the profile is for {result.get('traveler_id')!r}, not {traveler}"
     return None if isinstance(result.get("facts"), list) else "the profile has no facts list"
@@ -124,6 +139,8 @@ def check_profile(result: dict, traveler: str = TRAVELER_ID) -> str | None:
 
 def check_journeys(result: dict) -> str | None:
     """The saved-journey list must be a list, empty or not."""
+    if not isinstance(result, dict):
+        return NOT_AN_OBJECT
     return None if isinstance(result.get("journeys"), list) else "no journeys list in the reply"
 
 
@@ -156,16 +173,36 @@ def build_parser() -> argparse.ArgumentParser:
                              "to https, or http on localhost)")
     parser.add_argument("--verify", action="store_true",
                         help="with --hosted, record the result in the release record")
+    parser.add_argument("--conversation-ids-file", type=Path, default=None,
+                        help="give each chat turn its own conversation id and record the ids in "
+                             "this file, one per line, written before the turn is sent")
     parser.add_argument("--as", dest="as_user", choices=sorted(set(TRAVELER_USERS.values())),
                         default=DEFAULT_USER, help="the seeded user to sign in as in jwt mode")
     return parser
 
 
-def run_steps(base: str, headers: dict[str, str], traveler: str) -> tuple[list[str], list[str]]:
+def with_recorded_conversation(path: str, body: dict | None, ids_file: Path | None) -> dict | None:
+    """Give a chat turn its own conversation id and record the id in ``ids_file`` first.
+
+    The id is written before the turn is sent, so a caller can tell which rows the turn left
+    behind even when the turn timed out. Without ``ids_file`` the body is returned unchanged.
+    """
+    if ids_file is None or path != "/api/chat" or body is None:
+        return body
+    conversation_id = f"wrm_{uuid.uuid4().hex[:12]}"
+    with ids_file.open("a", encoding="utf-8") as handle:
+        handle.write(conversation_id + "\n")
+    return {**body, "conversation_id": conversation_id}
+
+
+def run_steps(
+    base: str, headers: dict[str, str], traveler: str, conversation_ids_file: Path | None = None,
+) -> tuple[list[str], list[str]]:
     """Run the warm-up; return the labels that passed and the labels that failed, in order."""
     passed: list[str] = []
     failed: list[str] = []
     for label, path, body, check in steps(traveler):
+        body = with_recorded_conversation(path, body, conversation_ids_file)
         started = time.monotonic()
         try:
             problem = check(call(base, headers, path, body)) if check else None
@@ -195,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
     require_token_safe_url(base, always=args.hosted)
     headers = request_headers(args.hosted, args.as_user)
     print(f"Warming {base}")
-    passed, failed = run_steps(base, headers, traveler_for_user(args.as_user))
+    if args.conversation_ids_file:
+        args.conversation_ids_file.write_text("", encoding="utf-8")
+    passed, failed = run_steps(
+        base, headers, traveler_for_user(args.as_user), args.conversation_ids_file)
     if args.verify:
         record = record_verification(passed, failed[0] if failed else None)
         print(f"Release record: {record['status']}.")

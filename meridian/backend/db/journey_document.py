@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes, snapshot_key
+from backend.agents.phase_05_workflow.hold_status import effective_hold_status
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 from backend.security.redaction import mask_payload
 
@@ -59,6 +60,7 @@ HOLD_SQL = """
 SELECT hr.hold_request_id, hr.booking_id, hr.execution_id, hr.created_at,
        b.status, b.created_at::TIMESTAMPTZ::TEXT AS hold_created_at,
        b.hold_expires_at::TEXT AS hold_expires_at,
+       (b.hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed,
        b.confirmed_at::TIMESTAMPTZ::TEXT AS confirmed_at,
        CURRENT_TIMESTAMP::TEXT AS observed_at, bl.package_id, bl.duration,
        bl.travelers_count, bl.unit_price, b.total_amount
@@ -438,7 +440,7 @@ async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
     row = rows[0]
     holds = len({r["hold_request_id"] for r in rows})
     return {
-        "status": row["status"],
+        "status": effective_hold_status(row["status"], lapsed=bool(row.get("lapsed"))),
         "label": _hold_label(holds),
         "source": "hold_requests + bookings + booking_lines",
         "hold_request_id": row["hold_request_id"],

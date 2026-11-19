@@ -15,12 +15,20 @@ import {
 } from '../../api/client';
 import { ReadBackRequiredError, type ChatStreamEvent } from '../../api/chatStream';
 import { CURRENT_TRAVELER } from '../../api/currentTraveler';
-import { ApiError, NotSentError, runWithDeadline, runWithStreamDeadline } from '../../api/request';
+import {
+  ApiError, NotSentError, QuoteReviewRequired, runWithDeadline, runWithStreamDeadline,
+  type QuoteReviewCode,
+} from '../../api/request';
 import { useSession } from '../../auth/SessionContext';
 import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
-import { allocateHoldIntent, holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
+import {
+  allocateHoldIntent, holdIntentKey, loadBookingRecovery, recordHoldQuote, saveBookingRecovery,
+  type SavedHoldIntent,
+} from '../lib/bookingRecovery';
+import { defaultDuration, holdTerms } from '../lib/holdTerms';
 import type {
   ChatResponse,
+  HoldQuote,
   LongTermMemoryFact,
   Message,
   OrderResponse,
@@ -64,6 +72,33 @@ export interface ActionDrawerState {
 export interface TripHold {
   productId: string;
   order: NonNullable<OrderResponse['order']>;
+}
+
+/** A hold was refused with 409 because the traveler had not approved its current terms. */
+export interface HoldReview {
+  productId: string;
+  code: QuoteReviewCode;
+  message: string;
+  quote: HoldQuote;
+}
+
+const HOLD_IDENTITY_UNSAVED = 'This device cannot save the hold request identity. Enable browser storage before requesting a hold.';
+
+/**
+ * The intent with the quote its request goes out with. An intent that already carries one keeps
+ * it: a retry of an unknown outcome must send the original terms so Aurora replays a committed
+ * hold. Once a 409 has answered the intent (`reviewed`), the saved quote is stale whether or not
+ * clearing it succeeded, so the reviewed terms are saved and sent instead.
+ */
+async function intentWithQuote(
+  travelerId: string, intentKey: string, intent: SavedHoldIntent, displayed: HoldQuote,
+  reviewed = false,
+): Promise<SavedHoldIntent & { quote: HoldQuote }> {
+  if (intent.quote && !reviewed) return { ...intent, quote: intent.quote };
+  try {
+    await recordHoldQuote(travelerId, intentKey, displayed);
+  } catch { throw new NotSentError(HOLD_IDENTITY_UNSAVED); }
+  return { ...intent, quote: displayed };
 }
 
 /** A hold placed elsewhere (the recovery workflow) that the concierge can adopt. */
@@ -135,6 +170,7 @@ export interface MeridianShowcaseState {
   previewProfile: TravelerProfile | null;
   /** The saved per-traveler cap the gateway policy multiplies by the party size. */
   budgetCeilingPerTravelerCents: number | null;
+  budgetUnclear: boolean;
   memoryEnabled: boolean;
   memoryLoading: boolean;
   memoryToggleError: string | null;
@@ -169,6 +205,9 @@ export interface MeridianShowcaseState {
   tripHolds: TripHold[];
   /** The held trip waiting for the traveler's confirmation in the trip drawer. */
   bookingPrompt: TripHold | null;
+  /** The new terms to approve after a hold was refused because its price was not current. */
+  holdReview: HoldReview | null;
+  clearHoldReview: () => void;
   totalLatencyMs: number;
   phaseExamples: string[];
   travelersCount: number;
@@ -193,7 +232,8 @@ export interface MeridianShowcaseState {
   selectTrip: (product: Product) => void;
   openTripDetails: (product: Product) => void;
   closeTripDetails: () => void;
-  holdTrip: (product: Product) => Promise<void>;
+  /** Request the hold on the terms the Hold action shows; without `terms`, on the default duration. */
+  holdTrip: (product: Product, terms?: HoldQuote) => Promise<void>;
   requestBookingConfirmation: (product: Product) => void;
   dismissBookingConfirmation: () => void;
   /** Confirm the held trip. The click is the traveler's confirmation; the platform carries it. */
@@ -397,10 +437,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
   const [tripHolds, setTripHolds] = useState<TripHold[]>([]);
   const holdPending = useRef(false);
+  const reviewedIntents = useRef(new Set<string>());
   // Keep an unacknowledged hold's identity across retries and phase resets.
   // The Gateway derives its replay key from this conversation and the terms.
   const writeController = useRef<AbortController | null>(null);
   const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
+  const [holdReview, setHoldReview] = useState<HoldReview | null>(null);
   const bookingPending = useRef(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
@@ -420,6 +462,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // Read from the same saved fact the gateway policy reads, so the budget on
   // screen is the basis Cedar judged rather than a second, unrelated number.
   const [budgetCeilingPerTravelerCents, setBudgetCeiling] = useState<number | null>(null);
+  const [budgetUnclear, setBudgetUnclear] = useState(false);
   const [memoryEnabled, setMemoryEnabledState] = useState(false);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const memoryReadGeneration = useRef(0);
@@ -567,6 +610,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setPreviewFacts(memoryResponseToFacts(profile.value));
         setPreviewProfile(profile.value.profile ?? null);
         setBudgetCeiling(profile.value.budget_ceiling_per_traveler_cents ?? null);
+        setBudgetUnclear(profile.value.budget_unclear === true);
       }
       setBackendStatus(serverReady && tripsReady && profileReady ? 'online' : 'offline');
       setConnectionIssue(
@@ -622,6 +666,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setMemoryFacts(memoryResponseToFacts(profile));
       setTravelerProfile(profile.profile ?? null);
       setBudgetCeiling(profile.budget_ceiling_per_traveler_cents ?? null);
+      setBudgetUnclear(profile.budget_unclear === true);
       setMemoryEnabledState(true);
     } catch {
       if (!isCurrent()) return;
@@ -1014,6 +1059,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setWorkflowPlanPackageId(null);
     setActionDrawer(null);
     setTripDetailsOpen(false);
+    setHoldReview(null);
     setComparisonOpen(false);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
@@ -1089,7 +1135,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [rememberOrder, resolvedTravelerId]);
 
   const holdTrip = useCallback(
-    async (product: Product) => {
+    async (product: Product, terms?: HoldQuote) => {
       if (isLoading || holdPending.current || chatController.current) return;
       if (writeController.current) { setError(WRITE_IN_PROGRESS_MESSAGE); return; }
       if (identityPending) { setError(TRAVELER_CONTEXT_MESSAGE); return; }
@@ -1099,9 +1145,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         openTripDetails(product);
         return;
       }
-      const duration = product.available_sizes?.[0];
+      const duration = terms?.size ?? defaultDuration(product, travelersCount);
       if (!duration) { setError('Load the published trip durations before requesting a hold.'); return; }
-      const intentKey = holdIntentKey(product.product_id, duration, travelersCount);
+      const displayed = terms ?? holdTerms(product, duration, travelersCount);
+      const intentKey = holdIntentKey(product.product_id, duration, displayed.quantity);
       holdPending.current = true;
       const controller = new AbortController();
       writeController.current = controller;
@@ -1113,6 +1160,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setRequestStartedAt(Date.now());
       setLatestStreamComplete(false);
       setError(null);
+      setHoldReview(null);
       const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
       let sentIntent: SavedHoldIntent | undefined;
       const showHold = (response: OrderResponse) => {
@@ -1156,21 +1204,38 @@ export function useMeridianShowcase(): MeridianShowcaseState {
             try {
               intent = await allocateHoldIntent(travelerKey.current, intentKey, () => ({
                 conversationId: `conv_hold_${crypto.randomUUID()}`,
-                productId: product.product_id, duration, quantity: travelersCount,
-                replacesBookingId: existing?.order.order_id,
+                productId: product.product_id, duration, quantity: displayed.quantity,
+                replacesBookingId: existing?.order.order_id, quote: displayed,
               }), staleConversationId);
-            } catch { throw new NotSentError('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
+            } catch { throw new NotSentError(HOLD_IDENTITY_UNSAVED); }
           }
-          sentIntent = intent;
+          const reviewedKey = `${travelerKey.current}|${intentKey}`;
+          const quoted = await intentWithQuote(
+            travelerKey.current, intentKey, intent, displayed, reviewedIntents.current.has(reviewedKey));
+          reviewedIntents.current.delete(reviewedKey);
+          sentIntent = quoted;
           return processOrder({
-            product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
+            product_id: quoted.productId, size: quoted.duration, quantity: quoted.quantity,
             phase: selectedPhase, traveler_id: CURRENT_TRAVELER, action: 'hold',
-            conversation_id: intent.conversationId,
+            conversation_id: quoted.conversationId, quote: quoted.quote,
           }, signal, touch);
         }, controller.signal);
         showHold(response);
       } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
+        if (err instanceof QuoteReviewRequired) {
+          // Nothing was committed, so the next approval sends the new terms, not the old quote,
+          // even when clearing the saved quote below fails.
+          reviewedIntents.current.add(`${travelerKey.current}|${intentKey}`);
+          if (sentIntent) {
+            try { await recordHoldQuote(travelerKey.current, intentKey, undefined); }
+            catch { setError(HOLD_IDENTITY_UNSAVED); }
+          }
+          if (mounted.current) setHoldReview({
+            productId: product.product_id, code: err.code, message: err.message, quote: err.quote,
+          });
+          return;
+        }
         // The page gave up, but the hold is idempotent and may be committed: ask Aurora.
         const intent = sentIntent;
         const recorded = intent && isUnknownWriteOutcome(err)
@@ -1366,10 +1431,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       }
       await refreshConnection();
       return true;
-    } catch {
+    } catch (err) {
       if (!mounted.current) return false;
       if (generation === memoryReadGeneration.current) setMemoryFacts(previous);
-      setMemoryMutationError('That preference could not be updated. Try again.');
+      const refused = err instanceof ApiError && err.status === 422 && err.worded;
+      setMemoryMutationError(refused ? err.message : 'That preference could not be updated. Try again.');
       return false;
     }
   }, [memoryFacts, refreshConnection]);
@@ -1428,6 +1494,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setWorkflowPlanPackageId(null);
     setActionDrawer(null);
     setTripDetailsOpen(false);
+    setHoldReview(null);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
@@ -1478,6 +1545,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     previewFacts,
     previewProfile,
     budgetCeilingPerTravelerCents,
+    budgetUnclear,
     memoryEnabled,
     memoryLoading,
     memoryToggleError,
@@ -1518,6 +1586,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       })) },
     })),
     bookingPrompt,
+    holdReview,
+    clearHoldReview: () => setHoldReview(null),
     totalLatencyMs,
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
     chatFilters,
@@ -1540,6 +1610,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setTripDetailsOpen(false);
       setActionDrawer(null);
       setBookingPrompt(null);
+      setHoldReview(null);
     },
     holdTrip,
     requestBookingConfirmation,

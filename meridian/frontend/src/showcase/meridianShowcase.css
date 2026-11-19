@@ -3700,6 +3700,13 @@
 .mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:var(--mds-on-action); background:var(--mds-action); margin-left:auto; }
 .mds-trip-modal-actions .mds-trip-stop { margin-left:auto; }
 .mds-trip-modal-actions .mds-trip-stop + .is-primary { margin-left:0; }
+.mds-trip-modal-actions .mds-hold-action { flex-direction:column; gap:1px; padding-block:6px; }
+.mds-hold-action small { font:var(--mds-type-footnote); font-weight:var(--mds-weight-regular); }
+.mds-duration-options { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.mds-duration-option { display:grid; gap:2px; min-width:112px; padding:9px 12px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-s); color:var(--mds-label); background:var(--mds-surface); text-align:left; }
+.mds-duration-option span { color:var(--mds-label-2); font:var(--mds-type-footnote); }
+.mds-duration-option[aria-checked="true"] { border-width:3px; padding:7px 10px; border-color:var(--mds-action); background:var(--mds-surface-2); }
+.mds-hold-review { display:grid; gap:4px; padding:12px; border-radius:var(--mds-radius-s); background:var(--mds-surface-2); color:var(--mds-label); }
 .mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface-2); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
 
 /* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant

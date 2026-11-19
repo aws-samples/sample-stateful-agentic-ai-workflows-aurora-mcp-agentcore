@@ -267,3 +267,45 @@ def test_a_migration_that_fails_to_split_never_opens_a_transaction(
         getattr(migrations, runner)(client, path)
 
     assert begun == [] and client.rollbacks == []
+
+
+def _real_listing(applied: list[str], **options) -> list[str]:
+    return [path.name for path in migrations._pending_paths(set(applied), **options)]
+
+
+def test_the_default_listing_leaves_out_the_opt_in_rotation_migration():
+    names = _real_listing([])
+    assert "034_login_rotation_clones.sql" not in names
+    assert "033_audit_export_login.sql" in names
+    assert names == sorted(names)
+
+
+def test_opting_in_to_rotation_lists_034_in_order():
+    names = _real_listing([], with_rotation=True)
+    assert names.index("033_audit_export_login.sql") + 1 == names.index(
+        "034_login_rotation_clones.sql")
+
+
+def test_a_database_with_034_applied_still_gets_later_migrations(monkeypatch, tmp_path):
+    for name in ("033_a.sql", "034_login_rotation_clones.sql", "035_later.sql"):
+        (tmp_path / name).write_text("SELECT 1;")
+    monkeypatch.setattr(migrations, "MIGRATIONS_DIR", tmp_path)
+    applied = {"033_a.sql", "034_login_rotation_clones.sql"}
+    default = [p.name for p in migrations._pending_paths(applied)]
+    opted_in = [p.name for p in migrations._pending_paths(applied, with_rotation=True)]
+    assert default == opted_in == ["035_later.sql"]
+
+
+def test_the_cli_flag_opts_in_and_the_default_does_not(monkeypatch, tmp_path, capsys):
+    for name in ("033_a.sql", "034_login_rotation_clones.sql", "035_later.sql"):
+        (tmp_path / name).write_text("SELECT 1;")
+    monkeypatch.setattr(migrations, "MIGRATIONS_DIR", tmp_path)
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    client = ScriptedClient("schema_migrations", ["033_a.sql"])
+    monkeypatch.setattr(migrations.boto3, "client", lambda *a, **k: client)
+    assert migrations.main(["--pending"]) == 0
+    assert capsys.readouterr().out.split() == ["035_later.sql"]
+    assert migrations.main(["--pending", "--with-rotation"]) == 0
+    assert capsys.readouterr().out.split() == [
+        "034_login_rotation_clones.sql", "035_later.sql"]

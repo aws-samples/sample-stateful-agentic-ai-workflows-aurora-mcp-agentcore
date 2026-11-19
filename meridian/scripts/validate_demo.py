@@ -84,14 +84,38 @@ def request_auth(environ: Mapping[str, str]) -> tuple[httpx.Auth | None, dict[st
     return None, {}
 
 
+def hold_quote(product_id: str, size: str, quantity: int) -> dict:
+    """The terms the Hold action shows, built from the catalog row read for this attempt.
+
+    Raises:
+        httpx.HTTPStatusError: The catalog read failed, so there is no price to quote.
+    """
+    response = client.get(f"/api/products/{product_id}")
+    response.raise_for_status()
+    unit_cents = round(float(response.json()["price"]) * 100)
+    return {"unit_price_cents": unit_cents, "total_cents": unit_cents * quantity,
+            "currency": "USD", "size": size, "quantity": quantity}
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def build_payload(payload):
+    """The request body; a callable builds it, and a failure there leaves the step bodiless."""
+    return payload() if callable(payload) else payload
+
+
 def record(name: str, method: str, path: str, payload=None, **checks):
+    """Send one request and record it; ``payload`` may be a callable that builds the body.
+
+    A callable runs inside the recorded attempt, so a failure while building the body (for
+    example the catalog read behind a Hold quote) is a failed step, not a traceback.
+    """
     started = now()
     t0 = time.perf_counter()
     try:
+        payload = build_payload(payload)
         if method == "GET":
             response = client.get(path, params=payload)
         else:
@@ -104,6 +128,7 @@ def record(name: str, method: str, path: str, payload=None, **checks):
         status = response.status_code
     except Exception as exc:  # noqa: BLE001 - evidence must record the failure
         elapsed = int((time.perf_counter() - t0) * 1000)
+        payload = None if callable(payload) else payload
         body = {"exception": repr(exc)}
         status = None
     entry = {
@@ -293,7 +318,8 @@ def main() -> int:
 
     # Phase 4 direct hold and confirmation (governed writes through Gateway + Cedar)
     hold, _ = record("p4_order_hold", "POST", "/api/chat/order",
-                     {"product_id": "CTY-002", "size": "7 nights", "quantity": 2, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4},
+                     lambda: {"product_id": "CTY-002", "size": "7 nights", "quantity": 2, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4,
+                              "quote": hold_quote("CTY-002", "7 nights", 2)},
                      ok=ok, held=lambda b, s: (b.get("order") or {}).get("status") == "held",
                      cedar=lambda b, s: any(
                          any(f.get("label") == "cedar_decision" and f.get("value") == "allow"
@@ -313,7 +339,8 @@ def main() -> int:
         record("p4_booking_read_after", "GET", f"/api/chat/bookings/{booking_id}", None, ok=ok,
                confirmed=lambda b, s: (b.get("order") or {}).get("status") == "confirmed")
     record("p4_hold_over_party_limit", "POST", "/api/chat/order",
-           {"product_id": "CTY-002", "size": "7 nights", "quantity": 8, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4},
+           lambda: {"product_id": "CTY-002", "size": "7 nights", "quantity": 8, "phase": 4, "traveler_id": TRAVELER, "conversation_id": conv4,
+                    "quote": hold_quote("CTY-002", "7 nights", 8)},
            ok=ok, not_held=lambda b, s: not b.get("order"),
            denied=lambda b, s: any(((a.get("telemetry") or {}).get("status")) == "denied" for a in b["activities"]))
 
