@@ -16,6 +16,7 @@ from backend.db.journey_store import bind_thread, claim_execution, create_journe
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers import journeys
+from tests.live_support import record_live_ids
 
 pytestmark = pytest.mark.database
 
@@ -44,6 +45,7 @@ async def journey_with(monkeypatch):
         journey = await create_journey(master, traveler, "Aurora workflow_snapshots")
         await bind_thread(master, journey, thread)
         made.append((journey, thread))
+        record_live_ids("stop_session", journey_id=journey, thread=thread)
         if status:
             await master.execute(
                 "INSERT INTO journey_executions (execution_id, journey_id, thread_id, attempt, "
@@ -289,6 +291,7 @@ async def test_a_replacement_claimed_during_the_stop_keeps_its_lease(journey_wit
     assert [r["status"] for r in rows] == ["paused", "running"]
     assert rows[1]["lease_expires_at"] is not None
     assert await _stop_rows(journey) == []
+    runtime.while_stopping = None  # the other tab resumed once; this stop races nothing
     again = await journeys.stop_session(journey, JORDAN, None)
     assert again["stopped_during"] == "running"
     assert [r["status"] for r in await _statuses(thread)] == ["paused", "abandoned"]

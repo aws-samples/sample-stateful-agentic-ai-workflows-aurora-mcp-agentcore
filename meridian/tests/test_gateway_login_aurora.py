@@ -62,7 +62,9 @@ async def _saved_cap_cents(traveler: str) -> int:
     return cap
 
 
-async def _package_with_room(*, within_cents=None, above_cents=None) -> tuple[str, str, int]:
+async def _package_with_room(
+    *, within_cents=None, above_cents=None, seats: int = 2
+) -> tuple[str, str, int]:
     rows = await get_rds_data_client().execute(
         "SELECT package_id, ROUND(price_per_person * 100)::BIGINT AS cents, "
         "package_places_left(package_id) AS availability FROM trip_packages ORDER BY package_id")
@@ -72,10 +74,10 @@ async def _package_with_room(*, within_cents=None, above_cents=None) -> tuple[st
             above_cents is not None and cents <= above_cents
         ):
             continue
-        for duration, seats in (row["availability"] or {}).items():
-            if int(seats) >= 2:
+        for duration, places in (row["availability"] or {}).items():
+            if int(places) >= seats:
                 return row["package_id"], duration, cents
-    pytest.skip("no catalog package with two places left fits the price bound")
+    pytest.skip(f"no catalog package with {seats} places left fits the price bound")
 
 
 def _hold_args(package_id, duration, cents, traveler, journey_ref):

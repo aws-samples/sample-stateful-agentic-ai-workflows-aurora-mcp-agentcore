@@ -21,7 +21,13 @@ from backend.agentcore.identity import get_agentcore_identity
 from backend.db.journey_document import assemble_journey_document
 from backend.db.journey_store import ScopedDb, bind_thread, claim_execution, create_journey
 from backend.db.rds_data_client import get_rds_data_client
-from tests.live_support import as_gateway, delete_booking_rows, delete_journey_rows, gateway_login
+from tests.live_support import (
+    as_gateway,
+    delete_booking_rows,
+    delete_journey_rows,
+    gateway_login,
+    record_live_ids,
+)
 
 pytestmark = pytest.mark.database
 
@@ -72,6 +78,8 @@ async def journey() -> AsyncIterator[Fixture]:
         fx.journey_id = await create_journey(db, TRAVELER, "Aurora workflow_snapshots")
         await bind_thread(db, fx.journey_id, fx.thread_id)
     try:
+        record_live_ids("journey_document", journey_id=fx.journey_id, thread=fx.thread_id,
+                        booking_id=fx.booking_id)
         yield fx
     finally:
         await fx.purge()

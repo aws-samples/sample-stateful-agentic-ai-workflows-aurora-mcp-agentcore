@@ -24,7 +24,12 @@ from backend.http_auth import HttpPrincipal
 from backend.routers.chat import OrderRequest, process_order
 from backend.routers.memory import get_memory_profile
 from scripts.agentcore_caller import caller_scope
-from tests.live_support import delete_booking_rows, delete_journey_rows
+from tests.live_support import (
+    cleanup_run,
+    delete_booking_rows,
+    delete_journey_rows,
+    report_cleanup,
+)
 
 pytestmark = pytest.mark.database
 
@@ -43,10 +48,25 @@ class _Holds:
     def __init__(self, client) -> None:
         self.client = client
         self.booking_ids: list[str] = []
+        self.threads: list[str] = []
 
     def track(self, booking_id: str) -> str:
         self.booking_ids.append(booking_id)
         return booking_id
+
+    def track_thread(self, thread_id: str) -> str:
+        """Release every hold on this journey thread, even one whose reply never arrived."""
+        self.threads.append(thread_id)
+        return thread_id
+
+    async def thread_bookings(self, thread_id: str) -> list[str]:
+        """The bookings the journey on this thread holds, read from Aurora."""
+        rows = await self.client.execute(
+            "SELECT hr.booking_id FROM hold_requests hr JOIN journey_threads jt "
+            "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s",
+            (thread_id,),
+        )
+        return [row["booking_id"] for row in rows]
 
     async def booking_line(self, booking_id: str) -> dict:
         rows = await self.client.execute(
@@ -71,6 +91,15 @@ class _Holds:
         )
         assert rows, f"no hold request identity was written for {booking_id}"
         return rows[0]
+
+    async def release(self) -> None:
+        """Give back every hold on the tracked threads and bookings; delete nothing.
+
+        Every hold is attempted before any problem is reported, and the cleanup never stops
+        at the first failure.
+        """
+        report_cleanup(await cleanup_run(self.client, TRAVELER, test="stale_quote",
+                                         threads=self.threads, bookings=self.booking_ids))
 
     async def purge(self) -> None:
         for booking_id in self.booking_ids:
@@ -108,6 +137,20 @@ async def holds() -> AsyncIterator[_Holds]:
         yield tracker
     finally:
         await tracker.purge()
+
+
+@pytest_asyncio.fixture
+async def released_holds() -> AsyncIterator[_Holds]:
+    """Like ``holds``, but the holds go back through the governed release and every row stays.
+
+    The audit export may already hold the action audit rows; deleting them would leave a
+    lasting row-deleted finding in the shared database's verification.
+    """
+    tracker = _Holds(get_rds_data_client())
+    try:
+        yield tracker
+    finally:
+        await tracker.release()
 
 
 async def _quote(client, package_id: str, duration: str, quantity: int) -> dict:
@@ -269,24 +312,17 @@ async def test_an_unpublished_duration_is_refused_before_any_hold(
     assert int(left[0]["n"]) == 0
 
 
-async def _lines_for(client, package_id: str, duration: str) -> int:
-    rows = await client.execute(
-        "SELECT count(*) AS n FROM booking_lines WHERE package_id = %s AND duration = %s",
-        (package_id, duration),
-    )
-    return int(rows[0]["n"])
-
-
 async def test_a_quote_the_catalog_no_longer_matches_reserves_nothing_until_it_is_renewed(
-    holds: _Holds,
+    released_holds: _Holds,
 ) -> None:
     """The traveler saw an older price: 409 with the current terms, then the new approval holds."""
-    package_id, duration, _seats = await _a_package_with_room(holds.client, 1)
-    current = await _quote(holds.client, package_id, duration, 1)
+    package_id, duration, _seats = await _a_package_with_room(released_holds.client, 1)
+    current = await _quote(released_holds.client, package_id, duration, 1)
     stale = {**current, "unit_price_cents": current["unit_price_cents"] - 100,
              "total_cents": current["total_cents"] - 100}
     conversation = f"hold-test-{uuid.uuid4().hex[:12]}"
-    lines = await _lines_for(holds.client, package_id, duration)
+    # Phase 4 holds use this journey thread; tracking it first also cleans up a lost reply.
+    thread = released_holds.track_thread(f"concierge:{conversation}")
 
     with pytest.raises(HTTPException) as refused:
         await process_order(OrderRequest(
@@ -296,13 +332,14 @@ async def test_a_quote_the_catalog_no_longer_matches_reserves_nothing_until_it_i
     assert refused.value.status_code == 409
     assert refused.value.detail["code"] == "price_changed"
     assert refused.value.detail["quote"] == current
-    assert await _lines_for(holds.client, package_id, duration) == lines
+    assert await released_holds.thread_bookings(thread) == [], "the refused quote reserved nothing"
 
     renewed = await process_order(OrderRequest(
         product_id=package_id, size=duration, quantity=1, phase=4,
         conversation_id=conversation, quote=current), PRINCIPAL)
     assert renewed.order is not None
-    holds.track(renewed.order.order_id)
-    line = await holds.booking_line(renewed.order.order_id)
+    released_holds.track(renewed.order.order_id)
+    assert await released_holds.thread_bookings(thread) == [renewed.order.order_id]
+    line = await released_holds.booking_line(renewed.order.order_id)
     assert int(round(float(line["unit_price"]) * 100)) == current["unit_price_cents"]
     assert renewed.order.total == current["total_cents"] / 100

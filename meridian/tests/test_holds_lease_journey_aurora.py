@@ -7,11 +7,11 @@ import pytest
 from backend.db.journey_store import claim_execution
 from backend.db.rds_data_client import get_rds_data_client
 from tests import test_gateway_login_aurora as login
+from tests.live_support import cleanup_run, report_cleanup
 from tests.test_gateway_login_aurora import (
     JORDAN,
     _hold_args,
     _package_with_room,
-    _remove,
     _saved_cap_cents,
 )
 
@@ -32,9 +32,11 @@ async def _journey_with_hold(holds, journey_ref, package):
 
 async def test_a_live_lease_of_journey_b_cannot_create_a_hold_on_journey_a(holds):
     master = get_rds_data_client()
-    package = await _package_with_room(within_cents=await _saved_cap_cents(JORDAN))
+    # Three one-traveler holds: one on journey A, one on journey B and the valid retry on B.
+    package = await _package_with_room(within_cents=await _saved_cap_cents(JORDAN), seats=3)
     ref_a, ref_b = (f"leasejrn-{uuid.uuid4().hex[:10]}" for _ in range(2))
     attempted = f"hrq_{uuid.uuid4().hex[:12]}"
+    claim, failure = None, None
     try:
         hold_a = await _journey_with_hold(holds, ref_a, package)
         hold_b = await _journey_with_hold(holds, ref_b, package)
@@ -48,7 +50,7 @@ async def test_a_live_lease_of_journey_b_cannot_create_a_hold_on_journey_a(holds
         })
         assert result == {"error": "journey_not_owned"}
         written = await master.execute(
-            "SELECT booking_id FROM hold_requests WHERE request_id = %s", (attempted,))
+            "SELECT booking_id FROM hold_requests WHERE hold_request_id = %s", (attempted,))
         assert written == [], "the mismatched call wrote no hold request"
         valid = holds.create_courtesy_hold({
             **_hold_args(package_id, duration, cents, JORDAN, ref_b),
@@ -56,7 +58,12 @@ async def test_a_live_lease_of_journey_b_cannot_create_a_hold_on_journey_a(holds
         })
         assert "error" not in valid, valid
         assert valid["hold"]["journeyId"] == hold_b["journeyId"]
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        for ref in (ref_a, ref_b):
-            await master.execute("DELETE FROM journey_executions WHERE thread_id = %s", (ref,))
-            await _remove("", ref)
+        # Every hold on this run's threads, a lost reply's included, goes back through the
+        # governed release; no row the audit trail references is deleted.
+        executions = [claim.execution_id] if claim is not None and claim.claimed else []
+        report_cleanup(await cleanup_run(master, JORDAN, test="lease", threads=(ref_a, ref_b),
+                                         executions=executions), failure)
