@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import signal
@@ -37,7 +38,12 @@ ENV = {
 }
 JWT_ENV = {**ENV, "MERIDIAN_AGENTCORE_AUTH": "jwt"}
 ALL_CHECKS = {"backend_login", "warm", "phase2_sql_mcp", "phase2_concierge_mcp", "rls_probe",
-              "session_receipt", "recovery", "purge"}
+              "session_receipt", "recovery", "cleanup"}
+THREAD = "phase5-proof-0123456789ab"
+OLDER_THREAD = "phase5-proof-feedfacecafe"
+GOOD_ROW = {"booking_id": "hold_aa11", "hold_request_id": "hrq_aa11", "journey_id": "jrn_aa11",
+            "journeys": 1, "status": "released", "active": False, "hold_audits": 1,
+            "release_audits": 1}
 
 
 def mcp_reply(tool: str, rows: int = 3) -> dict:
@@ -84,7 +90,7 @@ class Harness:
     def __init__(self, tmp_path: Path, *, login="meridian_backend", bypass=False,
                  failing=None, healthy=True, target=("123456789012", "us-east-1"), crash=None,
                  free=True, dirty=None, db_user="meridian_backend", replies=None,
-                 leftovers=None, sweep_crash=None, superuser=False, member=False,
+                 evidence_rows=None, evidence_crash=None, superuser=False, member=False,
                  exits_while_starting=False):
         self.events: list[str] = []
         self.backend = Backend()
@@ -93,7 +99,8 @@ class Harness:
         self.login, self.bypass, self.failing, self.healthy = login, bypass, failing, healthy
         self.target, self.crash, self.free, self.dirty = target, crash, free, dirty or []
         self.superuser, self.member = superuser, member
-        self.leftovers, self.sweep_crash = leftovers or [], sweep_crash
+        self.evidence_rows = [GOOD_ROW] if evidence_rows is None else evidence_rows
+        self.evidence_crash = evidence_crash
         self.exits_while_starting = exits_while_starting
         self.path = tmp_path / "release-b2" / "backend-login-proof.json"
         self.receipt_at_start = None
@@ -161,11 +168,11 @@ class Harness:
         code = 1 if step.name == self.failing else 0
         return proof.StepResult(step.name, code == 0, 1.5, "tail of the output")
 
-    def sweep(self, env):
-        self.events.append("sweep")
-        if self.sweep_crash:
-            raise self.sweep_crash
-        return self.leftovers
+    def evidence(self, env, thread):
+        self.events.append(f"evidence {thread}")
+        if self.evidence_crash:
+            raise self.evidence_crash
+        return self.evidence_rows
 
     def now(self):
         self.clock += 1
@@ -176,8 +183,9 @@ class Harness:
             env=self.env, caller=self.caller, mint=self.mint, identity=self.identity,
             port_free=self.port_free,
             start_backend=self.start, wait_healthy=self.wait, http=self.http,
-            run_step=self.run_step, sweep=self.sweep, dirty=lambda: self.dirty, now=self.now,
-            git_sha=lambda: SHA, receipt_path=self.path)
+            run_step=self.run_step, evidence=self.evidence, dirty=lambda: self.dirty,
+            now=self.now, git_sha=lambda: SHA, receipt_path=self.path,
+            new_thread=lambda: THREAD)
 
 
 def run(harness, *flags):
@@ -218,7 +226,7 @@ PASSING_EVENTS = [
     "guard", f"identity {BACKEND_SECRET}", "port 8014", "start",
     "wait http://127.0.0.1:8014/health", "GET /api/health", "step warm", "POST /api/chat",
     "POST /api/chat", "POST /api/diagnostics/rls-probe", "POST /api/diagnostics/session-receipt",
-    "step recovery", "sweep"]
+    "step recovery", "step release", f"evidence {THREAD}"]
 
 
 def test_a_passing_run_checks_the_login_first_starts_the_backend_and_records_the_proof(tmp_path):
@@ -277,7 +285,7 @@ def test_each_tampered_field_of_the_receipt_is_refused(tmp_path, field, value):
 
 @pytest.mark.parametrize("harness_args", [
     {"failing": "recovery"}, {"healthy": False}, {"crash": RuntimeError("boom")},
-    {"crash": KeyboardInterrupt()}, {"leftovers": ["phase5-proof-ab: left behind"]},
+    {"crash": KeyboardInterrupt()}, {"evidence_rows": [{**GOOD_ROW, "active": True}]},
     {"db_user": "meridian_admin"}])
 def test_a_failed_crashed_or_interrupted_run_writes_a_receipt_the_preflight_refuses(
         tmp_path, harness_args):
@@ -351,9 +359,12 @@ def test_the_proof_scripts_keep_the_master_login_and_target_the_login_backend(tm
     harness = Harness(tmp_path)
     run(harness)
 
-    warm, recovery = harness.steps_run
+    warm, recovery, release = harness.steps_run
     assert warm.argv[-2:] == ["--base-url", "http://127.0.0.1:8014"]
-    assert recovery.argv[-2:] == ["--during", "waiting"]
+    ledger = str(harness.path.parent / f"{THREAD}.release-calls")
+    assert recovery.argv[-6:] == ["--during", "waiting", "--thread", THREAD, "--calls-file",
+                                  ledger]
+    assert release.argv[-5:] == ["--release-only", "--thread", THREAD, "--calls-file", ledger]
     for step in harness.steps_run:
         assert step.env["AURORA_SECRET_ARN"] == MASTER_SECRET
     assert recovery.env["MERIDIAN_PROOF_API"] == "http://127.0.0.1:8014/api"
@@ -369,33 +380,107 @@ def test_a_failing_warm_step_stops_the_run_records_a_failure_and_stops_the_backe
     assert receipt["ok"] is False and receipt["checks"] == {"backend_login": True, "warm": False}
 
 
-def test_a_failed_recovery_still_sweeps_for_leftover_proof_threads(tmp_path):
-    harness = Harness(tmp_path, failing="recovery")
+def test_a_failed_recovery_still_releases_and_checks_its_own_thread(tmp_path):
+    harness = Harness(tmp_path, failing="recovery", evidence_rows=[])
 
     assert run(harness) == 1
 
-    assert harness.events[-2:] == ["step recovery", "sweep"]
+    assert harness.events[-3:] == ["step recovery", "step release", f"evidence {THREAD}"]
     checks = json.loads(harness.path.read_text())["checks"]
-    assert checks["recovery"] is False and checks["purge"] is True
+    assert checks["recovery"] is False and checks["cleanup"] is True
 
 
-def test_leftover_proof_threads_found_by_the_sweep_fail_the_receipt(tmp_path, capsys):
-    harness = Harness(tmp_path, leftovers=["phase5-proof-ab12: left behind by the recovery"])
+@pytest.mark.parametrize(("row", "said"), [
+    ({**GOOD_ROW, "active": True, "status": "held"}, "booking hold_aa11: still held"),
+    ({**GOOD_ROW, "active": None, "status": "held"}, "booking hold_aa11: still held or its"),
+    ({**GOOD_ROW, "status": None, "active": None}, "no booking row visible"),
+    ({**GOOD_ROW, "hold_audits": 0}, "no hold audit row"),
+    ({**GOOD_ROW, "release_audits": 0}, "released, but no release audit row"),
+    ({**GOOD_ROW, "journeys": 0}, "journey jrn_aa11: its row is missing"),
+])
+def test_a_hold_that_is_active_or_lost_its_rows_fails_the_cleanup(tmp_path, capsys, row, said):
+    harness = Harness(tmp_path, evidence_rows=[row])
 
     assert run(harness) == 1
+
+    assert json.loads(harness.path.read_text())["checks"]["cleanup"] is False
+    assert said in capsys.readouterr().out
+
+
+def test_a_passing_recovery_with_no_hold_on_its_thread_fails_the_cleanup(tmp_path, capsys):
+    harness = Harness(tmp_path, evidence_rows=[])
+
+    assert run(harness) == 1
+
+    assert json.loads(harness.path.read_text())["checks"]["cleanup"] is False
+    assert "no hold found" in capsys.readouterr().out
+
+
+def test_a_failed_release_step_fails_the_cleanup_even_when_aurora_looks_clean(tmp_path, capsys):
+    harness = Harness(tmp_path, failing="release")
+
+    assert run(harness) == 1
+
+    assert json.loads(harness.path.read_text())["checks"]["cleanup"] is False
+    assert "The governed release of " + THREAD + " failed" in capsys.readouterr().out
+
+
+def test_evidence_that_cannot_be_read_fails_the_receipt_and_is_reported(tmp_path, capsys):
+    harness = Harness(tmp_path, evidence_crash=ConnectionError("data api down"))
+
+    assert run(harness) == 1
+
+    assert json.loads(harness.path.read_text())["checks"]["cleanup"] is False
+    out = capsys.readouterr().out
+    assert "ConnectionError" in out and "data api down" not in out
+
+
+def test_a_passing_run_prints_the_ids_it_released_and_kept(tmp_path, capsys):
+    run(Harness(tmp_path))
 
     out = capsys.readouterr().out
-    assert json.loads(harness.path.read_text())["checks"]["purge"] is False
-    assert "phase5-proof-ab12" in out
+    assert (f"cleanup: thread {THREAD} journey jrn_aa11 request hrq_aa11 booking hold_aa11 "
+            "released; audit rows kept: hold 1, release 1") in out
 
 
-def test_a_sweep_that_crashes_fails_the_receipt_and_is_reported(tmp_path, capsys):
-    harness = Harness(tmp_path, sweep_crash=ConnectionError("data api down"))
+def test_an_older_proof_thread_is_never_read_or_released(tmp_path):
+    harness = Harness(tmp_path)
 
-    assert run(harness) == 1
+    assert run(harness) == 0
 
-    assert json.loads(harness.path.read_text())["checks"]["purge"] is False
-    assert "ConnectionError" in capsys.readouterr().out
+    named = [part for step in harness.steps_run for part in step.argv] + harness.events
+    assert not any(OLDER_THREAD in str(part) for part in named)
+    assert [event for event in harness.events if event.startswith("evidence")] == [
+        f"evidence {THREAD}"]
+    assert not any("%" in str(part) or "LIKE" in str(part) for part in named)
+
+
+def test_the_evidence_is_read_for_the_run_thread_only_pinned_to_the_traveler():
+    class Client:
+        def __init__(self):
+            self.statements = []
+
+        def begin_transaction(self):
+            return "tx-1"
+
+        def commit_transaction(self, transaction):
+            self.statements.append(("commit", transaction))
+
+        def rollback_transaction(self, transaction):
+            self.statements.append(("rollback", transaction))
+
+        async def execute(self, sql, params=(), transaction_id=None):
+            self.statements.append((sql, params, transaction_id))
+            return [GOOD_ROW] if sql == proof.EVIDENCE_SQL else []
+
+    client = Client()
+
+    assert asyncio.run(proof.read_evidence(client, THREAD)) == [GOOD_ROW]
+
+    pin, read, commit = client.statements
+    assert "set_config('app.current_traveler_id'" in pin[0] and pin[1][0] == proof.TRAVELER
+    assert read == (proof.EVIDENCE_SQL, (THREAD,), "tx-1") and commit == ("commit", "tx-1")
+    assert "LIKE" not in proof.EVIDENCE_SQL and "DELETE" not in proof.EVIDENCE_SQL.upper()
 
 
 def test_a_failure_cannot_leave_an_old_passing_proof_in_place(tmp_path):
@@ -747,7 +832,7 @@ def test_a_crash_mid_run_stops_the_backend_records_a_failure_and_prints_no_trace
     assert "RuntimeError" in out
 
 
-def test_an_interrupt_mid_run_stops_the_backend_sweeps_and_records_a_failed_receipt(tmp_path):
+def test_an_interrupt_mid_run_stops_the_backend_and_records_a_failed_receipt(tmp_path):
     harness = Harness(tmp_path, crash=KeyboardInterrupt())
 
     assert run(harness) == 1
@@ -757,7 +842,7 @@ def test_an_interrupt_mid_run_stops_the_backend_sweeps_and_records_a_failed_rece
     assert receipt["ok"] is False and receipt["checks"]["warm"] is False
 
 
-def test_an_interrupt_during_the_recovery_sweeps_the_proof_threads(tmp_path):
+def test_an_interrupt_during_the_recovery_still_releases_its_thread(tmp_path):
     harness = Harness(tmp_path)
     deps = harness.deps()
     original = deps.run_step
@@ -772,8 +857,8 @@ def test_an_interrupt_during_the_recovery_sweeps_the_proof_threads(tmp_path):
 
     assert proof.main(["--apply", settings.CONFIRM_FLAG], deps) == 1
 
-    assert harness.events[-2:] == ["step recovery", "sweep"] and harness.backend.stopped
-    assert json.loads(harness.path.read_text())["ok"] is False
+    assert harness.events[-3:] == ["step recovery", "step release", f"evidence {THREAD}"]
+    assert harness.backend.stopped and json.loads(harness.path.read_text())["ok"] is False
 
 
 def test_a_sigterm_is_handled_like_an_interrupt_and_the_old_handler_is_restored(tmp_path):
@@ -932,7 +1017,7 @@ def test_a_timed_out_step_that_ignores_signals_is_killed_after_the_grace_period(
     assert result.ok is False and "timed out" in result.tail and result.seconds < 15
 
 
-def test_a_timeout_in_the_recovery_runs_the_sweep_and_fails_the_receipt(
+def test_a_timeout_in_the_recovery_still_releases_and_fails_the_receipt(
         tmp_path, quick_timeouts):
     harness = Harness(tmp_path)
     deps = harness.deps()
@@ -949,7 +1034,7 @@ def test_a_timeout_in_the_recovery_runs_the_sweep_and_fails_the_receipt(
 
     assert proof.main(["--apply", settings.CONFIRM_FLAG], deps) == 1
 
-    assert harness.events[-2:] == ["step recovery", "sweep"]
+    assert harness.events[-3:] == ["step recovery", "step release", f"evidence {THREAD}"]
     receipt = json.loads(harness.path.read_text())
     assert receipt["ok"] is False and receipt["checks"]["recovery"] is False
 

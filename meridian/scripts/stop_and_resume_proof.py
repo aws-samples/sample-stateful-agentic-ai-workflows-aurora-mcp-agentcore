@@ -16,7 +16,17 @@ Mode ``running``:
 5. resume again; the new microVM reuses the saved hold request id.
 If the run finishes before the stop lands, the script exits 2: that is not a pass.
 
-Both modes read the journey document and Aurora back, then remove the run's rows.
+Both modes read the journey document and Aurora back, then give back the run's hold through the
+governed Gateway release tool (as the traveler, in ``jwt`` mode with the traveler's token). Nothing
+is deleted: the run's journey, hold request, booking and their action audit rows stay. Only the
+holds of this run's own thread are touched, so an older ``phase5-proof-`` thread is left alone.
+A hold is read back before each release call, a second call goes out only after a read-back
+shows it still held, and each hold gets at most two calls.
+
+``--thread`` names the run's thread (the backend-login proof passes one, so it still knows the id
+if this process dies). ``--release-only --thread T`` only gives back T's active holds.
+``--calls-file F`` counts release calls per booking in F, so the two-call limit holds across this
+proof's teardown and a later ``--release-only`` run that passes the same file.
 Run from meridian/ with the backend on 127.0.0.1:8013 and AWS_PROFILE set.
 """
 
@@ -26,6 +36,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -45,12 +56,13 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from scripts.agentcore_caller import (  # noqa: E402
-    bearer_headers, require_token_safe_url, user_for_traveler,
+    bearer_headers, caller_scope, require_token_safe_url, user_for_traveler,
 )
 from scripts.kill_and_resume_proof import (  # noqa: E402
     _count,
     _holds_for,
     _purge,
+    pinned_to_traveler,
     read_newest_snapshot,
 )
 
@@ -58,6 +70,18 @@ API = os.getenv("MERIDIAN_PROOF_API", "http://127.0.0.1:8013/api")
 AUTH_HEADERS: dict[str, str] = {}
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 PROOF_THREAD_PREFIX = "phase5-proof-"
+THREAD_PATTERN = re.compile(r"^phase5-proof-[0-9a-f]{8,32}$")
+RELEASE_CALLS_PER_HOLD = 2
+RUN_HOLDS_SQL = """
+SELECT hr.booking_id, hr.hold_request_id, hr.journey_id
+  FROM journey_threads jt
+  JOIN hold_requests hr ON hr.journey_id = jt.journey_id
+ WHERE jt.thread_id = %s
+ ORDER BY hr.booking_id
+"""
+THREADS_OF_JOURNEY_SQL = "SELECT COUNT(*) AS n FROM journey_threads WHERE journey_id = %s"
+ACTIVE_SQL = ("SELECT (status = 'held' AND hold_expires_at > CURRENT_TIMESTAMP) AS active "
+              "FROM bookings WHERE booking_id = %s")
 CANONICAL = ("My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration "
              "availability for the best three options.")
 RESUME_MESSAGE = "Resume workflow from the saved step"
@@ -364,21 +388,159 @@ async def _purge_run(client, thread: str) -> None:
     print(f"cleanup: purged {journey} and counted every table of the run at zero")
 
 
-async def _cleanup(client, thread: str) -> None:
-    """Purge the run; a purge failure must not hide the error already in flight."""
-    in_flight = sys.exc_info()[1] is not None
+def _cause(exc: BaseException) -> str:
+    """A cause that is safe to print: the exception type, never its text."""
+    return type(exc).__name__
+
+
+async def _hold_state(client, booking: str) -> tuple[Optional[bool], str]:
+    """Whether the hold still reserves places, read pinned to the traveler.
+
+    ``bookings`` forces row level security, so the read runs in the traveler's pinned scope; a
+    row that cannot be seen there is unknown (None), never taken for a released hold.
+    """
     try:
-        await _purge_run(client, thread)
-    except Exception as exc:  # noqa: BLE001 - reported below, re-raised when nothing else failed
-        print(f"cleanup FAILED for {thread}: {exc}", file=sys.stderr)
-        if not in_flight:
-            raise
+        async with pinned_to_traveler(client, TRAVELER) as transaction:
+            rows = await client.execute(ACTIVE_SQL, (booking,), transaction_id=transaction)
+    except Exception as exc:  # noqa: BLE001 - an unknown state is reported, never assumed
+        return None, f"read-back failed ({_cause(exc)})"
+    if not rows or rows[0]["active"] is None:
+        return None, "booking row not visible or its state unknown"
+    return bool(rows[0]["active"]), ""
 
 
-async def run(during: str, keep: bool) -> int:
-    """Run one proof in the given mode and return its exit code (0, 1 or 2)."""
-    client = get_rds_data_client()
-    thread = f"{PROOF_THREAD_PREFIX}{uuid.uuid4().hex[:8]}"
+def _call_release(call_tool, args: dict) -> str:
+    """One governed release call: '' when the Gateway answered released, else a fixed cause."""
+    from backend.agents.phase_05_workflow.governed_hold import release_governed_hold
+
+    try:
+        outcome = release_governed_hold(call_tool, args)
+    except Exception as exc:  # noqa: BLE001 - an ambiguous reply: the next read-back decides
+        return f"release reply lost ({_cause(exc)})"
+    return "" if outcome.released else f"release not confirmed ({outcome.error})"
+
+
+class CallLedger:
+    """Release calls already sent per booking: in memory, or in a file other processes share."""
+
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self.path, self.sent = path, {}
+
+    def made(self, booking: str) -> int:
+        if self.path is None:
+            return self.sent.get(booking, 0)
+        return self.path.read_text().split().count(booking) if self.path.exists() else 0
+
+    def record(self, booking: str) -> None:
+        """Count the call before it is sent, so a call that dies on the way still counts."""
+        if self.path is None:
+            self.sent[booking] = self.sent.get(booking, 0) + 1
+            return
+        with open(self.path, "a", encoding="utf-8") as ledger:
+            ledger.write(booking + "\n")
+
+
+async def _release_one(client, call_tool, args: dict, booking: str, ledger: CallLedger) -> str:
+    """Release one hold with at most two calls in all; '' once it is inactive, else the causes.
+
+    It is read back before each call, and a call after the first goes out only when that
+    read-back succeeded and showed the hold still held, so an unconfirmed release is never
+    repeated blind. Calls an earlier process recorded in the ledger count toward the two.
+    """
+    causes: list[str] = []
+    sent_here = 0
+    while True:
+        made = max(ledger.made(booking), sent_here)
+        active, read_cause = await _hold_state(client, booking)
+        if active is False:
+            return ""
+        causes.append(read_cause)
+        if made >= RELEASE_CALLS_PER_HOLD or (made and active is None):
+            break
+        ledger.record(booking)
+        sent_here += 1
+        causes.append(_call_release(call_tool, args))
+    return "; ".join(dict.fromkeys(cause for cause in causes if cause)) or "still held"
+
+
+async def _run_holds(client, thread: str) -> tuple[list[dict], list[str]]:
+    """The holds this run's thread made, and why any of them must not be touched."""
+    if not THREAD_PATTERN.match(thread):
+        return [], [f"{thread} is not a thread this proof creates; nothing was released"]
+    try:
+        holds = [dict(row) for row in await client.execute(RUN_HOLDS_SQL, (thread,))]
+        shared = []
+        for journey in sorted({hold["journey_id"] for hold in holds}):
+            rows = await client.execute(THREADS_OF_JOURNEY_SQL, (journey,))
+            if int(rows[0]["n"]) != 1:
+                shared.append(journey)
+    except Exception as exc:  # noqa: BLE001 - reported; nothing is released blind
+        return [], [f"reading the holds of {thread} failed ({_cause(exc)})"]
+    problems = [f"journey {journey} has other threads; its holds were not released"
+                for journey in shared]
+    return [hold for hold in holds if hold["journey_id"] not in shared], problems
+
+
+async def _release_holds(client, holds: list[dict], ledger: CallLedger) -> list[str]:
+    """Release each hold through the Gateway as the traveler; every hold is attempted."""
+    from backend.agentcore.gateway import get_agentcore_gateway
+    from backend.agents.phase_05_workflow.governed_hold import release_arguments
+
+    problems = []
+    with caller_scope(user_for_traveler(TRAVELER)):
+        call_tool = get_agentcore_gateway().call_tool
+        for hold in holds:
+            booking = hold["booking_id"]
+            try:
+                args = release_arguments(traveler_id=TRAVELER,
+                                         hold_request_id=hold["hold_request_id"],
+                                         journey_id=hold["journey_id"])
+                cause = await _release_one(client, call_tool, args, booking, ledger)
+            except Exception as exc:  # noqa: BLE001 - one bad hold never stops the others
+                cause = f"cleanup error ({_cause(exc)})"
+            if cause:
+                problems.append(f"booking {booking} still held or unknown ({cause})")
+            else:
+                print(f"released: booking {booking} request {hold['hold_request_id']} "
+                      f"journey {hold['journey_id']}")
+    return problems
+
+
+async def release_run(client, thread: str, ledger: Optional[CallLedger] = None) -> list[str]:
+    """Give back every active hold of this run's thread; delete nothing.
+
+    Only the holds whose journey belongs to ``thread`` alone are touched. Returns the problems,
+    each with a sanitized cause; empty when every hold of the run is inactive.
+    """
+    holds, problems = await _run_holds(client, thread)
+    if not holds:
+        return problems
+    try:
+        return problems + await _release_holds(client, holds, ledger or CallLedger())
+    except Exception as exc:  # noqa: BLE001 - no token or gateway: report every hold
+        return problems + [f"booking {hold['booking_id']} not released: no governed release "
+                           f"possible ({_cause(exc)})" for hold in holds]
+
+
+async def _cleanup(client, thread: str, ledger: CallLedger) -> bool:
+    """Release the run's holds and print any problem; never raises, so nothing is hidden."""
+    problems = await release_run(client, thread, ledger)
+    for problem in problems:
+        print(f"cleanup FAILED for {thread}: {problem}", file=sys.stderr)
+    return not problems
+
+
+async def release_only(thread: str, ledger: CallLedger) -> int:
+    """``--release-only``: give back the thread's active holds; 0 when none is left active."""
+    problems = await release_run(get_rds_data_client(), thread, ledger)
+    for problem in problems:
+        print(f"cleanup FAILED for {thread}: {problem}", file=sys.stderr)
+    print(f"RESULT: {'RELEASED' if not problems else 'NOT RELEASED'} ({thread})")
+    return 0 if not problems else 1
+
+
+async def _prove(client, thread: str, during: str) -> int:
+    """Drive the proof and print its verdict; 0 pass, 1 fail, 2 missed the window."""
     try:
         journey, expected, case = await _drive(client, thread, during)
         document = await asyncio.to_thread(call, f"/journeys/{journey}")
@@ -388,13 +550,31 @@ async def run(during: str, keep: bool) -> int:
     except MissedWindow as exc:
         print(f"RESULT: {exc}")
         return 2
-    finally:
-        if not keep:
-            await _cleanup(client, thread)
     for line in failures:
         print(f"[BAD] {line}")
     print(f"RESULT: {'PASS' if not failures else 'FAIL'} ({during})")
     return 0 if not failures else 1
+
+
+async def run(during: str, keep: bool, thread: Optional[str] = None,
+              ledger: Optional[CallLedger] = None) -> int:
+    """Run one proof in the given mode and return its exit code (0, 1 or 2).
+
+    The verdict is printed before the clean-up runs; a clean-up problem is printed after it,
+    turns a pass into exit 1 and never replaces an error already in flight.
+    """
+    client = get_rds_data_client()
+    thread = thread or f"{PROOF_THREAD_PREFIX}{uuid.uuid4().hex[:12]}"
+    print(f"thread: {thread}")
+    code = 1
+    try:
+        code = await _prove(client, thread, during)
+    finally:
+        released = keep or await _cleanup(client, thread, ledger or CallLedger())
+    if not released and code == 0:
+        print(f"RESULT: FAIL ({during}): the run's hold was not released")
+        return 1
+    return code
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -403,17 +583,36 @@ def build_parser() -> argparse.ArgumentParser:
         description="Prove a stopped Runtime session resumes.", allow_abbrev=False)
     parser.add_argument("--during", choices=sorted(EXPECTED_STATUSES), default="waiting",
                         help="stop the session while it waits for review or while it runs")
-    parser.add_argument("--keep", action="store_true", help="leave the run's rows behind")
+    parser.add_argument("--keep", action="store_true",
+                        help="leave the run's hold held (nothing is deleted either way)")
+    parser.add_argument("--thread", type=_proof_thread, default=None,
+                        help="the run's thread, phase5-proof- and 8 to 32 hex digits")
+    parser.add_argument("--release-only", action="store_true",
+                        help="only give back the active holds of --thread")
+    parser.add_argument("--calls-file", type=Path, default=None,
+                        help="count release calls per booking in this file, across processes")
     return parser
+
+
+def _proof_thread(value: str) -> str:
+    if not THREAD_PATTERN.match(value):
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not phase5-proof- followed by 8 to 32 hex digits")
+    return value
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     """Parse arguments and run the proof."""
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.release_only:
+        if not args.thread:
+            parser.error("--release-only needs --thread")
+        return asyncio.run(release_only(args.thread, CallLedger(args.calls_file)))
     require_token_safe_url(API)
     AUTH_HEADERS.update(bearer_headers(user_for_traveler(TRAVELER)))
     try:
-        return asyncio.run(run(args.during, args.keep))
+        return asyncio.run(run(args.during, args.keep, args.thread, CallLedger(args.calls_file)))
     finally:
         AUTH_HEADERS.clear()
 

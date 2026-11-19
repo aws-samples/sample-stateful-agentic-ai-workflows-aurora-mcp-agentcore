@@ -186,7 +186,7 @@ def test_the_recovery_proof_signs_in_once_as_the_user_its_traveler_maps_to(monke
     monkeypatch.setattr(stop_and_resume_proof, "AUTH_HEADERS", {})
     seen = {}
 
-    async def fake_run(during, keep):
+    async def fake_run(during, keep, thread=None, ledger=None):
         seen["headers"] = dict(stop_and_resume_proof.AUTH_HEADERS)
         return 0
 
@@ -201,7 +201,7 @@ def test_the_recovery_proof_forgets_its_token_when_it_ends(monkeypatch):
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     monkeypatch.setattr(agentcore_caller, "mint_access_token", minted([]))
 
-    async def fake_run(during, keep):
+    async def fake_run(during, keep, thread=None, ledger=None):
         return 0
 
     monkeypatch.setattr(stop_and_resume_proof, "run", fake_run)

@@ -9,9 +9,13 @@ nothing exercised as that login: the Phase 1 to 4 warm-up, two Phase 2 turns tha
 successful MCP tool activity with rows (the typed search_trips tool and the custom
 domain tools), the RLS probe and the session receipt, and a Phase 5 recovery that stops its
 Runtime session and resumes it. The proof scripts keep the master login for their own reads and
-clean-up. The recovery runs on its own ``phase5-proof-`` thread; its rows are counted at zero in
-every table after the purge, and a sweep of every ``phase5-proof-`` thread follows the recovery
-whether it passed or not. A leftover fails the receipt.
+clean-up. The recovery runs on a ``phase5-proof-`` thread this run names. Afterwards, passed or
+not, that thread's holds are given back through the governed Gateway release tool (the recovery's
+own teardown, then a second release step that finds nothing left to do when it worked), and
+Aurora is read back: every hold of the thread must be inactive, with its booking, hold request,
+journey and action audit rows still there (a ``hold`` row, and a ``release`` row for a released
+booking). Anything else fails the receipt. Only this run's thread is read or released; older
+``phase5-proof-`` threads are left alone.
 
 While it runs, the loopback backend on 127.0.0.1:8014 is open as Jordan (trv_meridian_demo)
 without a token (MERIDIAN_ALLOW_INSECURE_LOCALHOST); any local process can call it. Run it on a
@@ -21,9 +25,9 @@ the receipt names HEAD. It does not re-check the tree at release time; neither
 
 Residue, deliberately NOT deleted: the warm-up turns write conversation_messages,
 trip_interactions, conversations and traveler_preferences rows for Jordan, and the access checks
-add append-only audit rows (traveler_access_audit and the agent audit log). Only the recovery
-step's journey, snapshots, executions, stops, hold requests, bookings and booking lines are
-removed.
+add append-only audit rows (traveler_access_audit and the agent audit log). The recovery's
+journey, snapshots, executions, stops, hold request, released booking and its action audit rows
+stay too.
 
 A passing run writes ``.local/release-b2/backend-login-proof.json``; ``publish.py`` refuses the jwt
 release without a recent one. A failing or interrupted run overwrites it with ``ok: false``, and an
@@ -36,7 +40,7 @@ Jordan in through ``scripts/cognito_tokens.py`` (the token lives in memory and g
 ``Authorization`` header of its own requests to the loopback backend), and the proof scripts
 sign in themselves. The receipt has the same eight fields in both modes.
 Without ``--apply`` it prints the plan. With it, the run calls Bedrock and the deployed
-MeridianWorkflow Runtime, places one test hold and removes what the recovery made.
+MeridianWorkflow Runtime, places one test hold and releases it through the governed Gateway.
 
     python scripts/prove_backend_login.py
     python scripts/prove_backend_login.py --apply --i-understand-this-changes-aws
@@ -60,6 +64,7 @@ import sys
 import threading
 import time
 import urllib.error
+import uuid
 import urllib.request
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, replace
@@ -92,7 +97,7 @@ CONCIERGE_PROMPT = PROMPT_LADDER[2].works[0]
 SQL_TOOL = "meridian-concierge: search_trips"
 CONCIERGE_TOOL = "meridian-concierge: compare_packages"
 CHECKS = ("backend_login", "warm", "phase2_sql_mcp", "phase2_concierge_mcp", "rls_probe",
-          "session_receipt", "recovery", "purge")
+          "session_receipt", "recovery", "cleanup")
 STRIPPED = ("MERIDIAN_API_TOKEN", "MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID",
             "MERIDIAN_COGNITO_APP_CLIENT_ID")
 JWT_STRIPPED = ("MERIDIAN_API_TOKEN",)
@@ -107,15 +112,26 @@ EXIT_PASS, EXIT_FAIL, EXIT_REFUSED = 0, 1, 3
 RESIDUE = (
     "Residue, NOT deleted: the warm-up turns write conversation_messages, trip_interactions, "
     "conversations and traveler_preferences rows for Jordan, and the access checks add "
-    "append-only audit rows (traveler_access_audit and the agent audit log). Only the recovery "
-    "step's own rows are removed.")
+    "append-only audit rows (traveler_access_audit and the agent audit log). The recovery's "
+    "hold is released through the governed Gateway; its journey, hold request, booking and "
+    "action audit rows stay. Older phase5-proof- threads are not touched.")
 OPEN_BACKEND = (
     f"While it runs, the backend on 127.0.0.1:{PORT} is open as Jordan ({TRAVELER}) without a "
     "token; any local process can call it.")
-SWEEP_SQL = """
-SELECT thread_id AS thread FROM journey_threads WHERE thread_id LIKE %s
-UNION SELECT session_id FROM workflow_snapshots WHERE session_id LIKE %s
-UNION SELECT thread_id FROM journey_executions WHERE thread_id LIKE %s
+EVIDENCE_SQL = """
+SELECT hr.booking_id, hr.hold_request_id, hr.journey_id,
+       (SELECT COUNT(*) FROM journeys j WHERE j.journey_id = hr.journey_id) AS journeys,
+       b.status,
+       (b.status = 'held' AND b.hold_expires_at > CURRENT_TIMESTAMP) AS active,
+       (SELECT COUNT(*) FROM booking_action_audit a
+         WHERE a.booking_id = hr.booking_id AND a.operation = 'hold') AS hold_audits,
+       (SELECT COUNT(*) FROM booking_action_audit a
+         WHERE a.booking_id = hr.booking_id AND a.operation = 'release') AS release_audits
+  FROM journey_threads jt
+  JOIN hold_requests hr ON hr.journey_id = jt.journey_id
+  LEFT JOIN bookings b ON b.booking_id = hr.booking_id
+ WHERE jt.thread_id = %s
+ ORDER BY hr.booking_id
 """
 IDENTITY_SQL = """
 SELECT current_user AS login,
@@ -173,13 +189,14 @@ class Dependencies:
     wait_healthy: Callable[[str, Callable[[], bool]], bool]
     http: Callable[[str, str, dict | None, Mapping[str, str]], tuple[int, Any]]
     run_step: Callable[[Step], StepResult]
-    sweep: Callable[[Mapping[str, str | None]], list[str]]
+    evidence: Callable[[Mapping[str, str | None], str], list[dict]]
     mint: Callable[[str], str] = lambda user: ""
     mode: str = IAM
     dirty: Callable[[], list[str]] = settings.working_tree_changes
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     git_sha: Callable[[], str] = settings.git_head
     receipt_path: Path = settings.PROOF_PATH
+    new_thread: Callable[[], str] = lambda: f"phase5-proof-{uuid.uuid4().hex[:12]}"
 
 
 def backend_environment(env: Mapping[str, str | None], secret_arn: str,
@@ -199,23 +216,46 @@ def backend_environment(env: Mapping[str, str | None], secret_arn: str,
     return child
 
 
-def plan_steps(env: Mapping[str, str | None], port: int, mode: str = IAM) -> list[Step]:
-    """The two proof scripts, run with the shell's own login (the master) against the backend.
-
-    In ``jwt`` mode they sign in themselves (``scripts/agentcore_caller.py``); the shared token
-    is blanked so nothing falls back to it.
-    """
+def _script_env(env: Mapping[str, str | None], mode: str) -> dict[str, str]:
     base = {k: v for k, v in env.items() if v is not None}
     base["MERIDIAN_AGENTCORE_AUTH"] = mode
     if mode == JWT:
         base.update({name: "" for name in JWT_STRIPPED})
+    return base
+
+
+def calls_file(receipt_path: Path, thread: str) -> Path:
+    """Where the recovery and the release step count release calls, so two calls is the limit."""
+    return receipt_path.parent / f"{thread}.release-calls"
+
+
+def plan_steps(env: Mapping[str, str | None], port: int, mode: str, thread: str,
+               ledger: Path) -> list[Step]:
+    """The two proof scripts, run with the shell's own login (the master) against the backend.
+
+    In ``jwt`` mode they sign in themselves (``scripts/agentcore_caller.py``); the shared token
+    is blanked so nothing falls back to it. The recovery runs on ``thread``.
+    """
+    base = _script_env(env, mode)
     scripts = MERIDIAN_DIR / "scripts"
     return [
         Step("warm", [sys.executable, str(scripts / "warm_demo.py"), "--base-url",
                       f"http://127.0.0.1:{port}"], base),
         Step("recovery", [sys.executable, str(scripts / "stop_and_resume_proof.py"), "--during",
-                          "waiting"], {**base, "MERIDIAN_PROOF_API": f"http://127.0.0.1:{port}/api"}),
+                          "waiting", "--thread", thread, "--calls-file", str(ledger)],
+             {**base, "MERIDIAN_PROOF_API": f"http://127.0.0.1:{port}/api"}),
     ]
+
+
+def release_step(env: Mapping[str, str | None], mode: str, thread: str, ledger: Path) -> Step:
+    """Give back ``thread``'s active holds through the governed Gateway; nothing else.
+
+    It shares the recovery's call ledger, so it never sends a third call for a hold.
+    """
+    return Step("release", [sys.executable, str(MERIDIAN_DIR / "scripts" /
+                                                 "stop_and_resume_proof.py"),
+                            "--release-only", "--thread", thread, "--calls-file", str(ledger)],
+                _script_env(env, mode))
 
 
 @dataclass(frozen=True)
@@ -379,9 +419,10 @@ def _phase_two(deps: Dependencies, prompt: str, tool: str) -> str | None:
         reply, tool)
 
 
-def check_plan(deps: Dependencies) -> list[tuple[str, Callable[[], StepResult]]]:
+def check_plan(deps: Dependencies, thread: str) -> list[tuple[str, Callable[[], StepResult]]]:
     """The ordered checks: each returns a result, and the run stops at the first that fails."""
-    warm, recovery = plan_steps(deps.env, PORT, deps.mode)
+    warm, recovery = plan_steps(deps.env, PORT, deps.mode, thread,
+                                calls_file(deps.receipt_path, thread))
     probe = "/api/diagnostics/rls-probe"
     receipt = "/api/diagnostics/session-receipt"
     return [
@@ -400,7 +441,7 @@ def check_plan(deps: Dependencies) -> list[tuple[str, Callable[[], StepResult]]]
     ]
 
 
-def run_checks(backend: Any, checks: dict[str, bool], deps: Dependencies) -> None:
+def run_checks(backend: Any, checks: dict[str, bool], deps: Dependencies, thread: str) -> None:
     """Wait for the backend, then run the checks in order, stopping at the first failure."""
     if not deps.wait_healthy(f"http://127.0.0.1:{PORT}/health", backend.alive):
         if backend.alive():
@@ -408,7 +449,7 @@ def run_checks(backend: Any, checks: dict[str, bool], deps: Dependencies) -> Non
         else:
             say("The backend exited while starting; see its output above.")
         return
-    for name, check in check_plan(deps):
+    for name, check in check_plan(deps, thread):
         say(f"check {name} ...")
         checks[name] = False
         result = check()
@@ -419,16 +460,64 @@ def run_checks(backend: Any, checks: dict[str, bool], deps: Dependencies) -> Non
             return
 
 
-def sweep_leftovers(deps: Dependencies) -> bool:
-    """Purge every ``phase5-proof-`` thread; True only when there was nothing left to purge."""
+def _hold_problems(row: Mapping[str, Any]) -> list[str]:
+    booking, journey = row.get("booking_id"), row.get("journey_id")
+    if row.get("status") is None:
+        return [f"booking {booking}: no booking row visible as the traveler"]
+    problems = []
+    if row.get("active") is not False:
+        problems.append(f"booking {booking}: still held or its state unknown")
+    if int(row.get("journeys") or 0) != 1:
+        problems.append(f"journey {journey}: its row is missing")
+    if int(row.get("hold_audits") or 0) < 1:
+        problems.append(f"booking {booking}: no hold audit row")
+    if row.get("status") == "released" and int(row.get("release_audits") or 0) < 1:
+        problems.append(f"booking {booking}: released, but no release audit row")
+    return problems
+
+
+def judge_evidence(rows: list[Mapping[str, Any]], thread: str,
+                   expect_hold: bool) -> tuple[list[str], list[str]]:
+    """What Aurora shows for the run's thread: one line per hold, and every problem.
+
+    It fails closed: a missing or invisible row is a problem, never a released hold, and a
+    passing recovery with no hold on its thread is a problem.
+    """
+    evidence, problems = [], []
+    if expect_hold and not rows:
+        problems.append(f"{thread}: no hold found for a recovery that passed")
+    for row in rows:
+        found = _hold_problems(row)
+        problems += found
+        if not found:
+            evidence.append(
+                f"thread {thread} journey {row['journey_id']} request {row['hold_request_id']} "
+                f"booking {row['booking_id']} {row['status']}; audit rows kept: "
+                f"hold {row['hold_audits']}, release {row['release_audits']}")
+    return evidence, problems
+
+
+def cleanup_run(deps: Dependencies, thread: str, expect_hold: bool) -> bool:
+    """Release this run's holds again (a no-op when the teardown worked), then prove it.
+
+    Only ``thread`` is read or released. True only when the release step passed and Aurora shows
+    every hold of the thread inactive with its rows and audit records kept.
+    """
+    released = deps.run_step(release_step(deps.env, deps.mode, thread,
+                                          calls_file(deps.receipt_path, thread)))
+    if not released.ok:
+        say(f"The governed release of {thread} failed:")
+        say(released.tail)
     try:
-        found = deps.sweep(deps.env)
-    except Exception as exc:  # noqa: BLE001 - a sweep that cannot run fails the receipt
-        say(f"The sweep for leftover proof threads failed: {type(exc).__name__}: {exc}")
+        evidence, problems = judge_evidence(deps.evidence(deps.env, thread), thread, expect_hold)
+    except Exception as exc:  # noqa: BLE001 - evidence that cannot be read fails the receipt
+        say(f"Reading the cleanup evidence for {thread} failed: {type(exc).__name__}")
         return False
-    for line in found:
-        say(f"leftover: {line}")
-    return not found
+    for line in evidence:
+        say(f"cleanup: {line}")
+    for line in problems:
+        say(f"cleanup problem: {line}")
+    return released.ok and not problems
 
 
 def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
@@ -436,9 +525,10 @@ def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
 
     An invalid receipt is written first, so an older passing one cannot outlive a run that dies.
     Any ``BaseException`` (a crash, Ctrl-C, SIGTERM) is recorded as a failed run and re-raised.
-    When the recovery was attempted the proof threads are swept, pass or fail.
+    When the recovery was attempted its thread is released and checked, pass or fail.
     """
     started = deps.now().isoformat()
+    thread = deps.new_thread()
     write_receipt(deps.receipt_path, False, {}, binding, started)
     checks: dict[str, bool] = {}
     backend = None
@@ -446,7 +536,7 @@ def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
     try:
         backend = deps.start_backend(
             backend_environment(deps.env, secret_arn, deps.mode), PORT)
-        run_checks(backend, checks, deps)
+        run_checks(backend, checks, deps, thread)
     except BaseException as exc:  # noqa: BLE001 - recorded in the receipt, then re-raised
         failure = exc
     finally:
@@ -454,10 +544,11 @@ def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
             backend.stop()
     try:
         if "recovery" in checks:
-            checks["purge"] = sweep_leftovers(deps)
+            checks["cleanup"] = False
+            checks["cleanup"] = cleanup_run(deps, thread, checks["recovery"])
     except BaseException as exc:  # noqa: BLE001 - recorded in the receipt, then re-raised
         failure = failure or exc
-        checks["purge"] = False
+        checks["cleanup"] = False
     ok = failure is None and set(checks) == set(CHECKS) and all(checks.values())
     write_receipt(deps.receipt_path, ok, checks, binding, started)
     if failure is not None:
@@ -489,7 +580,10 @@ def dry_run(deps: Dependencies, chosen: str | None = None) -> int:
     say(f"Identity mode: {deps.mode} (the mode the live Runtimes and Gateway are in; "
         "--mode overrides).")
     say("Checks, in order, stopping at the first failure: " + ", ".join(CHECKS) + ".")
-    for step in plan_steps(deps.env, PORT, deps.mode):
+    thread = deps.new_thread()
+    ledger = calls_file(deps.receipt_path, thread)
+    for step in [*plan_steps(deps.env, PORT, deps.mode, thread, ledger),
+                 release_step(deps.env, deps.mode, thread, ledger)]:
         say(f"  {step.name}: {' '.join(Path(part).name for part in step.argv[1:])}")
     say(OPEN_BACKEND)
     say(RESIDUE)
@@ -750,28 +844,27 @@ def _identity(secret_arn: str, env: Mapping[str, str | None]) -> dict[str, Any]:
             "superuser": bool(row["superuser"]), "master_member": bool(row["master_member"])}
 
 
-async def _sweep_threads(env: Mapping[str, str | None]) -> list[str]:
+async def read_evidence(client: Any, thread: str) -> list[dict]:
+    """The run's holds as Aurora holds them, read pinned to the traveler and the booking agent.
+
+    ``bookings`` and ``booking_action_audit`` are row-level secured, so they are read in the
+    traveler's scope; only ``thread`` is queried.
+    """
+    from scripts.kill_and_resume_proof import pinned_to_traveler
+
+    async with pinned_to_traveler(client, TRAVELER) as transaction:
+        rows = await client.execute(EVIDENCE_SQL, (thread,), transaction_id=transaction)
+    return [dict(row) for row in rows]
+
+
+def _evidence(env: Mapping[str, str | None], thread: str) -> list[dict]:
     from backend.db.rds_data_client import RDSDataClient
-    from scripts import stop_and_resume_proof as recovery
 
     _account, region = settings.deployment_target(env)
     client = RDSDataClient(cluster_arn=env.get("AURORA_CLUSTER_ARN"),
                            secret_arn=env.get("AURORA_SECRET_ARN"),
                            database=env.get("AURORA_DATABASE") or None, region=region)
-    pattern = recovery.PROOF_THREAD_PREFIX + "%"
-    found = sorted({row["thread"] for row in await client.execute(SWEEP_SQL, (pattern,) * 3)})
-    problems = []
-    for thread in found:
-        problems.append(f"{thread}: left behind by the recovery step; purging it")
-        try:
-            await recovery._purge_run(client, thread)
-        except Exception as exc:  # noqa: BLE001 - reported, and the receipt fails either way
-            problems.append(f"{thread}: the purge failed: {type(exc).__name__}: {exc}")
-    return problems
-
-
-def _sweep(env: Mapping[str, str | None]) -> list[str]:
-    return asyncio.run(_sweep_threads(env))
+    return asyncio.run(read_evidence(client, thread))
 
 
 def _mint(env: Mapping[str, str | None], user_key: str) -> str:
@@ -799,7 +892,8 @@ def default_dependencies() -> Dependencies:
     return Dependencies(
         env=env, caller=_caller, identity=lambda arn: _identity(arn, env),
         port_free=_port_is_free, start_backend=_start_backend, wait_healthy=_wait_healthy,
-        http=_http, run_step=_run_step, sweep=_sweep, mint=lambda user: _mint(env, user))
+        http=_http, run_step=_run_step, evidence=_evidence,
+        mint=lambda user: _mint(env, user))
 
 
 if __name__ == "__main__":

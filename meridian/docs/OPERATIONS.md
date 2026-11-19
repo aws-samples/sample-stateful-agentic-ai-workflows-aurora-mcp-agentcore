@@ -598,13 +598,19 @@ backend login has not been exercised against the live cluster.
    before anything starts, and a failed, crashed or interrupted (Ctrl-C or
    SIGTERM) run overwrites it with `ok: false`, so an older passing receipt
    never survives. A timed-out step gets SIGINT, then SIGTERM, each with a grace
-   period, before SIGKILL, so its own clean-up runs. After the recovery, passed
-   or failed, the run sweeps every `phase5-proof-` thread through the same purge;
-   a thread found there fails the receipt. The purge counts `bookings`,
-   `booking_lines`, `hold_requests`, `journeys`, `journey_executions`,
-   `journey_threads`, `workflow_snapshots` and `workflow_session_stops` at zero,
-   reading and deleting the two booking tables in a transaction pinned to the
-   traveler and the booking agent, because they force row level security.
+   period, before SIGKILL, so its own clean-up runs. The recovery runs on a
+   `phase5-proof-` thread the run names. After it, passed or failed, that
+   thread's holds are given back through the governed Gateway release tool
+   (the recovery's own teardown, then a `--release-only` step), and nothing is
+   deleted. A hold is read back before each release call, and a second call goes
+   out only after a read-back shows it still held. The run then reads Aurora,
+   pinned to the traveler and the booking agent because the booking tables force
+   row level security: every hold of the thread must be inactive, with its
+   booking, hold request, journey and action audit rows kept (a `hold` row, and
+   a `release` row for a released booking). Anything else, or no hold after a
+   passing recovery, fails the receipt's `cleanup` check, and the run prints the
+   thread, journey, request and booking ids it checked. Only that thread is read
+   or released; older `phase5-proof-` threads are left alone.
 
    The proof follows the identity mode the live Runtimes and the Gateway are in. `--mode iam|jwt`
    picks it; without the flag it reads `MERIDIAN_AGENTCORE_AUTH` from `.env` or the shell. In `iam`

@@ -29,9 +29,13 @@ from scripts.cognito_tokens import mint_access_token
 from scripts.kill_and_resume_proof import BOOKING_AGENT, pinned_to_traveler
 from scripts.identity_probes.probes import CONCIERGE, WORKFLOW, BookingRef, Ports
 from scripts.identity_probes.receipt import DECOY, JORDAN
-from scripts.prove_backend_login import SWEEP_SQL
 
 APP_ROLE = "meridian_app"
+SWEEP_SQL = """
+SELECT thread_id AS thread FROM journey_threads WHERE thread_id LIKE %s
+UNION SELECT session_id FROM workflow_snapshots WHERE session_id LIKE %s
+UNION SELECT thread_id FROM journey_executions WHERE thread_id LIKE %s
+"""
 COUNT_SQL = "SELECT COUNT(*) AS n FROM traveler_preferences WHERE traveler_id = %s"
 DENY_SQL = ("SELECT COUNT(*) AS n FROM traveler_access_audit "
             "WHERE requested_traveler_id = %s AND decision = 'deny'")
