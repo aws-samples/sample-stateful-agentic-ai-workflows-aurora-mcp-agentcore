@@ -2881,6 +2881,8 @@ host with any account id masked, the scenario, the rate, the duration and the co
 that stopped early has partial numbers: do not compare it with a full run. Run the same scenario
 at a few rates, and wait for the previous run to finish, before reading anything into a trend.
 
+For database transaction latency, see the [three-way hold benchmark](HOLD_TRANSACTION_BENCHMARK.md). It times the same two-place hold through the Data API, RDS Proxy, and a direct PostgreSQL connection.
+
 First runs, 15 Nov 2026, against the hosted `jwt` stack (App Runner, 1 vCPU and 2 GB; Aurora
 serverless with a 1 ACU floor and a reader; Runtimes on platform V1). They are a latency baseline
 at low rates, not a capacity test: nothing here says how many travelers the stack can serve.
