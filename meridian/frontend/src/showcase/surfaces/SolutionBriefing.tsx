@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Phase } from '../../types';
 import { BriefingArchitecture } from './BriefingArchitecture';
+import { BoundaryScenarios } from './BoundaryScenarios';
 import { BriefingPhases, BriefingPreparation } from './BriefingWalkthrough';
 import { CONTROLS, POLICIES, TOOLS, toolsHeading } from './solutionBriefingContent';
 
@@ -42,6 +43,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           ['Permission', 'Cedar decides whether a tool may run.'],
           ['Outcome', 'Aurora records what actually committed.'],
         ]} />
+        <BoundaryScenarios />
         <Detail title="Implementation reference">
           <Facts items={[
             ['Seed', 'travel_catalog.py defines fictional inventory; seed_data.py loads Aurora and embeds descriptions.'],

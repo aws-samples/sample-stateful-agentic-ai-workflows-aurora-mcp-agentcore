@@ -1,7 +1,10 @@
-import { ArrowRight, Braces, ChevronDown, FileJson, MessageSquare, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileJson, MessageSquare, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Phase as CapabilityPhase } from '../../types';
 import { ServiceMark, type ServiceMarkName } from '../components/ServiceMark';
+import { PHASE_PATHS } from './briefingSteps';
+import { StepPath } from './StepPath';
+import { WorkflowSteps } from './WorkflowSteps';
 import './briefingWalkthrough.css';
 
 type Step = { title: string; detail: string; service?: ServiceMarkName; icon?: LucideIcon; incoming?: boolean };
@@ -12,13 +15,6 @@ function StepContent({ title, detail, service, icon: Icon, incoming }: Step) {
     {service ? <ServiceMark name={service} size={32} /> : Icon ? <Icon size={28} aria-hidden="true" /> : null}
     <div><strong>{title}</strong><span>{detail}</span></div>
   </div>;
-}
-
-function MiniFlow({ label, steps }: { label: string; steps: Step[] }) {
-  return <ol className="mds-brief-mini-flow" aria-label={label}>{steps.map((step, index) => <li key={step.title}>
-    {index > 0 && <ArrowRight className="mds-brief-connector" size={20} aria-hidden="true" />}
-    <StepContent {...step} />
-  </li>)}</ol>;
 }
 
 function Phase({ number, name, claim, children, onOpen, busy }: {
@@ -66,74 +62,29 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
     <div className="mds-brief-section-body">
     <div className="mds-brief-phase-pair">
       <Phase number={1} name="SQL" claim="Answer from exact rows." onOpen={onOpenPhase} busy={busy}>
-        <MiniFlow label="Phase 1 SQL path" steps={[
-          { icon: MessageSquare, title: 'Question', detail: 'Destination + budget' },
-          { icon: Braces, title: 'SQL filters', detail: 'Parameterized query' },
-          { service: 'aurora', title: 'Aurora', detail: 'Data API → rows' },
-        ]} />
+        <StepPath data={PHASE_PATHS[1]} />
         <p className="mds-brief-phase-evidence">Check the SQL and rows. Budget is per traveler. This is bounded filtering, not unrestricted text-to-SQL.</p>
       </Phase>
       <Phase number={2} name="MCP" claim="Put a reusable tool contract around the data." onOpen={onOpenPhase} busy={busy}>
-        <MiniFlow label="Phase 2 MCP path" steps={[
-          { service: 'app-runner', title: 'FastAPI', detail: 'MCP client' },
-          { icon: Braces, title: 'Concierge MCP', detail: 'Compare + convert' },
-          { service: 'aurora', title: 'Catalog + rates', detail: 'Aurora + sample FX' },
-        ]} />
+        <StepPath data={PHASE_PATHS[2]} />
         <p className="mds-brief-phase-evidence">Check tool names, inputs and results. Gateway governs the production tools in Phase 4.</p>
       </Phase>
     </div>
     <Phase number={3} name="Retrieval" claim="Find the meaning as well as the words." onOpen={onOpenPhase} busy={busy}>
       <figure className="mds-brief-retrieval" aria-labelledby="brief-retrieval-query">
         <div className="mds-brief-query"><MessageSquare size={23} aria-hidden="true" /><div><p id="brief-retrieval-query">“A Bali villa with yoga and a beach day”</p><span>Illustrative query, seeded catalog example</span></div></div>
-        <div className="mds-brief-retrieval-layout">
-          <ol className="mds-brief-search-flow" aria-label="Hybrid retrieval pipeline">
-            <li>
-              <StepContent service="bedrock" title="Embed the query" detail="Cohere Embed v4" />
-              <p>Represent its meaning as a vector.</p>
-            </li>
-            <li>
-              <ArrowRight className="mds-brief-connector" size={20} aria-hidden="true" />
-              <div className="mds-brief-hybrid">
-                <StepContent service="aurora" title="Search both ways" detail="Aurora PostgreSQL" />
-                <div className="mds-brief-search-branches">
-                  <div><strong>Meaning</strong><span>Query vector → pgvector</span></div>
-                  <div><strong>Words</strong><span>Query text → tsvector</span></div>
-                </div>
-                <p className="mds-brief-merge">Merge candidates by package ID</p>
-              </div>
-            </li>
-            <li>
-              <ArrowRight className="mds-brief-connector" size={20} aria-hidden="true" />
-              <div><StepContent service="bedrock" title="Rerank" detail="Cohere Rerank 3.5" /><p>Read the query and candidates together to order the matches.</p></div>
-            </li>
-          </ol>
-          <div className="mds-brief-destination-output"><ArrowRight className="mds-brief-result-connector" size={20} aria-hidden="true" /><div className="mds-brief-destination">
-            <img src="/travel/catalog/BCH-003.jpg" alt="Green rice terraces and palms in Bali" width={320} height={180} loading="lazy" />
-            <div><span>Example candidate BCH-003</span><h4>Bali Rice Terrace Retreat</h4><p>Ubud villa, yoga mornings, beach club day</p></div>
-          </div></div>
-        </div>
+        <StepPath data={PHASE_PATHS[3]} />
         <figcaption>Check observed scores in Phase 3. Relevance is a candidate signal; tools still verify price, availability and access.</figcaption>
       </figure>
     </Phase>
     <div className="mds-brief-phase-pair">
       <Phase number={4} name="Production" claim="Remember context. Govern every tool call." onOpen={onOpenPhase} busy={busy}>
-        <MiniFlow label="Phase 4 governed action path" steps={[
-          { service: 'agentcore-runtime', title: 'Runtime', detail: 'Strands + Memory' },
-          { service: 'agentcore-gateway', title: 'Gateway', detail: 'Cedar policy' },
-          { service: 'lambda', title: 'Lambda', detail: 'Aurora transaction' },
-        ]} />
-        <p>Bind the traveler and saved budget. Cedar authorizes the call. Aurora checks inventory, ownership and expiry.</p>
+        <StepPath data={PHASE_PATHS[4]} note="Signed-in release shown: FastAPI, the Runtime and the Gateway each check the access token." />
         <p className="mds-brief-phase-evidence">Check both the policy decision and the Aurora receipt. Permission to call a tool is not proof of a committed write.</p>
       </Phase>
       <Phase number={5} name="Workflow" claim="Resume the work after a worker stops." onOpen={onOpenPhase} busy={busy}>
         <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>Strands Graph in its own AgentCore Runtime</strong><span>Saved steps in Amazon Aurora through the RDS Data API</span></p>
-        <ol className="mds-brief-workflow-sequence" aria-label="Phase 5 durable workflow path">
-          {[
-            ['Classify', 'Keyword rules, no model'], ['Search', 'Gateway search, may pause'],
-            ['Availability', 'Recheck stock in Aurora'], ['Prepare hold', 'Confirm, then save intent'],
-            ['Hold', 'Gateway to Lambda'], ['Synthesize', 'Read the saved result'],
-          ].map(([title, detail], index) => <li key={title}><span aria-hidden="true">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>)}
-        </ol>
+        <WorkflowSteps />
         <p>After lease release or expiry, resume the same thread with the same request and booking IDs. If a later step fails, the runner releases the hold through the Gateway under Cedar, fenced by the run&rsquo;s lease and journey.</p>
         <p className="mds-brief-phase-evidence">Check the hold record, the same booking ID and the original expiry. Saved steps in Aurora restore work; Phase 4 keeps conversation context in AgentCore Memory.</p>
       </Phase>

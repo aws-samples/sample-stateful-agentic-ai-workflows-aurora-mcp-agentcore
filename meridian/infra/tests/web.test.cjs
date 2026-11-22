@@ -285,3 +285,46 @@ test('the default and iam templates are identical, and jwt differs only in the f
   assert.deepEqual(changed.filter((id) => id !== viewerId), []);
   assert.deepEqual(strip(jwt), strip(plain));
 });
+
+// Captured at load, before any test mocks it: a test that saves Source.asset inside its body can
+// pick up an earlier test's mock, whose temporary build folder is already gone.
+const ORIGINAL_SOURCE_ASSET = s3deploy.Source.asset;
+
+test('the site keeps earlier hashed assets, prunes everything else, and revalidates index.html', (t) => {
+  // A browser that still holds the previous index.html must find the chunks it names, so
+  // content-hashed /assets/ files are never pruned. Every other file is pruned as before, so a
+  // file removed from the build (an image, say) leaves the site. index.html goes last, with
+  // no-cache, so a normal navigation picks up the new release.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'meridian-site-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'index.html'), '<!doctype html><title>Meridian</title>');
+  t.mock.method(s3deploy.Source, 'asset', () => ORIGINAL_SOURCE_ASSET(directory));
+  const template = Template.fromStack(new MeridianWebStack(new App(), 'Web', {
+    env: { account: '123456789012', region: 'us-east-1' },
+    backendHost: 'test.us-east-1.awsapprunner.com',
+  }));
+  const deployments = template.findResources('Custom::CDKBucketDeployment');
+  assert.equal(Object.keys(deployments).length, 3);
+  const byRole = (predicate) => Object.entries(deployments).filter(([, resource]) => predicate(resource.Properties));
+  const [[siteId, site]] = byRole((p) => p.Prune === true);
+  assert.deepEqual(site.Properties.Exclude, ['index.html', 'assets/*']);
+  assert.equal(site.Properties.Include, undefined);
+  const [[assetsId, assets]] = byRole((p) => p.Prune === false && p.Include?.includes('assets/*'));
+  assert.deepEqual(assets.Properties.Exclude, ['*']);
+  assert.deepEqual(assets.Properties.Include, ['assets/*']);
+  assert.equal(assets.Properties.SystemMetadata['cache-control'], 'public, max-age=31536000, immutable');
+  const [[, index]] = byRole((p) => p.Include?.includes('index.html'));
+  assert.equal(index.Properties.Prune, false);
+  assert.deepEqual(index.Properties.Exclude, ['*']);
+  assert.deepEqual(index.Properties.Include, ['index.html']);
+  assert.equal(index.Properties.SystemMetadata['cache-control'], 'no-cache');
+  assert.ok(index.DependsOn.includes(siteId) && index.DependsOn.includes(assetsId), 'index.html deploys last');
+  // Only the last pass invalidates: one CreateInvalidation of /* after every file is in place, and
+  // the only pass that waits on CloudFront.
+  assert.equal(site.Properties.DistributionId, undefined);
+  assert.equal(assets.Properties.DistributionId, undefined);
+  assert.ok(index.Properties.DistributionId, 'index.html invalidates the distribution');
+  assert.deepEqual(index.Properties.DistributionPaths, ['/*']);
+  const handlers = new Set(Object.values(deployments).map((resource) => JSON.stringify(resource.Properties.ServiceToken)));
+  assert.equal(handlers.size, 1, 'all three share the one deployment handler');
+});

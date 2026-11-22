@@ -315,14 +315,41 @@ export class MeridianWebStack extends Stack {
       },
     });
 
-    new s3deploy.BucketDeployment(this, 'SiteDeployment', {
-      sources: [s3deploy.Source.asset(path.join(meridianDir, 'frontend', 'dist'))],
-      destinationBucket: site,
+    // Three passes over the one build. A browser still holding the previous index.html must
+    // find the hashed chunks it names, so files under assets/ (content-hashed by Vite) are
+    // uploaded without pruning; to withdraw one, delete it from the bucket by hand. Everything
+    // else is pruned as before, so a file removed from the build leaves the site. index.html goes
+    // last with no-cache, so browsers revalidate it and pick up a new release without a hard
+    // refresh. Only that last pass invalidates CloudFront (/*), once every file is in place, so it
+    // is also the only pass that waits on an invalidation.
+    const build = s3deploy.Source.asset(path.join(meridianDir, 'frontend', 'dist'));
+    const common = { sources: [build], destinationBucket: site, memoryLimit: 512 };
+    const files = new s3deploy.BucketDeployment(this, 'SiteDeployment', {
+      ...common,
+      exclude: ['index.html', 'assets/*'],
+      prune: true,
+    });
+    const assets = new s3deploy.BucketDeployment(this, 'SiteAssetsDeployment', {
+      ...common,
+      exclude: ['*'],
+      include: ['assets/*'],
+      prune: false,
+      cacheControl: [
+        s3deploy.CacheControl.setPublic(),
+        s3deploy.CacheControl.maxAge(Duration.days(365)),
+        s3deploy.CacheControl.immutable(),
+      ],
+    });
+    const index = new s3deploy.BucketDeployment(this, 'SiteIndexDeployment', {
+      ...common,
       distribution,
       distributionPaths: ['/*'],
-      prune: true,
-      memoryLimit: 512,
+      exclude: ['*'],
+      include: ['index.html'],
+      prune: false,
+      cacheControl: [s3deploy.CacheControl.noCache()],
     });
+    index.node.addDependency(files, assets);
 
     new CfnOutput(this, 'SiteUrl', { value: `https://${distribution.distributionDomainName}` });
     new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });

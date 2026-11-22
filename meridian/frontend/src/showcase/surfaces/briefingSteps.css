@@ -1,0 +1,89 @@
+/* Step-through paths in the Solution briefing: one hop per click, a chip that moves with the
+   step, and a caption that keeps its height so the controls stay put. Every state is a still
+   frame; under reduced motion nothing transitions. */
+.mds-step-path { display:grid; gap:16px; min-width:0; container:step-path / inline-size; }
+/* The component sets both per path inline; these are the defaults it overrides. */
+.mds-step-track { --mds-step-count:1; --mds-step-at:0; position:relative; padding-top:48px; min-width:0; }
+.mds-step-lane { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(var(--mds-step-count), minmax(0, 1fr)); gap:28px; align-items:start; }
+.mds-step-hop { position:relative; display:grid; align-content:start; gap:10px; min-width:0; padding:16px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); transition:border-color 300ms ease-out, background-color 300ms ease-out; }
+.mds-step-hop + .mds-step-hop::before { content:''; position:absolute; left:-30px; top:36px; width:28px; height:2px; background:var(--mds-separator); }
+.mds-step-hop-text strong { display:block; font:var(--mds-type-headline); color:var(--mds-label); overflow-wrap:anywhere; }
+.mds-step-hop-text span { display:block; margin-top:4px; font:var(--mds-type-footnote); color:var(--mds-label-2); overflow-wrap:anywhere; }
+.mds-step-hop-label { font:var(--mds-type-footnote); color:var(--mds-label-2); text-transform:uppercase; letter-spacing:normal; }
+.mds-step-hop.is-current { border-color:var(--mds-tint); background:var(--mds-blue-fill); }
+.mds-step-hop.is-done { border-color:var(--mds-green); }
+.mds-step-hop.is-stopped { border-color:var(--mds-red); background:var(--mds-red-fill); }
+.mds-step-hop.is-ahead .mds-step-hop-text strong { color:var(--mds-label-2); }
+.mds-step-glyph { display:grid; place-items:center; width:40px; height:40px; border-radius:var(--mds-radius-s); border:2px solid var(--mds-separator); color:var(--mds-label-2); font:var(--mds-type-headline); font-family:var(--mds-font-mono); }
+.mds-step-branches { display:grid; gap:6px; margin:0; padding-top:8px; border-top:1px solid var(--mds-separator); }
+.mds-step-branches div { display:grid; gap:2px; }
+.mds-step-branches dt { font:var(--mds-type-footnote); font-weight:var(--mds-weight-medium); color:var(--mds-label); }
+.mds-step-branches dd { margin:0; font:var(--mds-type-footnote); color:var(--mds-label-2); }
+.mds-step-image { display:block; width:100%; height:auto; aspect-ratio:16 / 9; object-fit:cover; border-radius:var(--mds-radius-s); }
+.mds-step-chip,.mds-step-chip-inline { padding:7px 12px; border-radius:var(--mds-radius-full); background:var(--mds-label); color:var(--mds-ground); font:var(--mds-type-footnote); font-family:var(--mds-font-mono); white-space:nowrap; }
+.mds-step-chip { position:absolute; top:6px; left:calc((100% - (var(--mds-step-count) - 1) * 28px) / var(--mds-step-count) * (var(--mds-step-at) + 0.5) + var(--mds-step-at) * 28px); transform:translateX(-50%); transition:left 450ms cubic-bezier(0.22, 1, 0.36, 1); }
+.mds-step-chip.is-stopped { background:var(--mds-red); }
+.mds-step-chip-inline { display:none; justify-self:start; }
+.mds-brief .mds-step-caption { min-height:calc(2 * 1.333em); margin:0; max-width:80ch; font:var(--mds-type-title-3); font-weight:var(--mds-weight-regular); color:var(--mds-label); }
+.mds-step-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.mds-step-button,.mds-step-scenario { min-height:44px; padding:0 18px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-full); background:transparent; color:var(--mds-label); font:var(--mds-type-body); cursor:pointer; }
+.mds-step-button.is-primary { background:var(--mds-action); border-color:var(--mds-action); color:var(--mds-on-action); }
+.mds-step-button[aria-disabled='true'] { opacity:0.45; cursor:default; }
+.mds-step-scenario[aria-pressed='true'] { background:var(--mds-surface-2); border-color:var(--mds-label-2); }
+.mds-step-button:focus-visible,.mds-step-scenario:focus-visible { outline:2px solid var(--mds-tint); outline-offset:2px; }
+.mds-step-count { color:var(--mds-label-2); font:var(--mds-type-footnote); font-variant-numeric:tabular-nums; }
+.mds-brief .mds-step-note { font:var(--mds-type-footnote); color:var(--mds-label-2); }
+
+/* Phase 5: the graph's nodes beside the saved steps in Aurora. */
+.mds-step-sessions,.mds-step-scenarios { display:flex; flex-wrap:wrap; gap:10px; }
+.mds-step-session { display:inline-flex; align-items:center; gap:10px; min-height:40px; padding:0 14px 0 8px; border:2px solid var(--mds-separator); border-radius:var(--mds-radius-full); color:var(--mds-label-2); font:var(--mds-type-footnote); }
+.mds-step-session.is-live { border-color:var(--mds-tint); color:var(--mds-label); }
+.mds-step-session.is-stopped { text-decoration:line-through; }
+.mds-step-workflow-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(220px, 300px); gap:24px; align-items:start; }
+.mds-step-workflow-main { display:grid; gap:16px; align-content:start; min-width:0; }
+.mds-step-nodes { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px; }
+.mds-step-node { position:relative; display:grid; align-content:start; gap:4px; min-width:0; padding:12px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); transition:border-color 300ms ease-out, background-color 300ms ease-out; }
+.mds-step-node strong { font:var(--mds-type-body); font-weight:var(--mds-weight-semibold); color:var(--mds-label); overflow-wrap:anywhere; }
+.mds-brief .mds-step-node p { margin:0; font:var(--mds-type-footnote); color:var(--mds-label-2); }
+.mds-step-node-number { font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label-2); }
+.mds-step-node.is-done { border-color:var(--mds-green); }
+.mds-step-node.is-next { border-color:var(--mds-tint); background:var(--mds-blue-fill); }
+.mds-step-node.is-paused { border-color:var(--mds-yellow); background:var(--mds-yellow-fill); }
+.mds-step-node-flag { font:var(--mds-type-footnote); color:var(--mds-label); }
+.mds-step-store { display:grid; gap:12px; padding:16px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); }
+.mds-step-store-head { display:flex; align-items:center; gap:12px; }
+.mds-step-store-head strong { display:block; font:var(--mds-type-headline); color:var(--mds-label); }
+.mds-step-store-head span { font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label-2); }
+.mds-step-saved { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.mds-step-saved li { padding:6px 10px; border-radius:var(--mds-radius-s); background:var(--mds-surface-2); color:var(--mds-label); font:var(--mds-type-footnote); font-family:var(--mds-font-mono); }
+.mds-step-saved li.is-restored { outline:2px solid var(--mds-tint); }
+.mds-step-saved li.is-empty { color:var(--mds-label-2); }
+.mds-brief .mds-step-lease { margin:0; padding-top:10px; border-top:1px solid var(--mds-separator); font:var(--mds-type-footnote); color:var(--mds-label-2); }
+.mds-step-lease strong { color:var(--mds-label); }
+
+/* Verify the boundaries: the outcome of the selected scenario. */
+.mds-step-outcome { display:grid; gap:4px; padding:16px 18px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-green); }
+.mds-step-outcome.is-stopped { border-color:var(--mds-red); background:var(--mds-red-fill); }
+.mds-step-outcome strong { font:var(--mds-type-headline); color:var(--mds-label); }
+.mds-brief .mds-step-outcome p { margin:0; font:var(--mds-type-body); color:var(--mds-label); }
+
+/* Phase 5 keeps its six nodes legible: the saved-steps panel moves below them first. */
+@container step-path (max-width:1100px) {
+  .mds-step-workflow-grid { grid-template-columns:minmax(0, 1fr); }
+  .mds-step-nodes { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+}
+
+/* Narrow containers stack the path and show the chip inside the current hop. */
+@container step-path (max-width:820px) {
+  .mds-step-track { padding-top:0; }
+  .mds-step-chip { display:none; }
+  .mds-step-chip-inline { display:inline-block; }
+  .mds-step-lane { grid-template-columns:minmax(0, 1fr); gap:14px; }
+  .mds-step-hop + .mds-step-hop::before { left:36px; top:-16px; width:2px; height:14px; }
+  .mds-step-workflow-grid { grid-template-columns:minmax(0, 1fr); }
+  .mds-step-nodes { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .mds-step-image { max-width:320px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-step-chip,.mds-step-hop,.mds-step-node { transition:none; }
+}

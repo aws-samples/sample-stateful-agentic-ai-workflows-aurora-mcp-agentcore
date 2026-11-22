@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SolutionBriefing } from '../SolutionBriefing';
@@ -50,6 +50,41 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Check access at every hop')).toBeInTheDocument();
     expect(screen.getByText(/each check the caller before acting, and the database applies its own row-level security/))
       .toBeInTheDocument();
+  });
+
+  it('steps through every phase and keeps its evidence line and Open button', () => {
+    const opened: number[] = [];
+    render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} onOpenPhase={phase => opened.push(phase)} />);
+    fireEvent.click(screen.getByText('Build five capabilities'));
+    const evidence: Record<number, RegExp> = {
+      1: /^Check the SQL and rows\./, 2: /^Check tool names, inputs and results\./,
+      3: /^Check observed scores in Phase 3\./, 4: /^Check both the policy decision and the Aurora receipt\./,
+      5: /^Check the hold record, the same booking ID and the original expiry\./,
+    };
+    const names = ['Phase 1 - SQL', 'Phase 2 - MCP', 'Phase 3 - Retrieval', 'Phase 4 - Production', 'Phase 5 - Workflow'];
+    names.forEach((name, offset) => {
+      const phase = offset + 1;
+      fireEvent.click(screen.getByRole('heading', { name }));
+      const body = screen.getByRole('heading', { name }).closest('details') as HTMLElement;
+      const next = within(body).getByRole('button', { name: 'Next step' });
+      expect(next).toBeVisible();
+      fireEvent.click(next);
+      expect(within(body).getByText(/^Step 2 of \d+$/)).toBeVisible();
+      expect(within(body).getByText(evidence[phase])).toBeVisible();
+      fireEvent.click(within(body).getByRole('button', { name: new RegExp(`^Open Phase ${phase}: `) }));
+    });
+    expect(opened).toEqual([1, 2, 3, 4, 5]);
+    expect(screen.getByText('Signed-in release shown: FastAPI, the Runtime and the Gateway each check the access token.'))
+      .toBeInTheDocument();
+  });
+
+  it('shows where each illustrative hold request stops under Verify the boundaries', () => {
+    render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Over the saved budget' })).not.toBeVisible();
+    fireEvent.click(screen.getByText('Verify the boundaries'));
+    fireEvent.click(screen.getByRole('button', { name: 'Over the saved budget' }));
+    expect(screen.getByText('Refused by Cedar')).toBeVisible();
+    for (const fact of ['Identity', 'Permission', 'Outcome']) expect(screen.getAllByText(fact).length).toBeGreaterThan(1);
   });
 
   it('reveals policy details only after opening the verification section', () => {

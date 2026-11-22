@@ -33,6 +33,11 @@ const MARKS = {
     smallSrc: '/brand/aws-2026-07-31/s3.svg',
     label: 'Amazon S3',
   },
+  cognito: {
+    src: '/brand/aws-2026-07-31/cognito.svg',
+    smallSrc: '/brand/aws-2026-07-31/cognito.svg',
+    label: 'Amazon Cognito',
+  },
   aurora: {
     src: '/brand/aws-2026-07-31/aurora.svg',
     smallSrc: '/brand/aws-2026-07-31/aurora.svg',

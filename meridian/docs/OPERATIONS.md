@@ -2145,6 +2145,14 @@ sends these fields, so it must name a model that accepts them.
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
 resources.
 
+The site is uploaded in three passes. Files under `assets/`, which Vite names by their content,
+are kept from earlier builds, so a page that is still open on the previous build can load the code
+it asks for. They are served with a one-year immutable cache. Every other file is pruned, so a file
+removed from the build leaves the site. `index.html` goes last with `Cache-Control: no-cache`, so a
+browser checks for a new release on each load instead of reusing the old page. To withdraw a file
+under `assets/` (for example, one that should never have shipped), delete it from the site bucket
+and create a CloudFront invalidation for its path.
+
 A publish carries two additions beyond the new frontend and backend. When
 `AURORA_BACKEND_SECRET_ARN` is in `.env`, the roles stack attaches
 `MeridianBackendAuroraAccess` to the live App Runner instance role, and the

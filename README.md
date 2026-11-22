@@ -190,7 +190,9 @@ first.
   [operations guide](meridian/docs/OPERATIONS.md). Use `us-east-1`, the default in
   [`.env.example`](meridian/.env.example). Another Region needs the settings in the
   [runbook prerequisites](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#prerequisites).
-- Amazon Aurora PostgreSQL with the RDS Data API, pgvector and Secrets Manager credentials.
+- Amazon Aurora PostgreSQL with the RDS Data API, pgvector and Secrets Manager credentials. If you
+  do not have a cluster, create one first with
+  [Provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora).
 - Amazon Bedrock access, in that Region, to the default models: Claude Sonnet 5.5 through its
   global inference profile `global.anthropic.claude-sonnet-5-5`, Cohere Embed v4
   (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`). `BEDROCK_MODEL_ID`,
@@ -229,7 +231,8 @@ account-specific configuration out of Git.
 
 ### 2. Prepare AWS resources and choose authentication
 
-**Prepare the database.** Follow
+**Prepare the database.** This needs the cluster from the prerequisites; if you have none yet,
+[provision Aurora](meridian/docs/OPERATIONS.md#provision-aurora) first. Then follow
 [Prepare the database](meridian/docs/OPERATIONS.md#prepare-the-database). On an empty database,
 initialize the base schema and list the pending migrations. Dry-run **one named migration**,
 inspect its result, then apply that migration. Repeat until none are pending, then seed the
@@ -244,7 +247,8 @@ python scripts/seed_data.py
 ```
 
 `seed_data.py` calls Amazon Bedrock when preparing catalog embeddings.
-`init_aurora_schema.py` and `seed_data.py` refuse a database that already has Meridian data.
+`init_aurora_schema.py` refuses a database that already has any table in its `public` schema, and
+`seed_data.py` refuses one whose package or traveler tables already hold rows.
 Run without a flag, `apply_migrations.py` only lists the pending migrations and prints its usage.
 Nothing applies without `--only`. `scripts/setup.sh` follows this route for a new database.
 
@@ -308,8 +312,10 @@ VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host localhost --port 517
 
 Open <http://localhost:5173/showcase>.
 
-**Expected:** the showcase opens. `/api/health` and the UI's configuration indicators report
-what is set up. `"workflow_runtime_configured"` is `false` until you deploy and synchronize the Workflow
+**Expected:** the showcase opens, and its configuration indicators report what is set up. They
+read `/api/health`, which needs an authenticated caller (the signed-in token, or the local
+loopback rule in development). `/health` is the unauthenticated liveness check and returns only
+`{"status": "healthy"}`. `"workflow_runtime_configured"` is `false` until you deploy and synchronize the Workflow
 endpoint. The snapshot store is reported as `"snapshot_store": "Aurora workflow_snapshots"`.
 
 The local modes that skip sign-in or use a shared token are for loopback only. Use the signed-in
@@ -350,7 +356,8 @@ workspace settings and launch configuration.
 ## Try the reference app
 
 Open the showcase on your local or hosted site. Each view teaches one part of the design. Work
-through them in this order.
+through them in the order of this table. The tab bar lists the same views, starting with
+**Concierge**.
 
 | View | Exercise | Inspect |
 | --- | --- | --- |
@@ -418,7 +425,7 @@ The table excludes credits, free-tier allowances, discounts, taxes and support c
 | [AgentCore Gateway, Policy and Memory](https://aws.amazon.com/bedrock/agentcore/pricing/) | Tool discovery/calls, policy evaluations, conversation events and memory operations | Count each metered operation, including retries and discovery. Workflow snapshots live in Aurora. Concierge conversation memory is a separate AgentCore cost. |
 | [Lambda](https://aws.amazon.com/lambda/pricing/) | Requests and duration x configured memory | Include targets, request interception and Cognito hooks. Bound timeout and concurrency. A denied tool call can still incur upstream authorization work. |
 | [Cognito](https://aws.amazon.com/cognito/pricing/) and secrets | Monthly active users, selected Cognito tier, secret storage and API calls | Include service-login secrets and any configured messaging or security features. See [Secrets Manager pricing](https://aws.amazon.com/secrets-manager/pricing/). |
-| [App Runner](https://aws.amazon.com/apprunner/pricing/) and optional hosting | Provisioned memory, active CPU, S3 storage/requests, CloudFront traffic and container images | Local web serving avoids hosted web costs, but still uses AWS data and agent services. App Runner's provisioned memory can incur idle charges. See [S3](https://aws.amazon.com/s3/pricing/), [CloudFront](https://aws.amazon.com/cloudfront/pricing/) and [ECR](https://aws.amazon.com/ecr/pricing/). |
+| Optional hosting: Amazon ECS Express Mode or [App Runner](https://aws.amazon.com/apprunner/pricing/) | Express Mode: AWS Fargate task vCPU and memory hours (one to four tasks) and the Application Load Balancer it creates. App Runner: provisioned memory and active CPU. Both: S3 storage/requests, CloudFront traffic and container images | Local web serving avoids hosted web costs, but still uses AWS data and agent services. Express Mode keeps at least one task and its load balancer running, so it bills by the hour until you remove it. App Runner's provisioned memory can incur idle charges. See [AWS Fargate](https://aws.amazon.com/fargate/pricing/), [Elastic Load Balancing](https://aws.amazon.com/elasticloadbalancing/pricing/), [S3](https://aws.amazon.com/s3/pricing/), [CloudFront](https://aws.amazon.com/cloudfront/pricing/) and [ECR](https://aws.amazon.com/ecr/pricing/). |
 | [CloudWatch](https://aws.amazon.com/cloudwatch/pricing/) and networking | Log/trace ingestion, retention, queries, alarms and data transfer | Set retention and sampling deliberately. Include NAT gateways, endpoints or cross-Region transfer only if your chosen topology adds them. |
 
 **Compute-only illustration.** The template's Aurora Standard writer and reader in US East
@@ -441,11 +448,11 @@ keeps a task and a load balancer running until its stack is gone.
 1. The hosted web application, if created. Each hosting choice has its own teardown, so use only
    the one you deployed (or both, if you deployed both):
    - Express Mode (the path for a new account):
-     [Tear down an Express-only deployment](meridian/docs/OPERATIONS.md#tear-down-the-express-backend).
+     [Tear down the Express backend](meridian/docs/OPERATIONS.md#tear-down-the-express-backend).
      The site goes before the service, and the service before its roles. Then check that the
      service and its load balancer are gone.
-   - App Runner: [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app), its last
-     teardown paragraph.
+   - App Runner: [Publish the web app](meridian/docs/OPERATIONS.md#publish-the-web-app), the
+     paragraph on tearing down an App Runner hosted app.
 2. [AgentCore resources](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md#tear-down), including separately
    provisioned targets and secrets. Do this before the logins. The `MeridianWorkflow` Runtime's
    role attaches `MeridianWorkflowAuroraAccess` (the AgentCore template names it), the catalog
@@ -458,7 +465,9 @@ keeps a task and a load balancer running until its stack is gone.
    never deletes the audit bucket (the `BucketName` output), its KMS key or the export Lambda's log
    group. They stay in your account and keep costing storage until Object Lock retention ends and
    you delete them yourself.
-5. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora), preserving a final snapshot until you no longer need the data.
+5. [Aurora](meridian/docs/OPERATIONS.md#provision-aurora). The cluster has deletion protection and its stack
+   has termination protection, so turn both off first, as the end of that section shows. Keep a final
+   snapshot until you no longer need the data.
 6. CDK bootstrap. The `CDKToolkit` stack holds any backend images CDK pushed. Delete it
    only if nothing else in the account and Region deploys with CDK, and empty its S3 bucket
    and Amazon ECR repository first if the delete stops on them. Do not remove shared
@@ -474,10 +483,11 @@ dependency order above follows the stack definitions in `meridian/infra/lib` and
 
 These tests need no AWS account and no credentials.
 
-Backend, from `meridian/`:
+Backend, from `meridian/`, in the virtual environment from [step 1](#1-install-local-dependencies):
 
 ```bash
 venv/bin/python -m pip install --require-hashes -r requirements-ci.txt
+venv/bin/python -m pip install --require-hashes -r requirements.txt
 venv/bin/python -m pip install --require-hashes --no-deps -r requirements-runtime-tests.txt
 venv/bin/python -m pip install --require-hashes -r examples/langgraph/requirements.txt
 PYTHON_DOTENV_DISABLED=1 venv/bin/python -m pytest -m "not database" tests examples/langgraph/tests
@@ -515,9 +525,12 @@ Runtime's MCP override.
 
 ### Live database tests
 
-This part matters only if you run the `database` tests against your own cluster. They give back
-the holds they place and keep every booking, hold request, journey and audit row, because an
-audit export may already hold them. Two of them confirm a booking
+This part matters only if you run the `database` tests against your own cluster. Holds placed
+through the holds Lambda carry action audit rows, so the tests give those holds back through the
+governed release and keep every booking, hold request, journey and audit row, because an audit
+export may already hold them. Rows a test inserts itself with plain SQL, which have no action
+audit row, are deleted afterwards by `delete_unaudited_fixture` in `meridian/tests/live_support.py`,
+which never deletes from an audit table. Two of them confirm a booking
 (`test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privilege_login` and
 `test_release_hold_leaves_a_confirmed_booking_alone`). Each run leaves one confirmed booking for one
 or two travelers, which uses package places for good. The tests pick the package with the most
