@@ -33,6 +33,12 @@
 .mds-brief-icon-dark { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-light { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-dark { display:block; }
-@media (min-width:1241px) and (min-height:850px) {
-  .mds-root[data-audience-layout='true'] .mds-brief-arch-diagram { max-height:45dvh; }
+/* On a shared screen the drawing takes the full width when the window is tall enough, and
+   shrinks only as far as needed to keep the legend above the fold. 350px is the briefing header
+   and section heading above the drawing plus the legend below it, which wraps to two lines on a
+   1280px screen. */
+@media (min-width:861px) {
+  .mds-root[data-audience-layout='true'] .mds-brief-arch-diagram {
+    max-height:max(360px, calc(100dvh - var(--mds-controls-height) - 350px));
+  }
 }

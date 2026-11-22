@@ -14,6 +14,7 @@ directory, with dedicated Runtime, Gateway, Memory and Policy marks.
 | `app-runner.svg` | AWS App Runner | 66 | `ppt/media/image271.svg` |
 | `aurora.svg` | Amazon Aurora | 77 | `ppt/media/image307.svg` |
 | `cloudfront.svg` | Amazon CloudFront | 125 | `ppt/media/image600.svg` |
+| `cognito.svg` | Amazon Cognito | 136 | `ppt/media/image680.svg` |
 | `s3.svg` | Amazon Simple Storage Service | 152 | `ppt/media/image792.svg` |
 
 Copyright 2026 Amazon Web Services, Inc. or its affiliates.

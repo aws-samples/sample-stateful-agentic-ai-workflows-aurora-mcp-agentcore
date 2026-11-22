@@ -31,11 +31,20 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Confirm, then save intent')).toBeVisible();
   });
 
-  it('states how access is checked without naming a signing scheme', () => {
+  it('draws sign-in and the checked token without naming a signing scheme', () => {
     const { container } = render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    const titles = Array.from(container.querySelectorAll('.mds-brief-arch-title'), node => node.textContent);
+    expect(titles).toEqual(['Amazon Cognito', 'FastAPI', 'AgentCore Runtime', 'AgentCore Runtime',
+      'AgentCore Gateway', 'AWS Lambda', 'Amazon Aurora']);
     const architecture = container.querySelector('.mds-brief-architecture')?.textContent ?? '';
-    expect(architecture).toContain('Access checked on every call');
-    expect(architecture).toContain('Policy: Cedar checks');
+    expect(architecture).toContain('access token');
+    expect(architecture).toContain('Token checked, traveler pinned');
+    expect(architecture).toContain('Cedar policy on every call');
+    expect(container.querySelector('.mds-brief-arch-legend')?.textContent).toMatch(
+      /^Signed-in release shown: FastAPI, both Runtimes and the Gateway each check the access token\. /);
+    const steps = Array.from(container.querySelectorAll('.mds-brief-arch-mobile strong'), node => node.textContent);
+    expect(steps[0]).toBe('Amazon Cognito - sign the traveler in');
+    expect(steps[5]).toBe('5. Amazon Aurora - record the outcome');
     const text = container.textContent ?? '';
     expect(text).not.toMatch(/IAM|SigV4|signed MCP|shared token|workload identity/i);
     expect(screen.getByText('Check access at every hop')).toBeInTheDocument();
