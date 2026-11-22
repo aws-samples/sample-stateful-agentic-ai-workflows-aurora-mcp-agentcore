@@ -55,6 +55,7 @@ export function StepPath({ data, note }: { data: StepPathData; note?: string }) 
         {data.hops.map((hop, position) => (
           <li key={hop.title} className={`mds-step-hop ${state(position)}`} aria-current={position === step.hop ? 'step' : undefined}>
             <HopBody hop={hop} />
+            {state(position) === 'is-done' && <span className="mds-step-mark" aria-hidden="true">✓</span>}
             {position === step.hop && <span className="mds-step-chip-inline" aria-hidden="true">{step.chip}</span>}
           </li>
         ))}

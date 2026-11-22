@@ -31,6 +31,7 @@ export function WorkflowSteps() {
             <span className="mds-step-node-number" aria-hidden="true">{node + 1}</span>
             <strong>{title}</strong>
             <p>{detail}</p>
+            {node < step.saved && <span className="mds-step-node-flag">Saved</span>}
             {step.paused && node === step.saved && <span className="mds-step-node-flag">Paused for review</span>}
           </li>
         ))}

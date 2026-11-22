@@ -26,6 +26,9 @@
   --mds-green-fill: color-mix(in srgb, var(--mds-green) 16%, var(--mds-surface));
   --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 16%, var(--mds-surface));
   --mds-red-fill: color-mix(in srgb, var(--mds-red) 16%, var(--mds-surface));
+  /* Step states in the briefing: strong enough to read on a shared screen. */
+  --mds-state-done-fill: color-mix(in srgb, var(--mds-green) 22%, var(--mds-surface));
+  --mds-state-paused-fill: color-mix(in srgb, var(--mds-yellow) 24%, var(--mds-surface));
   --mds-cyan-fill: color-mix(in srgb, var(--mds-cyan) 16%, var(--mds-surface));
   --mds-scrim: rgb(0 0 0 / 0.5);
   --mds-skeleton: var(--mds-surface-2);
@@ -71,6 +74,8 @@
   --mds-green-fill: color-mix(in srgb, var(--mds-green) 10%, var(--mds-surface));
   --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 10%, var(--mds-surface));
   --mds-red-fill: color-mix(in srgb, var(--mds-red) 10%, var(--mds-surface));
+  --mds-state-done-fill: color-mix(in srgb, var(--mds-green) 16%, var(--mds-surface));
+  --mds-state-paused-fill: color-mix(in srgb, var(--mds-yellow) 22%, var(--mds-surface));
   --mds-cyan-fill: color-mix(in srgb, var(--mds-cyan) 10%, var(--mds-surface));
   --mds-scrim: rgb(0 0 0 / 0.32);
   --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.14), 0 0 0 1px var(--mds-separator);

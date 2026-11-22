@@ -126,6 +126,13 @@ describe('StepPath', () => {
     expect(screen.getAllByRole('listitem').every(item => item.classList.contains('is-done'))).toBe(true);
   });
 
+  it('marks finished hops with a check, not color alone', () => {
+    const { container } = render(<StepPath data={data} />);
+    expect(container.querySelectorAll('.mds-step-hop.is-done .mds-step-mark')).toHaveLength(0);
+    for (let i = 0; i < data.steps.length; i += 1) fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(container.querySelectorAll('.mds-step-hop.is-done .mds-step-mark')).toHaveLength(data.hops.length);
+  });
+
   it('shows a note when given one', () => {
     render(<StepPath data={PHASE_PATHS[4]} note="Signed-in release shown." />);
     expect(screen.getByText('Signed-in release shown.')).toBeInTheDocument();
@@ -158,6 +165,14 @@ describe('WorkflowSteps', () => {
     expect(within(store).getByText('Saved step: Search').closest('li')).toHaveClass('is-restored');
   });
 
+  it('labels finished nodes Saved, not by color alone', () => {
+    render(<WorkflowSteps />);
+    stepTo(2);
+    expect(screen.getAllByText('Saved', { exact: true })).toHaveLength(1);
+    stepTo(WORKFLOW_STEPS.length);
+    expect(screen.getAllByText('Saved', { exact: true })).toHaveLength(6);
+  });
+
   it('ends with all six steps saved and the lease released', () => {
     render(<WorkflowSteps />);
     stepTo(WORKFLOW_STEPS.length);
@@ -180,6 +195,7 @@ describe('BoundaryScenarios', () => {
     expect(screen.getByText('Refused by Cedar')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Second traveler' }));
     expect(stopped()).toContain('Holds Lambda');
+    expect(lane.querySelector('.is-stopped .mds-step-mark')).toHaveTextContent('\u2715');
     expect(screen.getByText('Refused by the grant check')).toBeInTheDocument();
   });
 

@@ -30,6 +30,8 @@ export function BoundaryScenarios() {
         {BOUNDARY_HOPS.map((hop, position) => (
           <li key={hop.title} className={`mds-step-hop ${state(position)}`}>
             <HopBody hop={hop} label={BOUNDARY_LABELS[position]} />
+            {state(position) === 'is-done' && <span className="mds-step-mark" aria-hidden="true">✓</span>}
+            {state(position) === 'is-stopped' && <span className="mds-step-mark is-stopped" aria-hidden="true">✕</span>}
           </li>
         ))}
       </ol>

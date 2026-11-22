@@ -5,6 +5,8 @@
 .mds-brief-arch-delivery img { flex:none; }
 .mds-brief-arch-diagram { display:block; width:100%; height:auto; margin:12px 0; font:var(--mds-type-body); fill:var(--mds-label-2); }
 .mds-brief-arch-node rect { fill:var(--mds-surface); stroke:var(--mds-separator); stroke-width:1.5; }
+/* Text inside a box reads at full contrast on a shared screen; the labels around the boxes stay secondary. */
+.mds-brief-arch-node text { fill:var(--mds-label); }
 .mds-brief-arch-number circle { fill:var(--mds-ground); stroke:var(--mds-label-2); stroke-width:1.5; }
 .mds-brief-arch-number text { fill:var(--mds-label); font:var(--mds-type-headline); }
 .mds-brief-arch-title { font:var(--mds-type-title-3); font-weight:var(--mds-weight-medium); letter-spacing:var(--mds-tracking-title); fill:var(--mds-label); }
