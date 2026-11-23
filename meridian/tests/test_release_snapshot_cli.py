@@ -302,6 +302,18 @@ def test_a_snapshot_taken_with_findings_exits_one_and_saves_nothing(world, tmp_p
     assert not list((tmp_path / "release-b2").glob("snapshot-*.json"))
 
 
+def test_an_iam_service_still_running_as_the_master_login_is_a_baseline_finding(
+        world, tmp_path, capsys):
+    variables = world.service["SourceConfiguration"]["ImageRepository"][
+        "ImageConfiguration"]["RuntimeEnvironmentVariables"]
+    variables["AURORA_SECRET_ARN"] = rs.MASTER_SECRET
+    variables.pop("AURORA_BACKEND_SECRET_ARN")
+
+    assert run(["snapshot", "--service-arn", ss.SERVICE_ARN], world, tmp_path) == 1
+
+    assert "meridian_backend" in capsys.readouterr().out
+
+
 def test_accepting_the_baseline_saves_the_snapshot_with_its_findings(world, tmp_path, capsys):
     world.service = ss.service_state("jwt")
 

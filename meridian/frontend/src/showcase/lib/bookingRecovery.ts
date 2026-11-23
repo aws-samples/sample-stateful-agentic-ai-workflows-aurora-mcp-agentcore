@@ -107,3 +107,21 @@ export function recordHoldQuote(
     return next;
   });
 }
+
+/**
+ * Forgets a saved hold intent once the server answered that nothing was committed for it. Only
+ * the intent this tab sent is removed: if another tab already replaced it, the replacement stays.
+ */
+export function removeHoldIntent(
+  travelerId: string,
+  intentKey: string,
+  conversationId: string,
+): Promise<void> {
+  return withTravelerLock(travelerId, () => {
+    const stored = loadBookingRecovery(travelerId);
+    if (stored.intents[intentKey]?.conversationId !== conversationId) return;
+    const intents = { ...stored.intents };
+    delete intents[intentKey];
+    window.localStorage.setItem(keyFor(travelerId), JSON.stringify({ ...stored, intents }));
+  });
+}

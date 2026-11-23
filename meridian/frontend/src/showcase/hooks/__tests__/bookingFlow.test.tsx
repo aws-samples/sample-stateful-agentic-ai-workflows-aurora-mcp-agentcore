@@ -240,6 +240,39 @@ it('shows the answer the server gave when a hold request fails after the hold wa
   expect(result.current.error).toBe(placed);
 });
 
+describe('a saved hold identity after the server answers', () => {
+  const REFUSED = 'This trip is over the traveler budget.';
+  const savedIntents = () => Object.keys(JSON.parse(
+    window.localStorage.getItem('meridian:booking-recovery:v1:me') ?? '{"intents":{}}').intents);
+
+  it('is dropped once a definitive refusal says nothing was committed', async () => {
+    vi.mocked(processOrder).mockRejectedValueOnce(new ApiError(REFUSED, 422));
+    const first = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(first.result.current.travelersCount).toBe(2));
+    await act(async () => { await first.result.current.holdTrip(tokyo); });
+    expect(first.result.current.error).toBe(REFUSED);
+    expect(savedIntents()).toEqual([]);
+    first.unmount();
+    const second = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(second.result.current.travelersCount).toBe(2));
+    expect(readHold).not.toHaveBeenCalled();
+    expect(second.result.current.error).toBeNull();
+  });
+
+  it.each([
+    ['a network failure', NETWORK_FAILURE],
+    ['a 5xx the route worded', new ApiError('The hold was placed, but saving failed.', 503)],
+    ['a proxy page', PROXY_PAGE],
+    ['a 409 that is not a quote review', new ApiError('Conflict.', 409)],
+  ])('is kept after %s, because the outcome may be committed', async (_name, failure) => {
+    vi.mocked(processOrder).mockRejectedValueOnce(failure);
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.travelersCount).toBe(2));
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    expect(savedIntents()).toHaveLength(1);
+  });
+});
+
 it('shows the answer the server gave when a confirmation fails with an unknown outcome', async () => {
   const unknown = 'We could not confirm whether the booking was confirmed. Check your trips before trying again.';
   vi.mocked(processOrder).mockResolvedValueOnce({ message: 'Held.', order: held, activities: [] });

@@ -576,7 +576,7 @@ def replaced_remedy(ctx: Context) -> list[str]:
         "  after stage gateway and before stage targets, delete the log group the deleted holds "
         "function left behind (the second deploy recreates it and CloudFormation refuses a name "
         f"that exists): {holds_logs.command()}",
-        "  the holds Lambda and its role were recreated: python scripts/bind_gateway_workload.py",
+        "  the holds Lambda and its role were recreated: python scripts/bind_gateway_workload.py --apply",
         "  from the current checkout, point meridian/.env at the new Gateway: python "
         "scripts/sync_agentcore_env.py --write",
         f"  the backend and the hosted service name the old Gateway URL: MERIDIAN_AGENTCORE_AUTH="

@@ -108,16 +108,42 @@ async def test_the_rls_probe_baseline_comes_from_the_definer_function(db):
 async def test_the_rls_probe_defaults_to_the_authenticated_traveler(db):
     response = await diagnostics.rls_probe(diagnostics.RlsProbeRequest(), PRINCIPAL)
     assert response.traveler_id == "trv_meridian_demo"
-    assert response.negative_control["decision"] == "allow"
-    db.check_traveler_authorization.reset_mock()
-    decoy = HttpPrincipal("subject", "trv_demo_decoy", "test")
-    response = await diagnostics.rls_probe(diagnostics.RlsProbeRequest(), decoy)
-    assert response.traveler_id == "trv_demo_decoy"
-    assert response.negative_control["decision"] == "not_applicable"
-    assert response.negative_control["requested_traveler_id"] == "trv_demo_decoy"
-    assert "decoy" in response.negative_control["reason"]
-    assert response.negative_control["audit_id"] is None
-    assert db.check_traveler_authorization.await_count == 1
+
+
+BOUND_TRAVELERS = {"trv_meridian_demo", "trv_demo_decoy"}
+
+
+@pytest.mark.parametrize("signed_in", sorted(BOUND_TRAVELERS))
+async def test_the_negative_control_is_denied_for_a_deployment_bound_to_both_travelers(
+        db, signed_in):
+    """OPERATIONS.md binds the backend role to Jordan (the decoy) too; the control must still deny."""
+    async def decide(traveler_id, authorization, **_):
+        allowed = traveler_id in BOUND_TRAVELERS
+        return AuthorizationDecision(
+            allowed=allowed, decision="allow" if allowed else "deny", traveler_id=traveler_id,
+            provider="aws_iam", subject_id="s", principal="p",
+            reason="active identity binding" if allowed else "no active identity binding",
+        )
+
+    db.check_traveler_authorization.side_effect = decide
+    principal = HttpPrincipal("subject", signed_in, "test")
+
+    response = await diagnostics.rls_probe(diagnostics.RlsProbeRequest(), principal)
+
+    assert response.negative_control["decision"] == "deny"
+    assert response.negative_control["requested_traveler_id"] not in BOUND_TRAVELERS
+    assert response.negative_control["reason"] == "no active identity binding"
+
+
+def test_the_negative_control_id_is_one_no_traveler_row_or_binding_can_name():
+    """A binding references travelers(traveler_id), so an id no seed or migration creates is unbindable."""
+    control = diagnostics.NEGATIVE_CONTROL_TRAVELER_ID
+    root = Path(__file__).resolve().parent.parent
+    sources = [*(root / "scripts").rglob("*.sql"), *(root / "scripts").rglob("*.py"),
+               *(root / "backend").rglob("*.py"), *(root / "infra" / "functions").rglob("*.py")]
+    named = [str(path.relative_to(root)) for path in sources
+             if control in path.read_text(encoding="utf-8")]
+    assert named == ["backend/routers/diagnostics.py"]
 
 
 async def test_the_session_receipt_counts_governance_through_the_function(db):

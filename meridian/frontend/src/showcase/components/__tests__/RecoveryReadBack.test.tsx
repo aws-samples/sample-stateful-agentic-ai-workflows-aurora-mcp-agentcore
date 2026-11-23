@@ -12,6 +12,10 @@ const execution = (status: string, lease: string) => ({
 
 function journey(status: string, lease: string) {
   return {
+    workflow: {
+      status: 'observed', source: 's', conversation_id: THREAD, query: 'q', message: 'paused',
+      workflow_status: 'paused', travelers_count: 2, activities: [],
+    },
     journey_id: 'jrn_1', traveler_id: 'trv_meridian_demo', status, active_thread_id: THREAD,
     snapshot_store: { kind: 'Aurora workflow_snapshots', durable: true },
     observed_at: '2026-10-28T12:00:00Z',
@@ -70,5 +74,32 @@ describe('a recovery the browser stopped waiting for', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(JOURNEY_POLL_MS * 3 + 50); });
     expect(reads()).toBeGreaterThanOrEqual(1);
     expect(settle).not.toHaveBeenCalled();
+  });
+});
+
+describe('the recovery desk replays a saved step only when no worker holds the journey', () => {
+  const renderWithError = (restoreJourney = vi.fn()) => {
+    const state = makeState({
+      selectedPhase: 5, lastRequestPhase: 5, conversationId: THREAD, awaitingWorkflow: true,
+      isLoading: false, error: 'The workflow is still running.', restoreJourney,
+      settleWorkflow: vi.fn(),
+    });
+    render(<DesktopMeridianApp state={state} theme="dark" onToggleTheme={vi.fn()} />);
+    return restoreJourney;
+  };
+
+  it('does not restore while the latest execution holds a live lease', async () => {
+    current = journey('running', '2026-10-28T12:01:00Z');
+    const restore = renderWithError();
+    await act(async () => { await vi.advanceTimersByTimeAsync(JOURNEY_POLL_MS * 2 + 50); });
+    expect(reads()).toBeGreaterThanOrEqual(2);
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('restores on an error once the lease has lapsed', async () => {
+    current = journey('running', '2026-10-28T11:59:00Z');
+    const restore = renderWithError();
+    await act(async () => { await vi.advanceTimersByTimeAsync(JOURNEY_POLL_MS + 50); });
+    expect(restore).toHaveBeenCalledWith(expect.objectContaining({ journey_id: 'jrn_1' }));
   });
 });

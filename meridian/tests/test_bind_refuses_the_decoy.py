@@ -133,7 +133,7 @@ def test_the_gateway_and_laptop_entry_points_refuse_the_decoy_and_write_nothing(
 def test_the_gateway_and_laptop_entry_points_still_bind_jordan(fake_aws, monkeypatch, module):
     monkeypatch.setattr(shared, "TRAVELER_ID", JORDAN)
 
-    run_entry_point(module)
+    run_entry_point(module, ["--apply"])
 
     assert fake_aws.travelers
     assert set(fake_aws.travelers) == {JORDAN}

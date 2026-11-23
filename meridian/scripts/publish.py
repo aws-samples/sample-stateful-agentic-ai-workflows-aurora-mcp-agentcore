@@ -49,6 +49,11 @@ JWT_ONLY_VARIABLES = (
     "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )
 JWT_FORBIDDEN_VARIABLES = ("MERIDIAN_API_TOKEN", "MERIDIAN_ALLOW_INSECURE_LOCALHOST")
+BACKEND_LOGIN_MISSING = (
+    "AURORA_BACKEND_SECRET_ARN is not set: the hosted backend runs as the meridian_backend login "
+    "in both the iam and the jwt release. Run scripts/provision_service_logins.py --login backend "
+    "(see docs/OPERATIONS.md), then publish again"
+)
 PROOF_PATH = settings.PROOF_PATH
 SERVICE_WAIT_SECONDS = 1200
 CONFIG = Config(connect_timeout=10, read_timeout=30, retries={"mode": "standard", "total_max_attempts": 3})
@@ -77,16 +82,26 @@ def container_engine() -> str:
     raise RuntimeError("A working Finch or Docker engine is required; see the Finch recovery runbook")
 
 
+def require_backend_login(dotenv: dict) -> None:
+    """Refuse a release, in either mode, whose hosted backend has no meridian_backend login.
+
+    Raises:
+        ValueError: When ``AURORA_BACKEND_SECRET_ARN`` is unset or blank.
+    """
+    if not (dotenv.get("AURORA_BACKEND_SECRET_ARN") or "").strip():
+        raise ValueError(BACKEND_LOGIN_MISSING)
+
+
 def validate_environment(environment: dict, account: str, region: str) -> None:
     for key, service in (("AURORA_CLUSTER_ARN", "rds"), ("AURORA_SECRET_ARN", "secretsmanager"),
                          ("AGENTCORE_RUNTIME_ARN", "bedrock-agentcore"),
                          ("AGENTCORE_WORKFLOW_RUNTIME_ARN", "bedrock-agentcore")):
         if not environment.get(key, "").startswith(f"arn:aws:{service}:{region}:{account}:"):
             raise ValueError(f"{key} must belong to the selected account and region")
-    backend_secret = environment.get("AURORA_BACKEND_SECRET_ARN")
-    if backend_secret and not backend_secret.startswith(
-        f"arn:aws:secretsmanager:{region}:{account}:"
-    ):
+    backend_secret = (environment.get("AURORA_BACKEND_SECRET_ARN") or "").strip()
+    if not backend_secret:
+        raise ValueError(BACKEND_LOGIN_MISSING)
+    if not backend_secret.startswith(f"arn:aws:secretsmanager:{region}:{account}:"):
         raise ValueError("AURORA_BACKEND_SECRET_ARN must belong to the selected account and region")
 
 
@@ -377,6 +392,7 @@ def publish(args) -> None:
     mode = settings.release_mode(dotenv)
     if args.tighten and mode != JWT:
         raise ValueError("--tighten applies only to the jwt release (MERIDIAN_AGENTCORE_AUTH=jwt)")
+    require_backend_login(dotenv)
     session = boto3.Session(region_name=args.region)
     client, service, cfn, secret = inspect_target(session, args)
     outputs = None

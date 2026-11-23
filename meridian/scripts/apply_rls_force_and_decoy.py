@@ -13,9 +13,11 @@ rows). This applies the FORCE flags and adds a second traveler's preferences.
 Idempotent: FORCE is a no-op if already set; the decoy uses ON CONFLICT.
 
 Usage:
-    cd meridian && python scripts/apply_rls_force_and_decoy.py
+    cd meridian && python scripts/apply_rls_force_and_decoy.py           # dry run
+    cd meridian && python scripts/apply_rls_force_and_decoy.py --apply   # write
 """
 
+import argparse
 import os
 import sys
 import uuid
@@ -45,7 +47,17 @@ FORCE_TABLES = [
 ]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="write the policy flags and decoy rows; without it the script only lists them")
+    args = parser.parse_args(argv)
+    if not args.apply:
+        print(f"Dry run: would ENABLE and FORCE row level security on {', '.join(FORCE_TABLES)} "
+              f"and seed {DECOY_TRAVELER_ID} with {len(DECOY_PREFERENCES)} preferences. "
+              "Re-run with --apply to write it.")
+        return 0
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing Aurora credentials in .env[/red]")
         return 1

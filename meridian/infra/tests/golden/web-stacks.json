@@ -1,12 +1,12 @@
 {
   "generatedFrom": "c3fc27a9",
-  "note": "sha256 of each stack template as built at that commit, with every 64-hex string replaced by <sha256>, synthesized with the fake context of express.test.cjs (IMPORT_CONTEXT, App Runner host set). Regenerate only for an intended change to these stacks.",
+  "note": "sha256 of each stack template as built at that commit, with every 64-hex string replaced by <sha256>, synthesized with the fake context of express.test.cjs (IMPORT_CONTEXT, App Runner host set). The jwt and jwt-tightened entries are unchanged since then; the iam entries were regenerated when the iam release moved to the meridian_backend login (Backend, Roles and Service change by one line each, MeridianWeb is unchanged). Regenerate only for an intended change to these stacks.",
   "scenarios": {
     "iam": {
       "MeridianWeb": "a5f0982a3ab20e348ff8449926234272335b58b0898aaac7bddb5ee5c15b0bb7",
-      "MeridianWebBackend": "f0b20061028dd9c86a042a85f84dbe26f7aa9f288b4d5e2a463adc9202207207",
-      "MeridianWebRoles": "f8cd16be1b7600221ea947a6795cfa08db2d6723c94c1a439402db11e583b769",
-      "MeridianWebService": "04210f8944d446356f59b10285d3a006fe9a5d1782b6e6a0e64d3da5a5b42e7a"
+      "MeridianWebBackend": "8dbf8ad516769a4af62530bf9605315bad21ee9f7db96df2176dbd269a5b5c93",
+      "MeridianWebRoles": "6a0eabd4dec7d037663d2569ee6050513b7102f7c3fc7842dbb1a79bdc6ab1da",
+      "MeridianWebService": "3705372340d75333b6307ef6a7752d946619de52462782ebbace5d19ca254d76"
     },
     "jwt": {
       "MeridianWeb": "c2223e1e40c418c9fe9607030fadcfb2c8c7294d6739caf6cc07a26708bff5e5",

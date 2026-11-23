@@ -76,21 +76,23 @@ test('the backend role gains the backend login policy only once the login exists
   });
 });
 
-test('the master secret grant is untouched until the cutover release', () => {
+test('the roles stack grants whichever login secret the service environment names', () => {
   const loginSecret = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/backend-login-AbC123';
-  const secrets = Object.values(Template.fromStack(stack({ AURORA_BACKEND_SECRET_ARN: loginSecret }))
+  const secrets = Object.values(Template.fromStack(stack({ AURORA_SECRET_ARN: loginSecret }))
     .findResources('AWS::IAM::Policy'))
     .flatMap((policy) => policy.Properties.PolicyDocument.Statement)
     .filter((s) => JSON.stringify(s.Action) === '"secretsmanager:GetSecretValue"');
   assert.equal(secrets.length, 1);
-  assert.ok(JSON.stringify(secrets[0].Resource).includes(environment.AURORA_SECRET_ARN));
-  assert.ok(!JSON.stringify(secrets[0].Resource).includes('backend-login'));
+  assert.ok(JSON.stringify(secrets[0].Resource).includes('backend-login'));
 });
 
-test('the backend login secret is passed to the stacks but never required', () => {
+test('the backend login secret is required in both modes', () => {
   const dotenv = { ...environment, AURORA_BACKEND_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:b-AbC123' };
   assert.equal(serviceEnvironment(dotenv, 'us-east-1').AURORA_BACKEND_SECRET_ARN, dotenv.AURORA_BACKEND_SECRET_ARN);
-  assert.equal(serviceEnvironment(environment, 'us-east-1').AURORA_BACKEND_SECRET_ARN, undefined);
+  assert.throws(
+    () => serviceEnvironment(environment, 'us-east-1'),
+    /AURORA_BACKEND_SECRET_ARN.*provision_service_logins\.py --login backend/,
+  );
 });
 
 test('the hosted configuration requires the workflow Runtime ARN', () => {
@@ -146,10 +148,38 @@ test('any other mode is refused by name', () => {
   );
 });
 
-test('the iam service environment is exactly the master login and no sign-in setting', () => {
-  const expected = { ...BASE_ENV, AURORA_SECRET_ARN: environment.AURORA_SECRET_ARN };
+test('the iam service environment is exactly the backend login and no sign-in setting', () => {
+  const expected = { ...BASE_ENV, AURORA_SECRET_ARN: BACKEND_LOGIN };
   assert.deepEqual(serviceEnvironment(jwtDotenv, 'us-east-1', 'iam'), expected);
   assert.deepEqual(serviceEnvironment(jwtDotenv, 'us-east-1'), expected);
+});
+
+test('iam mode refuses a missing, misplaced or master backend login secret', () => {
+  const without = { ...jwtDotenv };
+  delete without.AURORA_BACKEND_SECRET_ARN;
+  assert.throws(
+    () => serviceEnvironment(without, 'us-east-1', 'iam'),
+    /AURORA_BACKEND_SECRET_ARN.*provision_service_logins\.py --login backend/,
+  );
+  for (const value of [
+    'not-an-arn',
+    'arn:aws:secretsmanager:eu-west-1:123456789012:secret:b-AbC123',
+    'arn:aws:rds:us-east-1:123456789012:cluster:meridian',
+  ]) {
+    assert.throws(
+      () => serviceEnvironment({ ...jwtDotenv, AURORA_BACKEND_SECRET_ARN: value }, 'us-east-1', 'iam'),
+      /AURORA_BACKEND_SECRET_ARN must be a Secrets Manager ARN in us-east-1/,
+      value,
+    );
+  }
+  assert.throws(
+    () => serviceEnvironment(
+      { ...jwtDotenv, AURORA_BACKEND_SECRET_ARN: environment.AURORA_SECRET_ARN },
+      'us-east-1',
+      'iam',
+    ),
+    /must differ from AURORA_SECRET_ARN/,
+  );
 });
 
 test('the jwt service environment is exactly the pool, the mode and the backend login', () => {
@@ -248,6 +278,19 @@ test('the tighten release grants exactly the backend login secret', () => {
     }),
     [{ Action: 'secretsmanager:GetSecretValue', Effect: 'Allow', Resource: BACKEND_LOGIN }],
   );
+});
+
+test('the iam role grants exactly the backend login and the shared token, never the master', () => {
+  const statements = secretStatements({
+    environment: serviceEnvironment(jwtDotenv, 'us-east-1', 'iam'),
+    ...rolesStackWiring(jwtDotenv, 'iam', {}),
+  });
+  assert.deepEqual(statements, [{
+    Action: 'secretsmanager:GetSecretValue',
+    Effect: 'Allow',
+    Resource: [BACKEND_LOGIN, API_TOKEN_ARN],
+  }]);
+  assert.ok(!JSON.stringify(statements).includes(environment.AURORA_SECRET_ARN));
 });
 
 test('tightening without the jwt cutover is refused so it cannot cut the iam service off', () => {

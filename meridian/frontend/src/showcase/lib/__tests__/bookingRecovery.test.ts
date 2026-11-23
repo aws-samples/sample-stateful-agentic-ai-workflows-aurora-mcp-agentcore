@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  allocateHoldIntent, holdIntentKey, loadBookingRecovery, saveBookingRecovery,
+  allocateHoldIntent, holdIntentKey, loadBookingRecovery, removeHoldIntent, saveBookingRecovery,
   type SavedHoldIntent,
 } from '../bookingRecovery';
 
@@ -112,5 +112,34 @@ describe('a saved quote is trusted only when it matches its intent', () => {
     const intent = (() => { quoteAfterLoad(quote(over)); return loadBookingRecovery(TRAVELER).intents[KEY]; })();
     expect(intent.quote).toBeUndefined();
     expect(intent.conversationId).toBe('conv_hold_q');
+  });
+});
+
+describe('removeHoldIntent', () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(removeLocks);
+
+  it('drops the intent and keeps the other entries', async () => {
+    const otherKey = holdIntentKey('prod_2', 'standard', 2);
+    saveBookingRecovery(TRAVELER, {
+      intents: { [KEY]: make('conv_hold_a'), [otherKey]: { ...make('conv_hold_b'), productId: 'prod_2' } },
+      bookings: { prod_1: 'ord_1' },
+    });
+    await removeHoldIntent(TRAVELER, KEY, 'conv_hold_a');
+    const saved = loadBookingRecovery(TRAVELER);
+    expect(Object.keys(saved.intents)).toEqual([otherKey]);
+    expect(saved.bookings).toEqual({ prod_1: 'ord_1' });
+  });
+
+  it('leaves an intent another tab replaced after this tab sent the old one', async () => {
+    installLocks();
+    saveBookingRecovery(TRAVELER, { intents: { [KEY]: make('conv_hold_new') }, bookings: {} });
+    await removeHoldIntent(TRAVELER, KEY, 'conv_hold_old');
+    expect(loadBookingRecovery(TRAVELER).intents[KEY].conversationId).toBe('conv_hold_new');
+  });
+
+  it('does nothing when no intent is saved', async () => {
+    await removeHoldIntent(TRAVELER, KEY, 'conv_hold_a');
+    expect(loadBookingRecovery(TRAVELER)).toEqual({ intents: {}, bookings: {} });
   });
 });

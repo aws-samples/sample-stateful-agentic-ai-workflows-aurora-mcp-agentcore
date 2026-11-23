@@ -330,6 +330,30 @@ def test_runtime_budget_narration_matches_enforced_ceiling(
     assert kwargs["travelers_count"] == travelers
 
 
+@pytest.mark.parametrize("value", ["9" * 310, "500000 yen", ".5k"])
+@pytest.mark.parametrize("infinite_parser", [False, True])
+def test_an_unreadable_saved_budget_reaches_the_runtime_as_a_zero_ceiling(
+    monkeypatch, value, infinite_parser
+):
+    """Neither a huge figure nor a foreign currency may crash the turn or raise the ceiling."""
+    if infinite_parser:
+        monkeypatch.setattr(
+            "backend.agents.budget.parse_usd_amounts", lambda _text: [float("inf")])
+    calls = []
+    agent = build_agent([], runtime_decision(), calls)
+    read = production_agent_mod.AuthorizedRead(
+        scope=None, conv_id="conv-test", memory_context="", memory_facts=[],
+        budget_facts=[{"key": "budget_cap", "value": value}],
+    )
+
+    asyncio.run(agent._runtime_turn(read, "Find trips", "trv_meridian_demo", 2,
+                                    operation="production_turn"))
+
+    args, kwargs = calls[0]
+    assert kwargs["budget_ceiling_cents"] == 0
+    assert "no clear US dollar amount" in args[3]
+
+
 def test_a_parameterized_catalog_filter_counts_as_a_search_for_the_cards():
     decision = runtime_decision(
         message="Two options.", packages=[{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}],

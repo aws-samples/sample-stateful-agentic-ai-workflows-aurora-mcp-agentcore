@@ -127,8 +127,13 @@ Live tools. Anything that calls AWS needs explicit approval for that step from w
 `scripts/identity_proof.py`, `scripts/run_gateway_harness.py`, the provisioning, seed and bind
 scripts, `scripts/sync_*` and `scripts/seed_*` tools, and `agentcore deploy`.
 
-- Dry run first, read the plan, then ask. Each of these tools needs its own confirm flag
-  (`--apply` plus `--i-understand-this-changes-aws` or `--i-understand-this-creates-aws-resources`).
+- Dry run first, read the plan, then ask. The bind scripts (`bind_current_identity.py`,
+  `bind_gateway_workload.py`, `bind_web_backend_role.py`, `bind_workflow_runtime.py`) and
+  `apply_rls_force_and_decoy.py` are dry runs unless given `--apply`. The provisioning, publish,
+  release and harness tools need `--apply` plus `--i-understand-this-changes-aws` or
+  `--i-understand-this-creates-aws-resources`. `seed_data.py` has no flag: a bare run is the setup
+  route, and `require_empty_seed_tables` refuses a database that already holds packages or
+  travelers (`--catalog-only` refreshes packages only).
   Never add a flag to skip a confirmation. Exit codes differ by tool; see `scripts/README.md`, and
   `docs/OPERATIONS.md#read-the-release-back` for `release_identity.py`.
 - Run `scripts/apply_migrations.py` with `--pending` first and apply one migration at a time,

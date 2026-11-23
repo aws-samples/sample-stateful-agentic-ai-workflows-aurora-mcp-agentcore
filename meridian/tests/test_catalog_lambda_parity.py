@@ -114,6 +114,11 @@ def test_the_payload_is_the_modules():
     "luxury below $2999.99", "city break less than 1200", "adventure < $800",
     "Tokyo trips under 3 nights", "a trip for under 5 kids", "under $", "Tokyo culture trip",
     "less than 3 nights, under $2,000", "Tokyo trips under $12,500",
+    "up to $2,000", "at most $2,000", "no more than $2,000", "not more than $2,000",
+    "within $2,000", "under 100 rooms", "under 1000 rooms", "under 200 people",
+    "under 150 per night", "no less than $3,000", "not less than 3000", "at least $3,000",
+    "more than $3,000", "over $3,000", "up to 3k", "within 200 miles of Tokyo",
+    "no less than 3 nights, at most $2,000",
 ])
 def test_the_price_ceiling_parser_is_the_modules(query):
     assert catalog.parse_price_ceiling(query) == parse_price_ceiling(query)

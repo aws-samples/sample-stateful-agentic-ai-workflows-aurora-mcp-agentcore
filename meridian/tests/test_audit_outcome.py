@@ -1647,7 +1647,7 @@ async def test_hold_and_booking_routes_pass_the_verified_subject(monkeypatch):
     principal = HttpPrincipal("sub-jordan", "trv_meridian_demo", "cognito")
 
     await chat_router.process_order(
-        chat_router.OrderRequest(product_id="CTY-002", phase=4), principal)
+        chat_router.OrderRequest(product_id="CTY-002", phase=4, conversation_id="conv_hold_1"), principal)
     await chat_router.confirm_booking(chat_router.BookingRequest(booking_id="HLD-1"), principal)
 
     assert hold.call_args.kwargs["authorization_subject"] == "sub-jordan"

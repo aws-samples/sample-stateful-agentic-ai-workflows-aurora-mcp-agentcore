@@ -359,14 +359,57 @@ test('the task role holds the same statements as the tightened App Runner instan
   );
 });
 
-test('the task role reads only the Aurora login secret, never the master or the shared token', (t) => {
+test('iam mode: the task role reads only the master secret, never the backend login or the shared token', (t) => {
   stubSite(t);
-  const roles = synthesize({ ...express, apiTokenSecretArn: TOKEN_SECRET }, { mode: 'iam' })
-    .MeridianWebExpressRoles;
+  for (const mode of ['iam', 'jwt']) {
+    const roles = synthesize({ ...express, apiTokenSecretArn: TOKEN_SECRET }, { mode })
+      .MeridianWebExpressRoles;
+    const reads = statementsFor(roles, 'TaskRole')
+      .filter((s) => s.Action === 'secretsmanager:GetSecretValue');
+    assert.equal(reads.length, 1, mode);
+    assert.deepEqual(reads[0].Resource, LOGIN_SECRET, mode);
+    assert.ok(!JSON.stringify(roles).includes(dotenv.AURORA_SECRET_ARN), `${mode}: master secret`);
+  }
+});
+
+test('the iam release runs every hosted service as the backend login and grants no master secret', (t) => {
+  stubSite(t);
+  const iam = synthesize({ ...IMPORT_CONTEXT, ...express }, { mode: 'iam' });
+  const text = JSON.stringify(iam);
+  assert.ok(!text.includes(dotenv.AURORA_SECRET_ARN), 'the master secret appears in an iam template');
+  const express_ = Object.fromEntries(
+    service(iam).Properties.PrimaryContainer.Environment.map((v) => [v.Name, v.Value]),
+  );
+  assert.equal(express_.AURORA_SECRET_ARN, LOGIN_SECRET);
+  const appRunner = Object.values(iam.MeridianWebService.Resources)[0].Properties
+    .SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables;
+  assert.equal(appRunner.find((v) => v.Name === 'AURORA_SECRET_ARN').Value, LOGIN_SECRET);
+});
+
+test('the iam release refuses to synthesize without the backend login secret', (t) => {
+  stubSite(t);
+  const { AURORA_BACKEND_SECRET_ARN: _login, ...withoutLogin } = dotenv;
+  for (const context of [IMPORT_CONTEXT, { ...IMPORT_CONTEXT, ...express }]) {
+    const app = new App({ context });
+    assert.throws(
+      () => defineWebApp(app, {
+        dotenv: { ...withoutLogin, MERIDIAN_AGENTCORE_AUTH: 'iam' },
+        processEnv: { CDK_DEFAULT_ACCOUNT: ACCOUNT, ...absent },
+      }),
+      /provision_service_logins\.py --login backend/,
+    );
+  }
+});
+
+test('jwt mode: the task role reads only the backend login secret, never the master or the shared token', (t) => {
+  stubSite(t);
+  const roles = synthesize(express, { mode: 'jwt' }).MeridianWebExpressRoles;
   const reads = statementsFor(roles, 'TaskRole')
     .filter((s) => s.Action === 'secretsmanager:GetSecretValue');
   assert.equal(reads.length, 1);
-  assert.deepEqual(reads[0].Resource, dotenv.AURORA_SECRET_ARN);
+  assert.deepEqual(reads[0].Resource, LOGIN_SECRET);
+  assert.ok(!JSON.stringify(roles).includes(dotenv.AURORA_SECRET_ARN));
+  assert.ok(!JSON.stringify(roles).includes('api-token'));
 });
 
 test('only the execution role may read the shared token, and only in the iam release', (t) => {

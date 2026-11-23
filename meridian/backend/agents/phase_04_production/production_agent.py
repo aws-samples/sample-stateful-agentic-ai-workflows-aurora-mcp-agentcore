@@ -57,6 +57,7 @@ from backend.chat_stream import emit_chat_event
 from backend.audit_vocabulary import CODE_CLASSES
 from backend.concierge_voice import VOICE
 from backend.agentcore.errors import CallerCredentialError
+from backend.turn_capacity import run_runtime_call
 from backend.agentcore.runtime import (
     RuntimeDecision,
     RuntimeTurnError,
@@ -761,7 +762,7 @@ class ProductionAgent:
         )
         progress = TurnProgress()
         try:
-            decision = await asyncio.to_thread(
+            decision = await run_runtime_call(
                 self.agentcore_runtime.invoke_turn,
                 read.conv_id,
                 traveler_id,

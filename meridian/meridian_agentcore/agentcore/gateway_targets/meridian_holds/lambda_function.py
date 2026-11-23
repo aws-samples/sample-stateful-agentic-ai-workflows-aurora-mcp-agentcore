@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import uuid
@@ -98,11 +99,23 @@ BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_pe
 NUMBER = re.compile(r"(\d+(?:\.\d+)?)(k\b)?", re.I)
 THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}\b)")
 US_PREFIX = re.compile(r"(?<![A-Za-z])US\s?\$", re.I)
+# Another currency, written as a symbol, an ISO code or a word, makes a budget unclear.
+# "won" and "real" are also English words, so they count only straight after a figure.
 OTHER_CURRENCY = re.compile(
     r"[A-Za-z]\$|[\u20a0-\u20bf\u00a2-\u00a5]"
-    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR)\b",
+    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR"
+    r"|PLN|THB|TWD|CZK|HUF|ILS|IDR|MYR|VND|PHP)\b"
+    r"|\b(?:euros?|pounds?|sterling|yen|yuan|renminbi|rupees?|rupiah|pesos?|baht|francs?"
+    r"|reais|rand|liras?|lire|krona|kronor|krone|kroner|kronur|zlotys?|zloty|forints?"
+    r"|shekels?|dirhams?|ringgit|dong|rubles?|roubles?|dinars?|riyals?|rials?"
+    r"|(?:canadian|australian|new zealand|hong kong|singapore|singaporean|taiwan|taiwanese"
+    r"|mexican|nz|hk)\s+dollars?)\b"
+    r"|(?:(?<=\d)|(?<=\dk))\s*(?:won|reals?)\b",
     re.I,
 )
+# ".5k" is not read as 5k, and nothing is read from a figure that no budget could be.
+LEADING_DOT = re.compile(r"(?<!\d)\.\d")
+MAX_BUDGET_USD = 10_000_000
 USD_SUFFIX = re.compile(r"\s*USD\b", re.I)
 USD_BEFORE = re.compile(r"(?<![A-Za-z])USD\s*$", re.I)
 RANGE_JOIN = re.compile(
@@ -158,6 +171,7 @@ BUSINESS_ERRORS = (
     "traveler_scope_mismatch",
     "booking_agent_not_authorized",
     "invalid_hold_quantity",
+    "invalid_hold_minutes",
     "hold_request_parameter_mismatch",
     "booking_not_found",
     "booking_amount_mismatch",
@@ -169,6 +183,12 @@ BUSINESS_ERRORS = (
     "budget_unclear",
     "hold_not_found",
 )
+
+
+# The Cedar permit for create_courtesy_hold bounds both (agentcore.template.json); the Lambda
+# repeats the bounds so a caller that skips the Gateway schema and policy cannot exceed them.
+MAX_HOLD_MINUTES = 720
+MAX_HOLD_TRAVELERS = 6
 
 
 @dataclass(frozen=True)
@@ -475,14 +495,16 @@ def parse_usd_amounts(text: str) -> list[float] | None:
     Figures that carry ``$``, ``US$`` or ``USD`` (before or after) are the only ones used when
     any exist. Otherwise a single bare figure, or a single bare joined range, counts as dollars.
     A range is two figures joined by ``-``, an en dash or ``to``. A ``k`` suffix means thousands.
-    More than one amount or range, a figure of zero, another currency, or no figure is None.
+    More than one amount or range, a figure of zero, another currency (a symbol, an ISO code
+    or a word such as ``yen``), a figure written ``.5k``, a figure above ``MAX_BUDGET_USD`` or
+    one too large to be finite, or no figure is None.
 
     Returns:
         ``[amount]`` or ``[low, high]`` in dollars, or None.
     """
     text = US_PREFIX.sub("$", THOUSANDS_COMMA.sub("", text))
     found = list(NUMBER.finditer(text))
-    if not found or OTHER_CURRENCY.search(text):
+    if not found or OTHER_CURRENCY.search(text) or LEADING_DOT.search(text):
         return None
     joined = [
         RANGE_JOIN.fullmatch(text[a.end():b.start()]) is not None
@@ -497,6 +519,8 @@ def parse_usd_amounts(text: str) -> list[float] | None:
     one_range = len(picked) == 2 and picked[1] == picked[0] + 1 and joined[picked[0]]
     if min(amounts) <= 0 or not (len(picked) == 1 or one_range):
         return None
+    if not all(math.isfinite(amount) and amount <= MAX_BUDGET_USD for amount in amounts):
+        return None
     return amounts
 
 
@@ -508,13 +532,24 @@ def _first_budget_text(facts: list[dict]) -> str | None:
     return next((by_key[key] for key in BUDGET_KEYS if key in by_key), None)
 
 
+def _cap_cents(text: str) -> int | None:
+    """The largest US dollar figure in ``text`` in cents, or None when it is not clear.
+
+    A non-finite figure is not clear, so no caller can raise on it.
+    """
+    amounts = parse_usd_amounts(text)
+    if not amounts or not math.isfinite(max(amounts)):
+        return None
+    return int(round(max(amounts) * 100))
+
+
 def budget_is_unclear(facts: list[dict]) -> bool:
     """The first budget fact present has no unambiguous US dollar amount.
 
     A lower-priority fact or the default never stands in for it.
     """
     text = _first_budget_text(facts)
-    return text is not None and parse_usd_amounts(text) is None
+    return text is not None and _cap_cents(text) is None
 
 
 def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
@@ -532,8 +567,8 @@ def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
     text = _first_budget_text(facts)
     if text is None:
         return int(os.getenv(DEFAULT_BUDGET_ENV, str(DEFAULT_BUDGET_CENTS)))
-    amounts = parse_usd_amounts(text)
-    return int(round(max(amounts) * 100)) * max(1, int(travelers)) if amounts else 0
+    cap = _cap_cents(text)
+    return cap * max(1, int(travelers)) if cap is not None else 0
 
 
 def _within_saved_budget(traveler_id: str, total_cents: int, travelers: int, tx: str) -> None:
@@ -679,7 +714,24 @@ def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[st
     return journey_id, row, _receipt(str(row["booking_id"]), traveler_id, tx)
 
 
+def _hold_limit_error(args: dict) -> str | None:
+    """The error code when the hold's duration or party size is outside the permitted range."""
+    minutes, travelers = args.get("holdMinutes"), args.get("travelers")
+    if not _is_whole_number(minutes) or not 1 <= minutes <= MAX_HOLD_MINUTES:
+        return "invalid_hold_minutes"
+    if not _is_whole_number(travelers) or not 1 <= travelers <= MAX_HOLD_TRAVELERS:
+        return "invalid_hold_quantity"
+    return None
+
+
+def _is_whole_number(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def create_courtesy_hold(args: dict) -> dict:
+    limit_error = _hold_limit_error(args)
+    if limit_error:
+        return {"error": limit_error}
     traveler_id = str(args["travelerId"])
     hold = _hold_terms(args)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=int(args["holdMinutes"]))

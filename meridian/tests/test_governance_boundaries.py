@@ -19,7 +19,7 @@ async def test_every_phase_routes_clicked_holds_through_governance(monkeypatch, 
     monkeypatch.setattr(chat, "production_hold", governed)
     monkeypatch.setattr(chat, "get_rds_data_client", lambda: pytest.fail("Direct database fallback"))
     result = await chat.process_order(
-        chat.OrderRequest(product_id="PKG-1", phase=phase, quantity=7), PRINCIPAL
+        chat.OrderRequest(product_id="PKG-1", phase=phase, quantity=7, conversation_id="conv_hold_1"), PRINCIPAL
     )
     assert result.order is None
     governed.assert_awaited_once()
@@ -31,7 +31,7 @@ async def test_a_policy_path_failure_never_falls_back_to_sql(monkeypatch):
     monkeypatch.setattr(chat, "production_hold", AsyncMock(side_effect=HTTPException(503, "Unavailable")))
     monkeypatch.setattr(chat, "get_rds_data_client", lambda: pytest.fail("Direct database fallback"))
     with pytest.raises(HTTPException) as failure:
-        await chat.process_order(chat.OrderRequest(product_id="PKG-1", phase=1), PRINCIPAL)
+        await chat.process_order(chat.OrderRequest(product_id="PKG-1", phase=1, conversation_id="conv_hold_1"), PRINCIPAL)
     assert failure.value.status_code == 503
 
 
@@ -40,7 +40,7 @@ async def test_traveler_mismatch_never_reaches_the_writer(monkeypatch, access_wr
     monkeypatch.setattr(chat, "production_hold", governed)
     with pytest.raises(HTTPException) as failure:
         await chat.process_order(
-            chat.OrderRequest(product_id="PKG-1", phase=4, traveler_id="other"), PRINCIPAL
+            chat.OrderRequest(product_id="PKG-1", phase=4, traveler_id="other", conversation_id="conv_hold_1"), PRINCIPAL
         )
     assert failure.value.status_code == 403
     governed.assert_not_awaited()

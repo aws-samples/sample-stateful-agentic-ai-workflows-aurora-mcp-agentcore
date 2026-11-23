@@ -99,7 +99,7 @@ class MeridianConciergeMCPClient:
 
         if not self._connected:
             await self.connect()
-        logger.info("[concierge MCP] -> %s args=%s", tool, arguments)
+        logger.info("[concierge MCP] -> %s arg_names=%s", tool, sorted(arguments))
         try:
             result = await asyncio.wait_for(
                 self.session.call_tool(tool, arguments),
@@ -120,17 +120,21 @@ class MeridianConciergeMCPClient:
         if getattr(result, "isError", False):
             raise RuntimeError("Meridian concierge MCP tool failed")
         decoded = _decode(result)
-        logger.info(
-            "[concierge MCP] <- %s shape=%s preview=%r",
-            tool,
-            type(decoded).__name__,
-            (str(decoded)[:160] if decoded is not None else None),
-        )
+        logger.info("[concierge MCP] <- %s shape=%s", tool, _result_shape(decoded))
         return decoded
 
     @property
     def tools(self) -> List[Dict[str, Any]]:
         return self._tools
+
+
+def _result_shape(decoded: Any) -> str:
+    """Describe a decoded result by type, size and field names. Values can be a member's data."""
+    if isinstance(decoded, dict):
+        return f"dict keys={sorted(decoded)}"
+    if isinstance(decoded, (list, str)):
+        return f"{type(decoded).__name__} len={len(decoded)}"
+    return type(decoded).__name__
 
 
 def _decode(result: Any) -> Any:

@@ -202,7 +202,7 @@ next migration, because a rolled-back prerequisite does not exist for the next c
 After all migrations on a new installation, run `python scripts/seed_data.py` once. It calls
 Bedrock for embeddings. The schema and full seed commands refuse existing Meridian tables or
 data. For an existing installation, preserve its records and upgrade with named migrations.
-An older installation may also need `bind_current_identity.py` to establish its workload grant.
+An older installation may also need `bind_current_identity.py --apply` to establish its workload grant. The script writes one binding row after migration 005 and replays no migration SQL; without `--apply` it only reports.
 
 Migration `021_audit_outcome.sql` adds `tool_calls` and `turn_error` to `agent_audit_log`.
 Those final-turn annotations are distinct from the atomic business-action audit added in 028.
@@ -258,6 +258,8 @@ deploys this commit: 025 breaks any writer still running code from before `95eff
 two commits rename the `/api/health` fields to `snapshot_store`, `snapshot_durable` and
 `snapshot_required`, and the `currency_convert` arguments to `from_currency` and `to_currency`
 (see the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md#what-gets-deployed)).
+
+Never replay 024 after 025: 024 recreates a trigger function that reads the old store column, the one 025 drops, so a replay fails or leaves a broken trigger. `apply_migrations.py` never replays an applied migration (`--only` must name the first pending one), and 024 stays unedited because an applied migration file is never changed.
 
 Each workload that sets a traveler scope needs its own grant: the backend's
 identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
@@ -522,7 +524,12 @@ connects as `meridian_workflow`, and the Amazon Cognito trigger connects as
 `meridian_identity`. The hosted `jwt` release is published with
 `scripts/publish.py --tighten`, which drops the master and shared-token secret
 grants from the App Runner instance role; a publish without it plans to add both
-grants back, so read the roles stack's diff before applying. Two removals are
+grants back, so read the roles stack's diff before applying. The hosted `iam` release
+also connects as `meridian_backend`: `scripts/publish.py` and `cdk synth` refuse it without
+`AURORA_BACKEND_SECRET_ARN` (run `scripts/provision_service_logins.py --login backend` first), and its
+instance role reads only that secret and the shared token secret, never the master secret.
+`release_identity.py check` reports an `iam` service whose `AURORA_SECRET_ARN` is not the backend
+login's secret. Two removals are
 not done:
 
 - The shared API token secret. `scripts/publish.py` stops passing the token to a
@@ -1668,7 +1675,7 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
 7. Stage 2: `venv/bin/python scripts/render_agentcore_config.py`, then `release_identity.py deploy` and
    `deploy --apply ...` as in step 6. The preflight refuses while the old holds log group exists (it names the
    `holds-logs` command), and if the plan removes anything or does not add the holds target and Lambda.
-8. Bind the new holds role: `venv/bin/python scripts/bind_gateway_workload.py`.
+8. Bind the new holds role: `venv/bin/python scripts/bind_gateway_workload.py --apply`.
 9. Move the holds Lambda and its parameter to the gateway login. The write refuses until the new holds
    role can read that secret, which stage 2 grants.
 
@@ -1845,9 +1852,10 @@ rollback prints is, from a checkout of the snapshot's commit:
    the first deploy (stage gateway) and the second (stage targets) run
    `python scripts/release_identity.py holds-logs --apply --i-understand-this-changes-aws`, which deletes
    the log group the deleted holds function left behind; the second deploy refuses until it is gone.
-3. `python scripts/bind_gateway_workload.py` (the holds Lambda and its role were recreated), then
+3. `python scripts/bind_gateway_workload.py --apply` (the holds Lambda and its role were recreated), then
    `python scripts/sync_agentcore_env.py --write`, then `scripts/publish.py` in the saved mode so the
-   backend and the service name the new Gateway.
+   backend and the service name the new Gateway. An `iam` publish keeps the service on the
+   `meridian_backend` login, so the rollback never moves the backend back to the master login.
 4. `venv/bin/python scripts/release_identity.py check --expect iam --service-arn "$SERVICE_ARN"`, then
    `rollback` again; it exits 1 until every hop matches.
 
@@ -2292,7 +2300,7 @@ origin of `MeridianWeb` at the Express service:
 
 | Stack | Holds |
 | --- | --- |
-| `MeridianWebExpressRoles` | The task role (the same grants as the App Runner instance role, less the separate master-login and shared-token grants. Its one secret grant is the container's own Aurora login: the `meridian_backend` secret in the `jwt` release, and the master login in the `iam` release, where the container connects as the master), the task execution role and the infrastructure role Express Mode requires. Kept apart so IAM settles before the service exists, as `MeridianWebRoles` is for App Runner |
+| `MeridianWebExpressRoles` | The task role (the same grants as the App Runner instance role, less the separate master-login and shared-token grants. Its one secret grant is the container's own Aurora login, the `meridian_backend` secret, in both the `iam` and the `jwt` release), the task execution role and the infrastructure role Express Mode requires. Kept apart so IAM settles before the service exists, as `MeridianWebRoles` is for App Runner |
 | `MeridianWebExpress` | The `AWS::ECS::ExpressGatewayService` `meridian-web-express` and its CloudWatch log group |
 | `MeridianWeb` | As before, with the API origin set to the service's host (`ServiceHost`, the `Endpoint` URL without `https://`). It is an error to also set `MERIDIAN_BACKEND_HOST`, which names an App Runner host |
 
@@ -2757,7 +2765,7 @@ the FastAPI backend on App Runner, both in the primary Region (`MERIDIAN_WEB_REG
 | `runtimeSessionId ... valid min length: 33` | The runtime session ID is too short. Restart the backend on current code; `_build_runtime_session_id` in `backend/agentcore/runtime.py` builds a valid ID. |
 | Gateway reports `no targets were configured` | A target is missing. Check that `meridian-catalog-tools` exists, render the config and run `agentcore deploy -y`. |
 | Production returns no packages | Run `python scripts/verify_agentcore.py` (expect eleven tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
-| A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py`. |
+| A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py --apply`. |
 | Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant for that traveler. Run `python scripts/bind_web_backend_role.py --apply`, with `--traveler trv_demo_decoy` for Jordan Lee. |
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
 | The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |

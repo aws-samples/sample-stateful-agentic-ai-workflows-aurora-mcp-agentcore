@@ -68,6 +68,14 @@ describe('an expired token reported inside the stream', () => {
     expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: false });
     expect(error.message).not.toContain('eyJ');
   });
+  it('does not count status frames as delivered content', async () => {
+    const onEvent = vi.fn();
+    const error = await readEventStream(
+      response([encoder.encode(frame({ type: 'status', text: 'Connecting' }) + expired)]), onEvent,
+    ).catch(e => e);
+    expect(onEvent).toHaveBeenCalledWith({ type: 'status', text: 'Connecting' });
+    expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: false });
+  });
   it('says content was delivered once the caller has seen a delta', async () => {
     const onEvent = vi.fn();
     const error = await readEventStream(

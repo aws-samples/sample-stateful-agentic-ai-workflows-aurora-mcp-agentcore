@@ -7,8 +7,8 @@ export interface RolesStackWiring {
 }
 
 /**
- * The master secret is passed only in jwt mode, where the role keeps it for a rollback.
- * `MERIDIAN_TIGHTEN_ROLE=1` drops it and is ignored in iam mode.
+ * The master secret is passed only in jwt mode, where the role keeps it until the tighten release.
+ * `MERIDIAN_TIGHTEN_ROLE=1` drops it and is ignored in iam mode, which never grants the master.
  */
 export function rolesStackWiring(
   dotenv: Record<string, string>,

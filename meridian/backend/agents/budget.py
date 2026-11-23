@@ -10,6 +10,7 @@ the Phase 4 package so importing it does not load that agent stack.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -23,11 +24,23 @@ BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_pe
 NUMBER = re.compile(r"(\d+(?:\.\d+)?)(k\b)?", re.I)
 THOUSANDS_COMMA = re.compile(r"(?<=\d),(?=\d{3}\b)")
 US_PREFIX = re.compile(r"(?<![A-Za-z])US\s?\$", re.I)
+# Another currency, written as a symbol, an ISO code or a word, makes a budget unclear.
+# "won" and "real" are also English words, so they count only straight after a figure.
 OTHER_CURRENCY = re.compile(
     r"[A-Za-z]\$|[\u20a0-\u20bf\u00a2-\u00a5]"
-    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR)\b",
+    r"|\b(?:EUR|GBP|JPY|CNY|CAD|AUD|NZD|CHF|INR|MXN|BRL|SGD|HKD|KRW|SEK|NOK|DKK|AED|ZAR"
+    r"|PLN|THB|TWD|CZK|HUF|ILS|IDR|MYR|VND|PHP)\b"
+    r"|\b(?:euros?|pounds?|sterling|yen|yuan|renminbi|rupees?|rupiah|pesos?|baht|francs?"
+    r"|reais|rand|liras?|lire|krona|kronor|krone|kroner|kronur|zlotys?|zloty|forints?"
+    r"|shekels?|dirhams?|ringgit|dong|rubles?|roubles?|dinars?|riyals?|rials?"
+    r"|(?:canadian|australian|new zealand|hong kong|singapore|singaporean|taiwan|taiwanese"
+    r"|mexican|nz|hk)\s+dollars?)\b"
+    r"|(?:(?<=\d)|(?<=\dk))\s*(?:won|reals?)\b",
     re.I,
 )
+# ".5k" is not read as 5k, and nothing is read from a figure that no budget could be.
+LEADING_DOT = re.compile(r"(?<!\d)\.\d")
+MAX_BUDGET_USD = 10_000_000
 USD_SUFFIX = re.compile(r"\s*USD\b", re.I)
 USD_BEFORE = re.compile(r"(?<![A-Za-z])USD\s*$", re.I)
 RANGE_JOIN = re.compile(
@@ -73,14 +86,16 @@ def parse_usd_amounts(text: str) -> list[float] | None:
     Figures that carry ``$``, ``US$`` or ``USD`` (before or after) are the only ones used when
     any exist. Otherwise a single bare figure, or a single bare joined range, counts as dollars.
     A range is two figures joined by ``-``, an en dash or ``to``. A ``k`` suffix means thousands.
-    More than one amount or range, a figure of zero, another currency, or no figure is None.
+    More than one amount or range, a figure of zero, another currency (a symbol, an ISO code
+    or a word such as ``yen``), a figure written ``.5k``, a figure above ``MAX_BUDGET_USD`` or
+    one too large to be finite, or no figure is None.
 
     Returns:
         ``[amount]`` or ``[low, high]`` in dollars, or None.
     """
     text = US_PREFIX.sub("$", THOUSANDS_COMMA.sub("", text))
     found = list(NUMBER.finditer(text))
-    if not found or OTHER_CURRENCY.search(text):
+    if not found or OTHER_CURRENCY.search(text) or LEADING_DOT.search(text):
         return None
     joined = [
         RANGE_JOIN.fullmatch(text[a.end():b.start()]) is not None
@@ -95,6 +110,8 @@ def parse_usd_amounts(text: str) -> list[float] | None:
     one_range = len(picked) == 2 and picked[1] == picked[0] + 1 and joined[picked[0]]
     if min(amounts) <= 0 or not (len(picked) == 1 or one_range):
         return None
+    if not all(math.isfinite(amount) and amount <= MAX_BUDGET_USD for amount in amounts):
+        return None
     return amounts
 
 
@@ -106,13 +123,24 @@ def _first_budget_text(facts: list[dict]) -> str | None:
     return next((by_key[key] for key in BUDGET_KEYS if key in by_key), None)
 
 
+def _cap_cents(text: str) -> int | None:
+    """The largest US dollar figure in ``text`` in cents, or None when it is not clear.
+
+    A non-finite figure is not clear, so no caller can raise on it.
+    """
+    amounts = parse_usd_amounts(text)
+    if not amounts or not math.isfinite(max(amounts)):
+        return None
+    return int(round(max(amounts) * 100))
+
+
 def budget_is_unclear(facts: list[dict]) -> bool:
     """Whether the first budget fact present has no unambiguous US dollar amount.
 
     A lower-priority fact or the default never stands in for it.
     """
     text = _first_budget_text(facts)
-    return text is not None and parse_usd_amounts(text) is None
+    return text is not None and _cap_cents(text) is None
 
 
 def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
@@ -132,8 +160,7 @@ def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
         dollar amount; :func:`budget_is_unclear` tells the two apart.
     """
     text = _first_budget_text(facts)
-    amounts = parse_usd_amounts(text) if text is not None else None
-    return int(round(max(amounts) * 100)) if amounts else None
+    return _cap_cents(text) if text is not None else None
 
 
 def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:

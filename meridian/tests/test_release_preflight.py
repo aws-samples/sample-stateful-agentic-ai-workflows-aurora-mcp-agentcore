@@ -212,9 +212,25 @@ def test_the_shared_token_secret_reference_is_a_finding_in_jwt_mode():
 
 def test_an_iam_service_environment_must_carry_no_sign_in_setting():
     iam = rs.target("iam")
-    assert preflight.check_service_environment({"AWS_REGION": "us-east-1"}, {}, iam) == []
+    assert preflight.check_service_environment(rs.iam_service_variables(), {}, iam) == []
     found = preflight.check_service_environment(rs.jwt_service_variables(), {}, rs.target("iam"))
     assert any("MERIDIAN_COGNITO_USER_POOL_ID" in line for line in found)
+
+
+def test_an_iam_service_environment_must_run_as_the_backend_login():
+    iam = rs.target("iam")
+    master = {**rs.iam_service_variables(), "AURORA_SECRET_ARN": rs.MASTER_SECRET,
+              "AURORA_BACKEND_SECRET_ARN": rs.MASTER_SECRET}
+    unset = rs.iam_service_variables()
+    unset.pop("AURORA_BACKEND_SECRET_ARN")
+    other = rs.BACKEND_SECRET.replace("backend-AbC123", "backend-Other9")
+    elsewhere = {**rs.iam_service_variables(), "AURORA_SECRET_ARN": other,
+                 "AURORA_BACKEND_SECRET_ARN": other}
+
+    for variables, word in ((master, "master"), (unset, "AURORA_BACKEND_SECRET_ARN"),
+                            (elsewhere, "expected")):
+        found = preflight.check_service_environment(variables, {}, iam)
+        assert len(found) == 1 and word in found[0], (word, found)
 
 
 # -------------------------------------------------------------- identity stack
@@ -483,6 +499,15 @@ def test_the_target_follows_the_mode_and_the_design():
     assert iam.cognito is None and iam.interceptor_arn is None
 
 
+def test_both_targets_carry_the_master_and_backend_secrets_from_the_env_file():
+    env = {"AURORA_SECRET_ARN": rs.MASTER_SECRET, "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET}
+
+    for mode, settings_env in (("iam", env), ("jwt", {**rs.COGNITO_ENV, **env})):
+        target = preflight.target_for(mode, settings_env, rs.ACCOUNT, rs.REGION)
+        assert target.master_secret_arn == rs.MASTER_SECRET, mode
+        assert target.backend_secret_arn == rs.BACKEND_SECRET, mode
+
+
 @pytest.mark.parametrize("arn", ["", "arn:aws:s3:::bucket", "arn:aws:rds:us-east-1:12:cluster:x"])
 def test_a_deployment_target_needs_an_aurora_cluster_arn(arn):
     with pytest.raises(settings.ReleaseConfigError, match="AURORA_CLUSTER_ARN"):
@@ -582,14 +607,16 @@ def test_scopes_and_claims_on_the_gateway_or_a_runtime_are_findings(member):
 @pytest.mark.parametrize("value", ["jwt", "JWT", "true", "", "cognito"])
 def test_an_iam_service_environment_must_not_declare_the_jwt_mode(value):
     found = preflight.check_service_environment(
-        {"MERIDIAN_AGENTCORE_AUTH": value}, {}, rs.target("iam"))
+        {**rs.iam_service_variables(), "MERIDIAN_AGENTCORE_AUTH": value}, {}, rs.target("iam"))
 
     assert len(found) == 1 and "MERIDIAN_AGENTCORE_AUTH" in found[0]
 
 
 @pytest.mark.parametrize("value", [None, "iam"])
 def test_an_iam_service_environment_may_leave_the_mode_unset_or_iam(value):
-    variables = {} if value is None else {"MERIDIAN_AGENTCORE_AUTH": value}
+    variables = rs.iam_service_variables()
+    if value is not None:
+        variables["MERIDIAN_AGENTCORE_AUTH"] = value
 
     assert preflight.check_service_environment(variables, {}, rs.target("iam")) == []
 
@@ -706,7 +733,7 @@ def test_check_policies_turns_garbage_into_findings(garbage):
 @pytest.mark.parametrize("garbage", [None, 7, "text", [], ["x"]])
 @pytest.mark.parametrize("mode", ["iam", "jwt"])
 def test_check_service_environment_turns_garbage_into_findings(garbage, mode):
-    good = rs.jwt_service_variables() if mode == "jwt" else {}
+    good = rs.jwt_service_variables() if mode == "jwt" else rs.iam_service_variables()
 
     assert_findings(preflight.check_service_environment(garbage, {}, rs.target(mode)))
     assert_findings(preflight.check_service_environment(good, garbage, rs.target(mode)))

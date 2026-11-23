@@ -42,6 +42,15 @@ DETAIL_CHARS = 120
 MAX_DOCUMENT_CHARS = 2048
 MAX_COMPARE = 4
 MIN_PLAIN_PRICE = 100
+# A bare number followed by one of these words is a count or a distance, not a price.
+COUNT_UNITS = frozenset((
+    "room rooms night nights person persons people guest guests kid kids child children adult "
+    "adults traveler travelers traveller travellers passenger passengers pax seat seats bed beds "
+    "bedroom bedrooms day days week weeks month months year years hour hours hr hrs minute "
+    "minutes min mins second seconds star stars km kilometer kilometers kilometre kilometres "
+    "mile miles mi m meter meters metre metres ft feet flight flights stop stops activity "
+    "activities option options result results review reviews"
+).split())
 
 CONFIG: tuple[str, str, str] | None = None
 RDS = None
@@ -112,7 +121,9 @@ FX_PER_USD = {
 # A fact, not a failure: the Runtime and the Phase 4 audit record the call as allowed.
 UNSUPPORTED_CURRENCY = "unsupported_currency"
 PRICE_CEILING = re.compile(
-    r"(?:under|below|less than|<)\s*(\$)?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(k)\b)?",
+    r"(?<!\bno\s)(?<!\bnot\s)"
+    r"(?:\b(?:under|below|less than|up to|at most|no more than|not more than|within)|<)"
+    r"\s*(\$)?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(k)\b)?(?:\s*([a-z]+))?",
     re.IGNORECASE,
 )
 
@@ -213,7 +224,9 @@ def _clamp_limit(value: Any) -> int:
 def parse_price_ceiling(query: str) -> float | None:
     """The budget ceiling a prompt names, in dollars, or None (port of backend.search_utils)."""
     for match in PRICE_CEILING.finditer(query):
-        dollar, whole, fraction, thousands = match.groups()
+        dollar, whole, fraction, thousands, word = match.groups()
+        if not dollar and word and word.lower() in COUNT_UNITS:
+            continue
         value = float(whole.replace(",", "") + (fraction or ""))
         if thousands:
             return value * 1000

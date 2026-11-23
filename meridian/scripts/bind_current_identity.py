@@ -1,20 +1,24 @@
-"""Apply the identity-binding migration and authorize this AWS caller for Jordan."""
+"""Authorize this AWS caller for Jordan in ``traveler_identity_bindings``.
+
+The table comes from migration 005, applied by ``apply_migrations.py``. This script writes one
+binding row and never replays migration SQL, because 005 drops and recreates ``agent_iam_audit``
+without the columns and grants later migrations added.
+
+Usage:
+    cd meridian
+    python scripts/bind_current_identity.py            # dry run: prints the caller it would bind
+    python scripts/bind_current_identity.py --apply    # writes the binding
+"""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import os
-from pathlib import Path
 
 import boto3
 from dotenv import load_dotenv
 from rich.console import Console
-
-try:
-    from .init_aurora_schema import split_sql
-except ImportError:
-    from init_aurora_schema import split_sql
 
 load_dotenv()
 
@@ -27,7 +31,6 @@ TRAVELER_ID = os.getenv("MERIDIAN_DEMO_TRAVELER_ID", "trv_meridian_demo")
 DEMO_TRAVELER_ID = "trv_meridian_demo"
 DECOY_TRAVELER_ID = "trv_demo_decoy"
 SEEDED_TRAVELERS = (DEMO_TRAVELER_ID, DECOY_TRAVELER_ID)
-MIGRATION = Path(__file__).resolve().parent / "migrations" / "005_bind_identity_to_traveler.sql"
 
 
 def refuse_decoy(traveler_id: str, *, allow_decoy: bool) -> None:
@@ -113,14 +116,15 @@ def bind(
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="write the binding; without it the script only prints what it would bind")
+    args = parser.parse_args(argv)
     refuse_decoy(TRAVELER_ID, allow_decoy=False)
     if not CLUSTER_ARN or not SECRET_ARN:
         raise SystemExit("AURORA_CLUSTER_ARN and AURORA_SECRET_ARN are required")
-
-    db = boto3.client("rds-data", region_name=REGION)
-    for statement in split_sql(MIGRATION.read_text()):
-        execute(db, statement)
 
     caller = boto3.client("sts").get_caller_identity()
     principal = caller.get("Arn", "unknown")
@@ -128,8 +132,12 @@ def main() -> None:
     if not subject_id:
         raise SystemExit("STS GetCallerIdentity did not return a stable UserId")
 
+    if not args.apply:
+        print(f"Dry run: would bind the current AWS caller to {TRAVELER_ID}. "
+              "Re-run with --apply to write it.")
+        return
     bind(
-        db,
+        boto3.client("rds-data", region_name=REGION),
         traveler_id=TRAVELER_ID,
         provider="aws_iam",
         subject_id=subject_id,

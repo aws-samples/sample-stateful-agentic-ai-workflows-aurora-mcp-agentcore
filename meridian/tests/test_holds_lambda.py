@@ -741,6 +741,63 @@ def test_hold_refuses_terms_that_do_not_match_the_catalog(config, monkeypatch, o
     assert not any("FROM create_courtesy_hold" in s for s in api.statements)
 
 
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"holdMinutes": 100000}, "invalid_hold_minutes"),
+        ({"holdMinutes": 721}, "invalid_hold_minutes"),
+        ({"holdMinutes": 0}, "invalid_hold_minutes"),
+        ({"holdMinutes": -5}, "invalid_hold_minutes"),
+        ({"holdMinutes": "soon"}, "invalid_hold_minutes"),
+        ({"travelers": 7, "totalCents": 1750000}, "invalid_hold_quantity"),
+        ({"travelers": 0, "totalCents": 0}, "invalid_hold_quantity"),
+        ({"travelers": -1, "totalCents": -250000}, "invalid_hold_quantity"),
+    ],
+)
+def test_a_hold_outside_the_cedar_limits_is_refused_before_any_transaction(
+    config, monkeypatch, overrides, error
+):
+    api = _authorized_api(**CATALOG_PRICE, **SAVED_BUDGET)
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "budgetCeilingCents": 9_000_000, **overrides}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": error}
+    assert api.tx == [] and api.statements == []
+
+
+@pytest.mark.parametrize(("minutes", "travelers"), [(1, 1), (720, 6)])
+def test_the_limits_themselves_are_allowed(config, monkeypatch, minutes, travelers):
+    api = _authorized_api(**CATALOG_PRICE, **SAVED_BUDGET)
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "holdMinutes": minutes, "travelers": travelers,
+            "totalCents": 250000 * travelers, "budgetCeilingCents": 9_000_000}
+    holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert api.tx[0] == "begin"
+
+
+def test_the_lambda_limits_are_the_ones_the_cedar_policy_states():
+    template = json.loads(
+        (TARGET.parents[1] / "agentcore.template.json").read_text(encoding="utf-8"))
+    statements = [
+        policy["statement"] for policy in _walk_policies(template)
+        if policy.get("name") == "meridian_hold_governance"
+    ]
+    assert len(statements) == 1
+    assert f"holdMinutes <= {holds.MAX_HOLD_MINUTES}" in statements[0]
+    assert f"travelers <= {holds.MAX_HOLD_TRAVELERS}" in statements[0]
+
+
+def _walk_policies(node):
+    if isinstance(node, dict):
+        if "statement" in node:
+            yield node
+        for value in node.values():
+            yield from _walk_policies(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _walk_policies(value)
+
+
 def test_hold_reads_the_catalog_price_before_stepping_down_from_the_workload_role(
     config, monkeypatch
 ):

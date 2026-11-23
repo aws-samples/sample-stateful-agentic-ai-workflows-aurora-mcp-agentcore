@@ -455,7 +455,9 @@ def runtime_state(name: str, mode: str) -> dict:
 
 def service_state(mode: str) -> dict:
     variables = {"AWS_REGION": rs.REGION, "ENVIRONMENT": "production",
-                 "AGENTCORE_GATEWAY_URL": rs.GATEWAY_URL}
+                 "AGENTCORE_GATEWAY_URL": rs.GATEWAY_URL,
+                 "AURORA_SECRET_ARN": rs.BACKEND_SECRET,
+                 "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET}
     secrets = {"MERIDIAN_API_TOKEN": API_SECRET}
     image = "ecr/meridian:old"
     if mode == "jwt":

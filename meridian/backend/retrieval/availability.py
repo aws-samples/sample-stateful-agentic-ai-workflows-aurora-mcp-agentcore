@@ -98,22 +98,31 @@ async def _resolve_named_package(
     return _rank_named_package_matches(rows or [], query_lower, terms)
 
 
+# The name search is a substring match (``LIKE %term%``), so a one- or two-letter token such as
+# "on" or "to" matches inside unrelated names ("Kyoto Ryokan & Onsen").
+MIN_TERM_LENGTH = 3
+
+
 def _search_terms(query_lower: str) -> List[str]:
     """Extract the stopword-filtered tokens a traveler used to name a package."""
     # Extract key terms from query
     search_terms = []
     stopwords = {
-        'a', 'an', 'any', 'are', 'available', 'check', 'departures', 'do',
-        'duration', 'durations', 'find', 'for', 'have', 'in', 'is', 'matching',
-        'open', 'options', 'package', 'packages', 'plan', 'still', 'the', 'then',
-        'trip', 'verify', 'what', 'which', 'you',
+        'a', 'an', 'and', 'any', 'are', 'at', 'available', 'check', 'departures', 'do',
+        'duration', 'durations', 'find', 'for', 'from', 'have', 'in', 'is', 'matching',
+        'of', 'on', 'open', 'options', 'or', 'package', 'packages', 'plan', 'still', 'the',
+        'then', 'there', 'to', 'trip', 'verify', 'what', 'which', 'with', 'you',
     }
     for raw_word in query_lower.split():
         # Trailing punctuation would survive into the LIKE pattern, and
         # "%tokyo?%" matches nothing.  Pure-punctuation tokens ("&") carry
         # no signal either.
         word = raw_word.strip(".,!?;:'\"()[]")
-        if word and any(ch.isalnum() for ch in word) and word not in stopwords:
+        if (
+            len(word) >= MIN_TERM_LENGTH
+            and any(ch.isalnum() for ch in word)
+            and word not in stopwords
+        ):
             search_terms.append(word)
     return search_terms
 

@@ -84,6 +84,26 @@ describe('a 401 from the API', () => {
     expect(hooks.signOut).toHaveBeenCalledTimes(1);
   });
 
+  it('signs out again after a new sign-in replaces the ended session', async () => {
+    serverThatWantsToken('never.jwt');
+    const hooks = handler(() => { throw new Error('refused'); });
+    await requestJson(`${API}/api/a`).catch(() => undefined);
+    expect(hooks.signOut).toHaveBeenCalledTimes(1);
+    token = 'second.jwt';
+    await requestJson(`${API}/api/b`).catch(() => undefined);
+    expect(hooks.signOut).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not sign out twice for a refusal that lands after the token was cleared', async () => {
+    serverThatWantsToken('never.jwt');
+    const hooks = { refresh: vi.fn(async () => { throw new Error('refused'); }),
+      signOut: vi.fn(() => { token = null; }) };
+    setUnauthorizedHandler(hooks);
+    await requestJson(`${API}/api/a`).catch(() => undefined);
+    await requestJson(`${API}/api/b`).catch(() => undefined);
+    expect(hooks.signOut).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry when the refresh ended the session', async () => {
     const fetchMock = serverThatWantsToken('new.jwt');
     const hooks = handler(() => { token = null; });

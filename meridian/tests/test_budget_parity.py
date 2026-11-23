@@ -60,3 +60,14 @@ def test_the_default_still_comes_from_the_environment(monkeypatch):
     monkeypatch.setenv(holds.DEFAULT_BUDGET_ENV, "123400")
     assert backend_budget.budget_ceiling_from_facts([], 2) == 123400
     assert holds.saved_ceiling_cents([], 2) == 123400
+
+
+@pytest.mark.parametrize("implementation", IMPLEMENTATIONS)
+def test_a_non_finite_amount_is_unclear_and_never_raises(monkeypatch, implementation):
+    """Defense in depth: even a parser that returned infinity cannot crash a caller."""
+    ceiling, _, unclear = IMPLEMENTATIONS[implementation]
+    for module in (backend_budget, holds):
+        monkeypatch.setattr(module, "parse_usd_amounts", lambda _text: [float("inf")])
+    facts = [{"key": "budget_cap", "value": "$75"}]
+    assert ceiling(facts, 2) == 0
+    assert unclear(facts) is True

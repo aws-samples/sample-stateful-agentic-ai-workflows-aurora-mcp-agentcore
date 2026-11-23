@@ -7,6 +7,7 @@ probe is what makes the reported status track reality instead.
 """
 
 import asyncio
+import time
 
 import pytest
 
@@ -201,3 +202,108 @@ def test_the_probe_reports_the_login_the_query_ran_as(monkeypatch):
     result = asyncio.run(health_probe.probe_aurora())
 
     assert result.ok is True and result.db_user == "meridian_backend"
+
+
+class _BlockingDb:
+    """A Data API call that cannot be cancelled: a thread that sleeps, as the real one does."""
+
+    def __init__(self, seconds):
+        self.calls = 0
+        self.seconds = seconds
+
+    async def execute_one(self, sql, params=None):
+        from backend.db.rds_data_client import run_blocking_shielded
+
+        self.calls += 1
+        await run_blocking_shielded(time.sleep, self.seconds)
+        return {"snapshots": True, "stops": True, "db_user": "meridian_backend"}
+
+
+def test_a_call_the_shield_keeps_awaiting_still_answers_within_the_bound(monkeypatch):
+    db = _BlockingDb(1.0)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+    monkeypatch.setattr(health_probe, "PROBE_TIMEOUT_SECONDS", 0.1)
+
+    async def scenario():
+        started = time.monotonic()
+        result = await health_probe.probe_aurora()
+        return result, time.monotonic() - started
+
+    result, elapsed = asyncio.run(scenario())
+
+    assert elapsed < 0.5
+    assert result.ok is False
+    assert result.component == "aurora"
+    assert result.error_class == "TimeoutError"
+
+
+def test_only_one_probe_is_in_flight_and_a_second_caller_gets_the_stale_result(monkeypatch):
+    db = _BlockingDb(0.6)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+    monkeypatch.setattr(health_probe, "PROBE_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(health_probe, "CACHE_TTL_SECONDS", 0.0)
+    health_probe._cache = health_probe.AuroraProbeResult(ok=True, db_user="meridian_backend")
+    health_probe._cache_at = time.monotonic()
+
+    async def scenario():
+        started = time.monotonic()
+        first = await health_probe.probe_aurora()
+        second = await health_probe.probe_aurora()
+        return first, second, time.monotonic() - started
+
+    first, second, elapsed = asyncio.run(scenario())
+
+    assert db.calls == 1
+    assert elapsed < 0.5
+    assert first.stale is True and first.ok is True
+    assert second.stale is True and second.ok is True
+
+
+def test_a_probe_that_finishes_late_becomes_the_next_answer(monkeypatch):
+    db = _BlockingDb(0.3)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+    monkeypatch.setattr(health_probe, "PROBE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(health_probe, "CACHE_TTL_SECONDS", 60.0)
+
+    async def scenario():
+        first = await health_probe.probe_aurora()
+        await asyncio.sleep(0.5)
+        return first, await health_probe.probe_aurora()
+
+    first, second = asyncio.run(scenario())
+
+    assert first.ok is False
+    assert second.ok is True and second.stale is False
+    assert db.calls == 1
+
+
+def test_a_stale_result_older_than_the_limit_is_unknown_not_trusted(monkeypatch):
+    db = _BlockingDb(0.5)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+    monkeypatch.setattr(health_probe, "PROBE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(health_probe, "CACHE_TTL_SECONDS", 0.0)
+    health_probe._cache = health_probe.AuroraProbeResult(ok=True)
+    health_probe._cache_at = time.monotonic() - health_probe.STALE_LIMIT_SECONDS - 1
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.ok is False
+    assert result.error_class == "TimeoutError"
+
+
+def test_api_health_answers_within_the_bound_while_aurora_hangs(monkeypatch):
+    from backend import main
+
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: _BlockingDb(1.0))
+    monkeypatch.setattr(health_probe, "PROBE_TIMEOUT_SECONDS", 0.1)
+
+    async def scenario():
+        started = time.monotonic()
+        payload = await main._health_payload()
+        return payload, time.monotonic() - started
+
+    payload, elapsed = asyncio.run(scenario())
+
+    assert elapsed < 0.5
+    assert payload.status == "degraded"
+    assert payload.aurora_reachable is False

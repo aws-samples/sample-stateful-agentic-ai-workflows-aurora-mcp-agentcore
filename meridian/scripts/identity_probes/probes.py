@@ -250,7 +250,8 @@ def _decoy_reads_jordan_memory(ports: Ports, ctx: Context):
 
 
 def _decoy_orders_for_jordan(ports: Ports, ctx: Context):
-    order = {"product_id": PACKAGE_ID, "quantity": 1, "phase": 4, "traveler_id": JORDAN_TRAVELER}
+    order = {"product_id": PACKAGE_ID, "quantity": 1, "phase": 4, "traveler_id": JORDAN_TRAVELER,
+             "conversation_id": "conv_probe_decoy_hold"}
     with watch_bookings(ports, ctx, None) as window:
         status, body = ports.http(DECOY, "POST", "/api/chat/order", order)
         window.payload_ids = _order_booking_ids(body)

@@ -117,6 +117,21 @@ BUSINESS_ANSWERS = {
 }
 
 
+# What the model and the traveler are told for a refusal code the holds Lambda sends that a
+# bare code would leave unexplained. The raw code stays in the span for the audit.
+# The hold request id names the package, duration, party size and journey but not the price. A
+# request is live while its booking is held (not lapsed) or confirmed, so this refusal means the
+# traveler already has this exact trip on the journey at the price quoted when it was first
+# requested; re-quoting would meet the same refusal until that hold lapses or is released.
+REFUSAL_EXPLANATIONS = {
+    "hold_request_parameter_mismatch": (
+        "This trip is already held or booked on this journey for the same length and party "
+        "size, at the price quoted when it was first requested, so no second hold was placed. "
+        "That earlier hold stands until it is confirmed, released or expires."
+    ),
+}
+
+
 def is_business_answer(name: str, payload: dict) -> bool:
     """True when ``payload`` is a factual "no" that the tool ``name`` is known to send."""
     code = payload.get("error")
@@ -270,6 +285,9 @@ class TraceHooks(HookProvider):
         self.hold_settled = False
         self.booking: dict | None = None
         self.booking_settled = False
+        # Kinds whose first call passed ``before``. Strands runs the callbacks inline on one
+        # event loop (no await between the check and the mark), so a plain set is race-free.
+        self.attempted: set[str] = set()
         self.packages: list[dict] = []
 
     def register_hooks(self, registry, **kwargs) -> None:
@@ -279,8 +297,8 @@ class TraceHooks(HookProvider):
     def emit(self, kind: str, payload) -> None:
         self.queue.put_nowait((kind, payload))
 
-    def _is_settled(self, kind: str) -> bool:
-        return bool(getattr(self, f"{kind}_settled"))
+    def _is_attempted(self, kind: str) -> bool:
+        return kind in self.attempted or bool(getattr(self, f"{kind}_settled"))
 
     def _settle(self, kind: str, outcome: dict | None) -> None:
         setattr(self, kind, outcome)
@@ -301,16 +319,19 @@ class TraceHooks(HookProvider):
             args["authorizationRef"] = str(event.tool_use["toolUseId"])
         kind = GOVERNED.get(name)
         if kind:
-            if self._is_settled(kind):
-                # The first attempt may have been decided, or may have failed before the
-                # gateway answered. Either way a second call could place the write twice or
-                # retry a Cedar decision with the same pinned arguments.
+            if self._is_attempted(kind):
+                # The first attempt may be in flight (the concurrent executor runs every
+                # call of one model message through ``before`` ahead of any ``after``), may
+                # have been decided, or may have failed before the gateway answered. Any of
+                # these, a second call could place the write twice or retry a Cedar decision
+                # with the same pinned arguments.
                 event.cancel_tool = (
                     f"This {kind} was already attempted on this turn. Do not call "
                     f"{name} again; explain the outcome to the traveler."
                 )
                 self._guarded(kind, event.tool_use)
                 return
+            self.attempted.add(kind)
             self._pin_write_arguments(kind, args)
         span_kind, title, summary = SPANS[name]
         self.emit("activity", activity(span_kind, title, summary, {
@@ -436,7 +457,7 @@ class TraceHooks(HookProvider):
         if denied:
             summary = friendly_denial(text, args if kind else None, kind or "hold")
         else:
-            summary = text or "The gateway returned no result."
+            summary = REFUSAL_EXPLANATIONS.get(text) or text or "The gateway returned no result."
         if denied and kind:
             title = f"{kind.capitalize()} refused by Cedar policy"
         elif denied:

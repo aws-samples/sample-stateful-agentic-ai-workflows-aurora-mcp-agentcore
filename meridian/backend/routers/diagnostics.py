@@ -1,7 +1,8 @@
 """Diagnostics API — prove Aurora RLS is enforced, live.
 
 The ``/rls-probe`` endpoint first proves the authenticated workload is allowed
-to claim Jordan and denied when it claims the decoy traveler. It then runs the
+to claim the signed-in traveler and denied when it claims a traveler id no workload is
+bound to. It then runs the
 SAME ``COUNT(*)`` twice against a table:
 
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC
@@ -20,7 +21,7 @@ The app role itself is fail closed when the traveler GUC is unset. The broader
 baseline is available only through the definer function.
 
 The probe reads only COUNT and pg_policies, but its two authorization checks write
-``traveler_access_audit`` rows (an allow row for the caller, a deny row for the decoy control)
+``traveler_access_audit`` rows (an allow row for the caller, a deny row for the negative control)
 on every call.
 
 AWS docs:
@@ -57,10 +58,12 @@ ALLOWED_TABLES = (
     "conversation_messages",
 )
 DEFAULT_TABLES = ("traveler_preferences", "trip_interactions")
-NEGATIVE_CONTROL_TRAVELER_ID = "trv_demo_decoy"
-# Returned to the UI so the probe card renders the decoy's real name
-# instead of hard-coding it client side and lying if this changes.
-NEGATIVE_CONTROL_DISPLAY_NAME = "Jordan Lee"
+# A traveler id no one can bind: bindings reference travelers(traveler_id), and no seed or
+# migration creates this id. The decoy (trv_demo_decoy) is a real traveler that the backend role
+# is bound to in a deployment that runs the decoy proof, so asking for it would show ALLOW.
+NEGATIVE_CONTROL_TRAVELER_ID = "trv_negative_control_unbound"
+# Rendered by the probe card after the decision.
+NEGATIVE_CONTROL_DISPLAY_NAME = "a traveler id no workload is bound to"
 
 
 class RlsProbeRequest(BaseModel):
@@ -93,16 +96,8 @@ class RlsProbeResponse(BaseModel):
     debug: Optional[dict] = None
 
 
-async def _negative_control(db, traveler_id: str, authorization) -> dict:
-    """Ask for the decoy's record; not applicable when the principal is the decoy itself."""
-    if traveler_id == NEGATIVE_CONTROL_TRAVELER_ID:
-        return {
-            "requested_traveler_id": NEGATIVE_CONTROL_TRAVELER_ID,
-            "display_name": NEGATIVE_CONTROL_DISPLAY_NAME,
-            "decision": "not_applicable",
-            "reason": "the signed-in traveler is the decoy, so this control cannot be denied",
-            "audit_id": None,
-        }
+async def _negative_control(db, authorization) -> dict:
+    """Ask for a traveler id that is never bound; the workload must be denied."""
     negative = await db.check_traveler_authorization(
         NEGATIVE_CONTROL_TRAVELER_ID, authorization, write_audit=True
     )
@@ -142,7 +137,7 @@ async def rls_probe(
     results: List[RlsTableResult] = []
 
     # Layer 1 + 2 proof: authenticated AWS subject -> explicit traveler grant.
-    # The negative control asks the same subject for Jordan's decoy record and
+    # The negative control asks the same subject for a traveler id no one is bound to and
     # should be denied before any RLS scope can be set.
     decision = await db.check_traveler_authorization(
         traveler_id,
@@ -151,7 +146,7 @@ async def rls_probe(
     )
     if not decision.allowed:
         raise HTTPException(status_code=403, detail=str(TravelerAuthorizationError(decision)))
-    negative = await _negative_control(db, traveler_id, authorization)
+    negative = await _negative_control(db, authorization)
 
     for table in tables:
         try:

@@ -143,12 +143,44 @@ function assertCognitoShape(dotenv: Record<string, string>): void {
       'MERIDIAN_COGNITO_APP_CLIENT_ID must be at least 20 lowercase letters or digits',
     );
   }
+  assertBackendSecretShape(dotenv, region);
+}
+
+/** The backend login secret must be a Secrets Manager ARN in `region`. */
+function assertBackendSecretShape(dotenv: Record<string, string>, region: string): void {
   if (!dotenv.AURORA_BACKEND_SECRET_ARN.startsWith(`arn:aws:secretsmanager:${region}:`)) {
     throw new Error(
       `AURORA_BACKEND_SECRET_ARN must be a Secrets Manager ARN in ${region}, ` +
         `not '${dotenv.AURORA_BACKEND_SECRET_ARN}'`,
     );
   }
+}
+
+/** The hosted backend runs as the meridian_backend login, never as the master. */
+function assertBackendSecretIsNotMaster(dotenv: Record<string, string>): void {
+  if (dotenv.AURORA_BACKEND_SECRET_ARN === dotenv.AURORA_SECRET_ARN) {
+    throw new Error(
+      'AURORA_BACKEND_SECRET_ARN must differ from AURORA_SECRET_ARN: the hosted backend runs as the ' +
+        'meridian_backend login, not the master',
+    );
+  }
+}
+
+/**
+ * The iam release's database login: the meridian_backend secret, the same login the jwt release
+ * uses. Refuses a missing, misplaced or master secret.
+ */
+function iamServiceEnvironment(dotenv: Record<string, string>, region: string): Record<string, string> {
+  if (!dotenv.AURORA_BACKEND_SECRET_ARN) {
+    throw new Error(
+      'meridian/.env is missing AURORA_BACKEND_SECRET_ARN: the hosted backend runs as the ' +
+        'meridian_backend login in both modes; run scripts/provision_service_logins.py --login backend ' +
+        '--apply --i-understand-this-changes-aws --write-env first',
+    );
+  }
+  assertBackendSecretShape(dotenv, region);
+  assertBackendSecretIsNotMaster(dotenv);
+  return { AURORA_SECRET_ARN: dotenv.AURORA_BACKEND_SECRET_ARN };
 }
 
 function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, string> {
@@ -160,12 +192,7 @@ function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, s
     );
   }
   assertCognitoShape(dotenv);
-  if (dotenv.AURORA_BACKEND_SECRET_ARN === dotenv.AURORA_SECRET_ARN) {
-    throw new Error(
-      'AURORA_BACKEND_SECRET_ARN must differ from AURORA_SECRET_ARN: the hosted backend runs as the ' +
-        'meridian_backend login, not the master',
-    );
-  }
+  assertBackendSecretIsNotMaster(dotenv);
   return {
     MERIDIAN_AGENTCORE_AUTH: 'jwt',
     MERIDIAN_COGNITO_REGION: dotenv.MERIDIAN_COGNITO_REGION,
@@ -176,8 +203,8 @@ function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, s
 }
 
 /**
- * The App Runner environment. In `jwt` mode the service also gets the pool settings and the mode,
- * and its database login becomes the meridian_backend secret (the container's AURORA_SECRET_ARN).
+ * The App Runner environment. In both modes the service's database login is the meridian_backend
+ * secret (the container's AURORA_SECRET_ARN); `jwt` mode also gets the pool settings and the mode.
  */
 export function serviceEnvironment(
   dotenv: Record<string, string>,
@@ -201,7 +228,9 @@ export function serviceEnvironment(
   for (const key of ENV_PASSTHROUGH) {
     if (dotenv[key]) env[key] = dotenv[key];
   }
-  return mode === 'jwt' ? { ...env, ...jwtServiceEnvironment(dotenv) } : env;
+  return mode === 'jwt'
+    ? { ...env, ...jwtServiceEnvironment(dotenv) }
+    : { ...env, ...iamServiceEnvironment(dotenv, region) };
 }
 
 // Compiled to infra/dist/lib, so three levels up is meridian/.

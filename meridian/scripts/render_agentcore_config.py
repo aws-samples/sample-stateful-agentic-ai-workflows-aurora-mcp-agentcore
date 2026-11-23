@@ -621,7 +621,7 @@ def print_summary(values: dict[str, str], stage: str, spec: dict[str, Any], note
                   *, tighten: bool, staged: int, concierge_copy: str) -> None:
     """Say what was written, which build stage it is and what comes next."""
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
-    print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
+    print(f"  account <acct>, region {values['AWS_REGION']}")
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     if values[AUTH_MODE_ENV] == JWT:
         print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")

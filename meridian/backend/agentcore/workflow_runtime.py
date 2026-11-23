@@ -38,6 +38,7 @@ from backend.agents.phase_05_workflow.runner import (
 )
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
+from backend.turn_capacity import run_runtime_call
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,7 @@ class WorkflowRuntimeClient:
             RuntimeError: The invoke failed, or the stream ended without a result.
         """
         session_id = workflow_session_id(command.traveler_id, command.thread_id)
-        return await asyncio.to_thread(self._run_sync, session_id, self.payload(command))
+        return await run_runtime_call(self._run_sync, session_id, self.payload(command))
 
     async def ping(self, session_id: str) -> Dict[str, Any]:
         """Start or reach a session without touching any journey."""

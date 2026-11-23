@@ -13,14 +13,28 @@ PACKAGE_COLUMNS = """package_id, name, trip_type, destination, region,
                      price_per_person, operator, description, image_url,
                      durations, package_places_left(package_id) AS availability, highlights"""
 
-# "under $2,500.00", "below $3.5k", "less than 1200", "< $800". The whole part is either
-# comma-grouped thousands or plain digits; "k" multiplies by a thousand.
+# "under $2,500.00", "below $3.5k", "less than 1200", "< $800", "up to $2,000", "at most $2,000",
+# "no more than $2,000", "within $2,000". The whole part is either comma-grouped thousands or
+# plain digits; "k" multiplies by a thousand. "no less than" and "not less than" are floors, so the
+# lookbehinds skip them; "at least", "more than" and "over" are not listed. The optional last
+# group captures the word after the number so that a count ("under 100 rooms") is not a price.
 PRICE_CEILING = re.compile(
-    r"(?:under|below|less than|<)\s*(\$)?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(k)\b)?",
+    r"(?<!\bno\s)(?<!\bnot\s)"
+    r"(?:\b(?:under|below|less than|up to|at most|no more than|not more than|within)|<)"
+    r"\s*(\$)?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(k)\b)?(?:\s*([a-z]+))?",
     re.IGNORECASE,
 )
 # Without "$" or "k", a small number is a count ("under 3 nights"), not a budget.
 MIN_PLAIN_PRICE = 100
+# A bare number followed by one of these words is a count or a distance, not a price.
+COUNT_UNITS = frozenset((
+    "room rooms night nights person persons people guest guests kid kids child children adult "
+    "adults traveler travelers traveller travellers passenger passengers pax seat seats bed beds "
+    "bedroom bedrooms day days week weeks month months year years hour hours hr hrs minute "
+    "minutes min mins second seconds star stars km kilometer kilometers kilometre kilometres "
+    "mile miles mi m meter meters metre metres ft feet flight flights stop stops activity "
+    "activities option options result results review reviews"
+).split())
 
 
 def parse_price_ceiling(query: str) -> Optional[float]:
@@ -30,12 +44,15 @@ def parse_price_ceiling(query: str) -> Optional[float]:
         query: The traveler's words.
 
     Returns:
-        The first amount after "under", "below", "less than" or "<" that reads as
-        money: one with "$" or a "k" suffix, or a plain number of at least
-        ``MIN_PLAIN_PRICE``. None when the prompt names no such amount.
+        The first amount after "under", "below", "less than", "up to", "at most", "no more
+        than", "not more than", "within" or "<" that reads as money: one with "$" or a "k"
+        suffix, or a plain number of at least ``MIN_PLAIN_PRICE`` that no unit word
+        (``COUNT_UNITS``) follows. None when the prompt names no such amount.
     """
     for match in PRICE_CEILING.finditer(query):
-        dollar, whole, fraction, thousands = match.groups()
+        dollar, whole, fraction, thousands, word = match.groups()
+        if not dollar and word and word.lower() in COUNT_UNITS:
+            continue
         value = float(whole.replace(",", "") + (fraction or ""))
         if thousands:
             return value * 1000

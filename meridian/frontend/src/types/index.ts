@@ -250,8 +250,8 @@ export interface OrderRequest {
   phase: Phase;
   traveler_id?: string;
   action?: 'hold';
-  /** Phase 4 holds run inside the conversation's AgentCore Memory session. */
-  conversation_id?: string;
+  /** Required: the hold's request id is derived from it, so a retry finds the same hold. */
+  conversation_id: string;
 }
 
 export interface OrderResponse {

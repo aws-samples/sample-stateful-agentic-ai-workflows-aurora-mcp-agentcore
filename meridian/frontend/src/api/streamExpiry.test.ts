@@ -43,6 +43,18 @@ describe('a token that expires during a streamed turn', () => {
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe('Bearer new.jwt');
   });
 
+  it('resends exactly once when the stream opened with a status frame and then expired', async () => {
+    const opening = frame({ type: 'status', text: 'Connecting' });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(stream(opening, expired)).mockResolvedValueOnce(stream(opening, complete));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler();
+    const result = await sendChatMessage(request, undefined, vi.fn());
+    expect(result.message).toBe('Done');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(hooks.refresh).toHaveBeenCalledOnce();
+  });
+
   it('retries once after an HTTP 401 before the stream starts', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response('{}', { status: 401 })).mockResolvedValueOnce(stream(complete));

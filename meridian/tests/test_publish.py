@@ -19,10 +19,15 @@ CONCIERGE_ARN = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/exampl
 GATEWAY_URL = "https://gw1.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 
 
+IAM_DOTENV = {"AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET}
+
+
 def hosted_environment(**overrides):
+    """The planned iam service environment: it runs as the meridian_backend login."""
     environment = {
         "AURORA_CLUSTER_ARN": "arn:aws:rds:us-east-1:123456789012:cluster:example",
-        "AURORA_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:example-abcdef",
+        "AURORA_SECRET_ARN": rs.BACKEND_SECRET,
+        "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET,
         "AGENTCORE_RUNTIME_ARN": CONCIERGE_ARN,
         "AGENTCORE_WORKFLOW_RUNTIME_ARN": WORKFLOW_ARN,
         "AGENTCORE_GATEWAY_URL": GATEWAY_URL,
@@ -134,7 +139,7 @@ def test_the_workflow_runtime_arn_must_be_set_in_the_selected_account(arn):
         publish.validate_environment(environment, "123456789012", "us-east-1")
 
 
-def test_the_backend_login_secret_is_optional_but_must_belong_to_the_account():
+def test_the_backend_login_secret_must_belong_to_the_account():
     secret = "arn:aws:secretsmanager:us-east-1:123456789012:secret:backend-login-a1B2c3"
     publish.validate_environment(
         hosted_environment(AURORA_BACKEND_SECRET_ARN=secret), "123456789012", "us-east-1")
@@ -142,6 +147,14 @@ def test_the_backend_login_secret_is_optional_but_must_belong_to_the_account():
     with pytest.raises(ValueError, match="AURORA_BACKEND_SECRET_ARN"):
         publish.validate_environment(
             hosted_environment(AURORA_BACKEND_SECRET_ARN=other), "123456789012", "us-east-1")
+
+
+def test_a_hosted_environment_without_the_backend_login_secret_is_refused():
+    environment = hosted_environment()
+    del environment["AURORA_BACKEND_SECRET_ARN"]
+
+    with pytest.raises(ValueError, match=r"AURORA_BACKEND_SECRET_ARN.*--login backend"):
+        publish.validate_environment(environment, "123456789012", "us-east-1")
 
 
 def control_returning(status, mode="iam", *, gateway_mode=None):
@@ -223,14 +236,16 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
     """Prepare the mocks and files for publish(); return the list that records the commands.
 
     This does not run publish(). The caller does, and the list fills as it runs. ``dotenv`` is
-    what meridian/.env and the process environment hold (default: nothing, so iam mode).
+    what meridian/.env and the process environment hold (default: the backend login secret only,
+    so iam mode).
     """
     commands = Commands()
     cdk_out = tmp_path / "infra" / "cdk.out"
     cdk_out.mkdir(parents=True)
     planned = service_environment if service_environment is not None else hosted_environment()
     template = {"Outputs": {"ServiceEnvironment": {"Value": json.dumps(planned)}}}
-    monkeypatch.setattr(publish, "release_environment", lambda: dict(dotenv or {}))
+    release_dotenv = IAM_DOTENV if dotenv is None else dotenv
+    monkeypatch.setattr(publish, "release_environment", lambda: dict(release_dotenv))
     proof_path = tmp_path / "backend-login-proof.json"
     if proof:
         proof_path.write_text(json.dumps(rs.receipt(datetime.now(timezone.utc))))
@@ -305,6 +320,7 @@ JWT_DOTENV = {
     "MERIDIAN_COGNITO_REGION": "us-east-1",
     "MERIDIAN_COGNITO_USER_POOL_ID": POOL,
     "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT,
+    **IAM_DOTENV,
 }
 
 
@@ -484,6 +500,30 @@ def test_an_iam_plan_with_every_hop_in_iam_reaches_the_diff(monkeypatch, tmp_pat
     publish.publish(ARGS)
 
     assert commands[-1] == ["npx", "cdk", "diff", "--no-change-set"]
+
+
+@pytest.mark.parametrize("dotenv", [{}, {"AURORA_BACKEND_SECRET_ARN": "  "}])
+def test_an_iam_publish_without_the_backend_login_secret_stops_before_any_aws_call(
+        monkeypatch, tmp_path, dotenv):
+    commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"), dotenv=dotenv)
+    session = publish.boto3.Session()
+
+    with pytest.raises(ValueError, match=r"AURORA_BACKEND_SECRET_ARN.*--login backend"):
+        publish.publish(ARGS)
+
+    session.client.assert_not_called()
+    assert commands == []
+
+
+def test_an_iam_plan_refuses_a_service_environment_that_still_runs_as_the_master_login(
+        monkeypatch, tmp_path):
+    master = "arn:aws:secretsmanager:us-east-1:123456789012:secret:example-abcdef"
+    planned_publish(monkeypatch, tmp_path, control_returning("READY"),
+                    dotenv={**IAM_DOTENV, "AURORA_SECRET_ARN": master},
+                    service_environment=hosted_environment(AURORA_SECRET_ARN=master))
+
+    with pytest.raises(SystemExit, match="would not run as the meridian_backend login"):
+        publish.publish(ARGS)
 
 
 def test_a_jwt_plan_with_every_hop_ready_reaches_the_diff(monkeypatch, tmp_path):

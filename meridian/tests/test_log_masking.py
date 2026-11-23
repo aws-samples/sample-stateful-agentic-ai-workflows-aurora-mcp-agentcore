@@ -481,3 +481,31 @@ class TestFactoryParity:
         assert outputs["backend"] == outputs["runtime"]
         assert "<acct>" in outputs["backend"] and "key=<masked>" in outputs["backend"]
         assert SECRET not in outputs["backend"], "the UUID tail is the one id both keep"
+
+
+def test_the_concierge_mcp_client_logs_the_tool_and_the_shape_never_the_values(caplog):
+    import asyncio
+    from types import SimpleNamespace
+
+    from backend.mcp.concierge_mcp_client import MeridianConciergeMCPClient
+
+    member, points = "MBR-0042-JORDAN", 48213
+
+    async def call_tool(tool, arguments):
+        payload = json.dumps({"member_id": member, "points_balance": points, "tier": "Gold"})
+        return SimpleNamespace(isError=False, structuredContent=None,
+                               content=[SimpleNamespace(text=payload)])
+
+    client = MeridianConciergeMCPClient()
+    client._connected = True
+    client.session = SimpleNamespace(call_tool=call_tool)
+
+    with caplog.at_level(logging.INFO, logger="backend.mcp.concierge_mcp_client"):
+        decoded = asyncio.run(client.call("loyalty_status", {"member_id": member}))
+
+    assert decoded["points_balance"] == points
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "loyalty_status" in logged
+    assert "member_id" in logged and "points_balance" in logged
+    for value in (member, str(points), "Gold"):
+        assert value not in logged

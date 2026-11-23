@@ -172,7 +172,10 @@ is not an application-managed PostgreSQL connection pool. The
 through the Data API, RDS Proxy and a direct PostgreSQL connection.
 
 Use the master login for schema administration only, because it bypasses RLS. Deployed services use
-non-owner, `NOBYPASSRLS`, `NOINHERIT` logins. After migration 029, service roles cannot directly
+non-owner, `NOBYPASSRLS`, `NOINHERIT` logins. The hosted `iam` and `jwt` releases both run the
+backend as `meridian_backend`, and publishing refuses without its secret. A `jwt` release published
+with `--tighten` also removes the instance role's read of the master secret. After migration 029,
+service roles cannot directly
 insert, update or delete booking tables, and only `meridian_gateway` can execute the bounded
 hold, confirmation and release functions. See
 [service logins](meridian/docs/OPERATIONS.md#service-logins) for how to create each login.

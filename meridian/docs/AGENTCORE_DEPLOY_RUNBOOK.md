@@ -305,7 +305,7 @@ The `MeridianHolds` Lambda is a workload: before it sets a traveler scope it
 needs its own row in `traveler_identity_bindings`.
 
 ```bash
-python meridian/scripts/bind_gateway_workload.py
+python meridian/scripts/bind_gateway_workload.py --apply
 ```
 
 ## 6. Point the backend at the deployment
@@ -506,7 +506,7 @@ The order, enforced by the tools:
    stage 2 would create it again, which CloudFormation refuses. Delete it before stage 2 (no export):
    `release_identity.py holds-logs --apply --i-understand-this-changes-aws`. Stage 2 refuses while it exists.
 3. Stages 2, 3 and 4: render and deploy again each time, until the render prints `Configuration complete.`
-4. After stage 2, `bind_gateway_workload.py`, then point the holds Lambda's SSM parameter at the gateway
+4. After stage 2, `bind_gateway_workload.py --apply`, then point the holds Lambda's SSM parameter at the gateway
    login (`publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws`, then
    `release_identity.py lambdas --restart-holds`).
 5. `release_identity.py gateway --to jwt --apply --i-understand-this-changes-aws` attaches the interceptor,

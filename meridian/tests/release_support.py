@@ -45,7 +45,7 @@ def target(mode: str = "jwt", design: str = settings.BOTH):
         mode=mode, design=design, cognito=pool if mode == "jwt" else None,
         interceptor_arn=INTERCEPTOR_ARN if settings.uses_interceptor(design) else None,
         account=ACCOUNT, region=REGION, master_secret_arn=MASTER_SECRET,
-        backend_secret_arn=BACKEND_SECRET if mode == "jwt" else None)
+        backend_secret_arn=BACKEND_SECRET)
 
 
 def jwt_authorizer() -> dict:
@@ -92,6 +92,15 @@ def runtime(name: str, mode: str = "jwt", *, iam_env: bool = False) -> dict:
         described["environmentVariables"]["MERIDIAN_AGENTCORE_AUTH"] = "iam"
     return described
 
+
+
+def iam_service_variables() -> dict:
+    """The iam release's service: the meridian_backend login and no sign-in setting."""
+    return {
+        "AURORA_SECRET_ARN": BACKEND_SECRET,
+        "AURORA_BACKEND_SECRET_ARN": BACKEND_SECRET,
+        "EXISTING_SETTING": "preserve",
+    }
 
 
 def jwt_service_variables() -> dict:

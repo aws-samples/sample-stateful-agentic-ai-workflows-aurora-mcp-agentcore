@@ -191,7 +191,7 @@ def test_the_ownership_lookup_opens_no_scoped_session_of_its_own(monkeypatch):
 @pytest.mark.parametrize("key", ["budget_cap", "Budget", "per_person_range"])
 @pytest.mark.parametrize("value", [
     "flexible", "$75 or $5000", "$75 per traveler, $3200 total", "75 for 3 kids",
-    "\u20ac500", "500 CAD", "$0",
+    "\u20ac500", "500 CAD", "$0", "500000 yen", "3000 baht", ".5k", "9" * 310,
 ])
 def test_a_budget_that_is_not_one_amount_or_range_is_refused_with_a_dollar_prompt(
     monkeypatch, key, value
@@ -308,6 +308,9 @@ def _profile_with(monkeypatch, facts):
     ([{"key": "budget", "value": "flexible"}], None, True),
     ([{"key": "seat", "value": "aisle"}], None, False),
     ([], None, False),
+    ([{"key": "budget_cap", "value": "9" * 310}], None, True),
+    ([{"key": "budget_cap", "value": "500000 yen"}], None, True),
+    ([{"key": "budget_cap", "value": ".5k"}], None, True),
 ])
 def test_the_profile_says_when_a_saved_budget_is_unclear(monkeypatch, facts, cents, unclear):
     profile = _profile_with(monkeypatch, [
@@ -315,3 +318,13 @@ def test_the_profile_says_when_a_saved_budget_is_unclear(monkeypatch, facts, cen
     ])
     assert profile.budget_ceiling_per_traveler_cents == cents
     assert profile.budget_unclear is unclear
+
+
+def test_the_profile_survives_a_parser_that_returns_infinity(monkeypatch):
+    """A non-finite amount from the parser is an unclear budget, not a 500."""
+    from backend.agents import budget as budget_mod
+
+    monkeypatch.setattr(budget_mod, "parse_usd_amounts", lambda _text: [float("inf")])
+    profile = _profile_with(monkeypatch, [{"key": "budget_cap", "value": "$75"}])
+    assert profile.budget_ceiling_per_traveler_cents is None
+    assert profile.budget_unclear is True

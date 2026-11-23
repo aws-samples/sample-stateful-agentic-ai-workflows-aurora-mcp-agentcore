@@ -117,24 +117,96 @@ def test_a_phase_5_turn_that_takes_70_seconds_streams_and_resolves(monkeypatch):
     assert terminal(frames)["response"]["message"] == "Recovery paused."
 
 
-def test_the_ladder_keeps_an_error_activity_inside_the_response(monkeypatch):
-    error_entry = route.create_activity(
-        activity_type="error", title="Runtime", details="The Runtime refused.",
-        agent_name="x", agent_file="y",
+def _tool_failure_activity():
+    return route.create_activity(
+        activity_type="error", title="Tool call failed",
+        details="The gateway returned no result.", agent_name="ProductionAgent",
+        agent_file="runtime",
     )
 
-    async def failed_chat(request, principal):
-        return route.ChatResponse(message="Could not run.", activities=[error_entry])
 
-    monkeypatch.setattr(route, "chat", failed_chat)
-
-    async def scenario(experience):
-        extra = {"experience": experience} if experience else {}
-        request = route.ChatRequest(message="Tokyo", phase=4, **extra)
+def _stream_terminal(monkeypatch, **request_fields):
+    """Run the real ``chat`` through ``stream_chat`` and return the terminal event."""
+    async def scenario():
+        request = route.ChatRequest(message="Tokyo", **request_fields)
         return terminal(await collect(await route.stream_chat(request, PRINCIPAL)))
 
-    assert run_virtual(scenario(None))["type"] == "complete"
-    assert run_virtual(scenario("concierge"))["type"] == "error"
+    return run_virtual(scenario())
+
+
+def test_a_recovered_tool_error_streams_as_a_complete_turn(monkeypatch):
+    async def recovered(request, principal):
+        return route.ChatResponse(
+            message="Here are three Tokyo trips that fit.", activities=[_tool_failure_activity()],
+        )
+
+    monkeypatch.setattr(route, "chat", recovered)
+    event = _stream_terminal(monkeypatch, phase=4, experience="concierge")
+    assert event["type"] == "complete"
+    assert event["response"]["message"] == "Here are three Tokyo trips that fit."
+    assert "failed" not in event["response"]
+
+
+def test_a_runtime_that_answers_with_an_error_span_is_complete(monkeypatch):
+    async def production_search(*args, **kwargs):
+        return [], [_tool_failure_activity()], "Two options remain.", "conv_1", []
+
+    monkeypatch.setattr(route, "production_search", production_search)
+    event = _stream_terminal(monkeypatch, phase=4, experience="concierge")
+    assert event["type"] == "complete"
+    assert event["response"]["message"] == "Two options remain."
+
+
+@pytest.mark.parametrize("raised", [
+    RuntimeError("Runtime ended the turn"),
+    WriteOutcomeUnknown("hold"),
+    PlacedWriteUnfinished("hold", "audit"),
+])
+def test_a_runtime_turn_that_raises_streams_as_an_error(monkeypatch, raised):
+    async def production_search(*args, **kwargs):
+        raise raised
+
+    monkeypatch.setattr(route, "production_search", production_search)
+    event = _stream_terminal(monkeypatch, phase=4, experience="concierge")
+    assert event["type"] == "error"
+    assert event["message"] == "I encountered an error in Production mode. Please try again."
+
+
+def test_an_unconfigured_agentcore_streams_as_an_error(monkeypatch):
+    from backend.agentcore.errors import AgentCoreNotConfiguredError
+
+    async def production_search(*args, **kwargs):
+        raise AgentCoreNotConfiguredError(("runtime",), "project", ())
+
+    monkeypatch.setattr(route, "production_search", production_search)
+    event = _stream_terminal(monkeypatch, phase=4, experience="concierge")
+    assert event["type"] == "error"
+    assert "deployed AgentCore Runtime, Gateway" in event["message"]
+
+
+def test_a_failed_phase_5_turn_streams_as_an_error(monkeypatch):
+    async def broken_workflow(*args, **kwargs):
+        raise RuntimeError("graph failed")
+
+    monkeypatch.setattr(route, "run_workflow_turn", broken_workflow)
+    event = _stream_terminal(monkeypatch, phase=5, experience="concierge")
+    assert event["type"] == "error"
+    assert event["status"] == 503
+
+
+def test_the_failed_flag_never_reaches_the_json_response():
+    response = route.ChatResponse(message="x", activities=[], failed=True)
+    assert "failed" not in response.model_dump(mode="json")
+    assert "failed" not in route.ChatResponse.model_json_schema(mode="serialization")["properties"]
+
+
+def test_the_ladder_keeps_its_response_even_when_the_turn_failed(monkeypatch):
+    async def failed_chat(request, principal):
+        return route.ChatResponse(message="Could not run.", activities=[], failed=True)
+
+    monkeypatch.setattr(route, "chat", failed_chat)
+    assert _stream_terminal(monkeypatch, phase=4)["type"] == "complete"
+    assert _stream_terminal(monkeypatch, phase=4, experience="concierge")["type"] == "error"
 
 
 def test_streaming_is_refused_for_phases_that_finish_quickly():

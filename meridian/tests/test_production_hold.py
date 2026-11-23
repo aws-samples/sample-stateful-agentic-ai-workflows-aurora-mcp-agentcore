@@ -359,6 +359,7 @@ async def answer(route):
         if route == "hold":
             await chat_router.production_hold(chat_router.OrderRequest(
                 product_id="CTY-002", size="7 nights", quantity=2, phase=4,
+                conversation_id="conv_hold_1",
                 quote={"unit_price_cents": 250000, "total_cents": 500000, "currency": "USD",
                        "size": "7 nights", "quantity": 2}))
         else:

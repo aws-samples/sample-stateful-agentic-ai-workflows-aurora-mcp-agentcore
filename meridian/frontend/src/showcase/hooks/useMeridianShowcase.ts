@@ -22,7 +22,8 @@ import {
 import { useSession } from '../../auth/SessionContext';
 import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
 import {
-  allocateHoldIntent, holdIntentKey, loadBookingRecovery, recordHoldQuote, saveBookingRecovery,
+  allocateHoldIntent, holdIntentKey, loadBookingRecovery, recordHoldQuote, removeHoldIntent,
+  saveBookingRecovery,
   type SavedHoldIntent,
 } from '../lib/bookingRecovery';
 import { defaultDuration, holdTerms } from '../lib/holdTerms';
@@ -345,6 +346,16 @@ function useTripWorkspace(travelerId: string | null) {
  */
 function isUnknownWriteOutcome(err: unknown): boolean {
   return !(err instanceof NotSentError || (err instanceof ApiError && err.worded));
+}
+
+/**
+ * A well-formed 4xx reply means the route refused the write before committing anything. A 409
+ * other than a quote review, a 408 and a 429 can come from a conflict, a timeout or a throttle
+ * after the request was accepted, so they stay unknown.
+ */
+function isDefinitiveRefusal(err: unknown): boolean {
+  return err instanceof ApiError && err.worded
+    && err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status);
 }
 
 function writeFailureMessage(err: unknown, done: 'hold was placed' | 'booking was confirmed'): string {
@@ -1236,8 +1247,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           });
           return;
         }
-        // The page gave up, but the hold is idempotent and may be committed: ask Aurora.
         const intent = sentIntent;
+        if (intent && isDefinitiveRefusal(err)) {
+          // The server refused the request, so no hold exists for this identity and a reload
+          // has nothing to reconcile. A failed cleanup only leaves the identity saved.
+          try { await removeHoldIntent(travelerKey.current, intentKey, intent.conversationId); }
+          catch { /* The saved identity stays and is read back on the next load. */ }
+        }
+        // The page gave up, but the hold is idempotent and may be committed: ask Aurora.
         const recorded = intent && isUnknownWriteOutcome(err)
           ? await readBackWrite(signal => readHold(intent, signal)) : null;
         if (!mounted.current || generation !== requestGeneration.current) return;

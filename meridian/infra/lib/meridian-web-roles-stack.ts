@@ -7,9 +7,10 @@ export interface MeridianWebRolesStackProps extends StackProps {
   /** The App Runner environment from serviceEnvironment(); supplies the ARNs the role may touch. */
   environment: Record<string, string>;
   /**
-   * The master login's secret, in the jwt release only. The service does not use it, but the role
-   * keeps the grant (and the shared-token secret's) until the tighten release, so a rollback to the
-   * iam release still starts.
+   * The master login's secret, in the jwt release only. The service does not use it; the role
+   * keeps the grant (and the shared-token secret's) until the tighten release. The iam release
+   * grants only the backend login secret (its `AURORA_SECRET_ARN`) and the shared token, never
+   * the master.
    */
   masterSecretArn?: string;
   /** Drop the master and shared-token grants. Valid only with `masterSecretArn`. */

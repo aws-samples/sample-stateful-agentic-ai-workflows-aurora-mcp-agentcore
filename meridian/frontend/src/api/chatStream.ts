@@ -107,7 +107,8 @@ export async function readEventStream<T extends StreamedResult>(
             }
             return event.response as T;
           }
-          if ((event.type === 'delta' || event.type === 'status') && typeof event.text === 'string') { contentDelivered = true; onEvent(event); }
+          if (event.type === 'delta' && typeof event.text === 'string') { contentDelivered = true; onEvent(event); }
+          else if (event.type === 'status' && typeof event.text === 'string') onEvent(event);
           else if (event.type === 'conversation' && typeof event.conversation_id === 'string') onEvent(event);
           else if (event.type === 'candidates' && Array.isArray(event.package_ids)
             && event.package_ids.length <= 20 && event.package_ids.every((id: unknown) => typeof id === 'string')) {

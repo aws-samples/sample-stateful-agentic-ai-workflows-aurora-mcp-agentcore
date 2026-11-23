@@ -79,6 +79,7 @@ CODE_CLASSES = {
     "traveler_scope_mismatch": DATABASE_GUARD,
     "booking_agent_not_authorized": DATABASE_GUARD,
     "invalid_hold_quantity": BUSINESS_RULE,
+    "invalid_hold_minutes": BUSINESS_RULE,
     "hold_request_parameter_mismatch": DATABASE_GUARD,
     "booking_not_found": DATABASE_GUARD,
     "hold_not_found": DATABASE_GUARD,

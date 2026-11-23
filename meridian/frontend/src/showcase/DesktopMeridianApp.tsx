@@ -156,6 +156,8 @@ export function DesktopMeridianApp({
   const restoredJourney = useRef<typeof journey.document>(null);
   useEffect(() => {
     if (!isRecoveryView || !journey.document || (restoredJourney.current === journey.document && !state.error)) return;
+    // A worker that still holds its lease will finish the run; replaying now would offer Resume again.
+    if (workflowStillRunning(journey.document)) return;
     if (!state.isLoading && (runPhase !== 5 || state.conversationId !== journey.document.active_thread_id || state.error)) {
       restoredJourney.current = journey.document;
       state.restoreJourney(journey.document);

@@ -9,7 +9,8 @@ refuses to bind the decoy traveler.
 
 Usage:
     cd meridian
-    python scripts/bind_gateway_workload.py [--function meridianv2-MeridianHolds]
+    python scripts/bind_gateway_workload.py [--function meridianv2-MeridianHolds]          # dry run
+    python scripts/bind_gateway_workload.py [--function meridianv2-MeridianHolds] --apply  # write
 """
 
 from __future__ import annotations
@@ -38,12 +39,20 @@ def role_subject(iam, role_arn: str) -> tuple[str, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--function", default=DEFAULT_FUNCTION)
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="write the binding; without it the script only prints what it would bind")
     args = parser.parse_args()
+    identity.refuse_decoy(identity.TRAVELER_ID, allow_decoy=False)
     region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
     role_arn = boto3.client("lambda", region_name=region).get_function_configuration(
         FunctionName=args.function
     )["Role"]
     subject_id, principal = role_subject(boto3.client("iam"), role_arn)
+    if not args.apply:
+        print(f"Dry run: would bind the {principal.rsplit('/', 1)[-1]} role to "
+              f"{identity.TRAVELER_ID}. Re-run with --apply to write it.")
+        return
     identity.bind(
         boto3.client("rds-data", region_name=region),
         traveler_id=identity.TRAVELER_ID,

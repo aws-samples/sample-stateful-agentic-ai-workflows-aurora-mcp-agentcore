@@ -162,6 +162,7 @@ export function isServerReply(body: unknown, status: number): boolean {
 let unauthorized: UnauthorizedHandler | null = null;
 let refreshing: Promise<boolean> | null = null;
 let signedOut = false;
+let signedOutToken: string | null = null;
 
 export const STREAM_REFRESHED_MESSAGE = 'Your sign-in was refreshed. Send that again to continue.';
 
@@ -169,11 +170,18 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   unauthorized = handler;
   refreshing = null;
   signedOut = false;
+  signedOutToken = null;
 }
 
+/**
+ * Signs out once per session. A later refusal under a different token belongs to a new sign-in
+ * and signs out again; one that arrives after the token was cleared belongs to the ended session.
+ */
 function endSession(handler: UnauthorizedHandler): void {
-  if (signedOut) return;
+  const token = getAccessToken();
+  if (signedOut && (token === null || token === signedOutToken)) return;
   signedOut = true;
+  signedOutToken = token;
   handler.signOut();
 }
 

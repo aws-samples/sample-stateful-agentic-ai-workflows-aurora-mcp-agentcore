@@ -120,7 +120,8 @@ def test_a_hold_stopped_by_an_expired_token_is_a_retryable_401(monkeypatch):
         production_agent_mod, "create_production_agent", agent_raising("process_hold")
     )
     request = OrderRequest(
-        product_id="CTY-002", quantity=2, size="7 nights", phase=4, quote=ORDER_QUOTE)
+        product_id="CTY-002", quantity=2, size="7 nights", phase=4, quote=ORDER_QUOTE,
+        conversation_id="conv_hold_1")
     with pytest.raises(HTTPException) as caught:
         asyncio.run(chat_mod.production_hold(request))
     assert_retryable(caught.value)
@@ -222,7 +223,7 @@ def test_the_order_route_answers_the_sign_in_body(client, monkeypatch, error, co
                         agent_failing("process_hold", error))
     response = client.post("/api/chat/order", json={
         "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4,
-        "quote": ORDER_QUOTE})
+        "quote": ORDER_QUOTE, "conversation_id": "conv_hold_1"})
     assert_sign_in_response(response, code, message, challenge)
 
 
@@ -287,7 +288,7 @@ def test_a_token_expired_event_from_the_runtime_reaches_the_order_route_as_the_e
     monkeypatch.setattr(production_agent_mod, "create_production_agent", lambda: Agent())
     response = client.post("/api/chat/order", json={
         "product_id": "CTY-002", "quantity": 2, "size": "7 nights", "phase": 4,
-        "quote": ORDER_QUOTE})
+        "quote": ORDER_QUOTE, "conversation_id": "conv_hold_1"})
     assert_sign_in_response(response, "token_expired", MESSAGE, CHALLENGE)
 
 

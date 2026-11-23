@@ -150,6 +150,7 @@ EXPECTED_CLASSES = {
     "traveler_scope_mismatch": "database_guard",
     "booking_agent_not_authorized": "database_guard",
     "invalid_hold_quantity": "business_rule",
+    "invalid_hold_minutes": "business_rule",
     "hold_request_parameter_mismatch": "database_guard",
     "booking_not_found": "database_guard",
     "hold_not_found": "database_guard",

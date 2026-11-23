@@ -15,7 +15,7 @@ DECOY = HttpPrincipal("sub-decoy", "trv_demo_decoy", "cognito")
 
 
 def test_neither_request_defaults_to_a_named_traveler():
-    assert chat.OrderRequest(product_id="CTY-002", phase=4).traveler_id == CURRENT_TRAVELER
+    assert chat.OrderRequest(product_id="CTY-002", phase=4, conversation_id="conv_hold_1").traveler_id == CURRENT_TRAVELER
     assert chat.BookingRequest(booking_id="HLD-1").traveler_id == CURRENT_TRAVELER
 
 
@@ -25,7 +25,8 @@ async def test_an_order_without_a_traveler_is_placed_for_the_signed_in_traveler(
     governed = AsyncMock(return_value=chat.OrderResponse(message="ok", activities=[]))
     monkeypatch.setattr(chat, "production_hold", governed)
 
-    await chat.process_order(chat.OrderRequest(product_id="CTY-002", phase=4), principal)
+    await chat.process_order(
+        chat.OrderRequest(product_id="CTY-002", phase=4, conversation_id="conv_hold_1"), principal)
 
     assert governed.call_args.args[0].traveler_id == principal.traveler_id
 
@@ -48,7 +49,8 @@ async def test_the_decoy_naming_jordan_is_refused_and_nothing_runs(monkeypatch, 
 
     with pytest.raises(HTTPException) as order:
         await chat.process_order(chat.OrderRequest(
-            product_id="CTY-002", phase=4, traveler_id=JORDAN.traveler_id), DECOY)
+            product_id="CTY-002", phase=4, traveler_id=JORDAN.traveler_id,
+            conversation_id="conv_hold_1"), DECOY)
     with pytest.raises(HTTPException) as booking:
         await chat.confirm_booking(chat.BookingRequest(
             booking_id="HLD-1", traveler_id=JORDAN.traveler_id), DECOY)

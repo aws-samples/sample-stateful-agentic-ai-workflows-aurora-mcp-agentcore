@@ -867,3 +867,98 @@ def test_a_denial_at_a_zero_ceiling_names_the_unclear_budget_not_a_zero_dollar_c
     assert "one dollar amount or one range" in text
     assert "exceeds the saved budget ceiling $3,000.00" in " ".join(deny_reasons(
         {"travelerConfirmed": True, "totalCents": 500000, "budgetCeilingCents": 300000}))
+
+
+# ------------------------------------------- two governed calls in one model message
+
+HOLD_GATEWAY_TOOL = "MeridianHolds___create_courtesy_hold"
+CONFIRM_GATEWAY_TOOL = "MeridianHolds___confirm_booking"
+
+
+def _gateway_write_tool(name, sent):
+    """A Gateway tool named as the Gateway lists it; each call that reaches it is recorded."""
+    from strands import tool
+
+    @tool(name=name)
+    async def governed_write(package_id: str = "CTY-002") -> dict:
+        """A governed write.
+
+        Args:
+            package_id: The package.
+        """
+        sent.append(name)
+        await asyncio.sleep(0)
+        return {"status": "success", "content": [{"text": json.dumps({"summary": "ok"})}]}
+
+    return governed_write
+
+
+@pytest.mark.parametrize("name", [HOLD_GATEWAY_TOOL, CONFIRM_GATEWAY_TOOL])
+def test_two_calls_of_one_write_in_one_model_message_send_one_through_the_real_executor(
+        monkeypatch, name):
+    from tests.test_strands_hooks import Gateway, ScriptedModel, calls_each, run_concierge, says
+
+    sent = []
+    model = ScriptedModel(
+        calls_each((name, {"packageId": "CTY-002"}), (name, {"packageId": "CTY-002"})),
+        says("One attempt was made."),
+    )
+    yielded, _seen = run_concierge(
+        monkeypatch, model, Gateway([_gateway_write_tool(name, sent)]))
+
+    events = [json.loads(item) for item in yielded]
+    assert sent == [name]
+    guards = [event for event in events if "already attempted" in event.get("title", "")]
+    assert len(guards) == 1
+    assert guards[0]["telemetry"]["status"] == "error"
+
+
+def test_the_executor_runs_every_before_hook_ahead_of_any_after_hook():
+    from strands import Agent
+    from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
+    from tests.test_strands_hooks import ScriptedModel, calls_each, says
+
+    sent, order = [], []
+    agent = Agent(
+        model=ScriptedModel(
+            calls_each((HOLD_GATEWAY_TOOL, {}), (HOLD_GATEWAY_TOOL, {})), says("done")),
+        tools=[_gateway_write_tool(HOLD_GATEWAY_TOOL, sent)],
+        callback_handler=None,
+    )
+    agent.hooks.add_callback(BeforeToolCallEvent, lambda _e: order.append("before"))
+    agent.hooks.add_callback(AfterToolCallEvent, lambda _e: order.append("after"))
+    agent("hold it")
+    assert order == ["before", "before", "after", "after"]
+
+
+def test_a_single_call_is_pinned_sent_and_settled_as_before():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    event = _event(HOLD_GATEWAY_TOOL, {"packageId": "CTY-002"}, "t1")
+    hooks.before(event)
+    assert event.cancel_tool is False and "t1" in hooks.started
+    event.result = {"status": "success", "content": [{"text": json.dumps(
+        {"hold": {"bookingId": "HLD-1"}, "summary": "ok"})}]}
+    hooks.after(event)
+    assert hooks.hold == {"bookingId": "HLD-1"} and hooks.hold_settled is True
+
+
+def test_a_changed_quote_under_a_live_hold_request_tells_the_model_to_requote():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(hold_confirmed=True))
+    event = _event(HOLD_GATEWAY_TOOL, {"packageId": "CTY-002"}, "t1")
+    hooks.before(event)
+    event.result = {"status": "success", "content": [{"text": json.dumps(
+        {"error": "hold_request_parameter_mismatch"})}]}
+    hooks.after(event)
+
+    explained = event.result["content"][0]["text"]
+    assert "already held or booked on this journey" in explained
+    assert "no second hold was placed" in explained
+    assert "re-quote" not in explained
+    items = _drain(queue)
+    span = [span for kind, span in items if kind == "activity"][-1]
+    assert _labels(span)["gateway_error"] == "hold_request_parameter_mismatch"
+    hold = [item for kind, item in items if kind == "hold"][0]
+    assert hold["error"] == "hold_request_parameter_mismatch"
+    assert hold["refused"] == explained

@@ -107,15 +107,17 @@ def target_for(mode: str, env: Mapping[str, str | None], account: str, region: s
     Raises:
         ReleaseConfigError: When the enforcement design or the pool settings are invalid.
     """
-    where = {"account": account, "region": region}
+    where = {
+        "account": account, "region": region,
+        "master_secret_arn": (env.get("AURORA_SECRET_ARN") or "").strip() or None,
+        "backend_secret_arn": (env.get("AURORA_BACKEND_SECRET_ARN") or "").strip() or None,
+    }
     if mode != JWT:
         return Target(mode=mode, design=settings.BOTH, **where)
     design = settings.enforcement(env)
     arn = settings.interceptor_arn(account, region) if settings.uses_interceptor(design) else None
     return Target(
         mode=mode, design=design, cognito=settings.cognito_settings(env), interceptor_arn=arn,
-        master_secret_arn=(env.get("AURORA_SECRET_ARN") or "").strip() or None,
-        backend_secret_arn=(env.get("AURORA_BACKEND_SECRET_ARN") or "").strip() or None,
         **where)
 
 
@@ -328,7 +330,7 @@ def check_service_environment(variables: Any, secrets: Any, target: Target) -> l
     if not isinstance(variables, Mapping) or not isinstance(secrets, Mapping):
         return ["Service: the environment is unreadable (expected two mappings)"]
     if target.mode != JWT:
-        return _iam_service_findings(variables)
+        return _iam_service_findings(variables) + _backend_login_findings(variables, target)
     found = []
     if variables.get("MERIDIAN_AGENTCORE_AUTH") != JWT:
         found.append("Service: MERIDIAN_AGENTCORE_AUTH is not 'jwt', so the backend would "

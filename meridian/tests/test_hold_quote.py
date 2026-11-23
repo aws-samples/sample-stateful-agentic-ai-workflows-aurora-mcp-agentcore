@@ -248,3 +248,27 @@ def test_the_demo_validator_quotes_the_catalog_row_it_read_for_each_attempt(monk
         "unit_price_cents": 249999, "total_cents": 499998, "currency": "USD",
         "size": "7 nights", "quantity": 2}
     assert reads == ["/api/products/CTY-002"]
+
+
+@pytest.mark.parametrize("route", ["/api/chat/order", "/api/chat/order/stream"])
+@pytest.mark.parametrize("conversation", [None, ""])
+def test_a_hold_without_a_conversation_id_is_refused_before_any_hold(
+        monkeypatch, route, conversation):
+    from fastapi.testclient import TestClient
+
+    from backend import main
+    from backend.http_auth import require_http_principal
+
+    placed = AsyncMock()
+    monkeypatch.setattr(chat_router, "production_hold", placed)
+    monkeypatch.setitem(main.app.dependency_overrides, require_http_principal,
+                        lambda: HttpPrincipal("sub-jordan", "trv_meridian_demo", "cognito"))
+    body = {"product_id": "CTY-002", "size": "7 nights", "quantity": 2, "phase": 4,
+            "quote": quote()}
+    if conversation is not None:
+        body["conversation_id"] = conversation
+
+    response = TestClient(main.app, raise_server_exceptions=False).post(route, json=body)
+
+    assert response.status_code == 422
+    placed.assert_not_awaited()

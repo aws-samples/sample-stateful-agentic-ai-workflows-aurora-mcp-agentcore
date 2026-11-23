@@ -142,6 +142,21 @@ def test_only_refuses_to_skip_an_earlier_pending_migration(monkeypatch, tmp_path
     assert client.commits == [] and client.rollbacks == []
 
 
+@pytest.mark.parametrize("mode", [[], ["--dry-run"]])
+def test_an_applied_migration_is_never_replayed_by_name(monkeypatch, tmp_path, capsys, mode):
+    """024 recreates a trigger that names the column 025 drops, so replaying it after 025 fails."""
+    client = ScriptedClient("schema_migrations", ["001_a.sql", "002_b.sql"])
+    _pending_run(monkeypatch, tmp_path, client, capsys)
+    client.executed.clear()
+
+    assert migrations.main([*mode, "--only", "001_a.sql"]) == 2
+
+    assert "--only must name the first pending migration (003_c.sql)" in capsys.readouterr().out
+    assert client.commits == [] and client.rollbacks == []
+    assert all("transactionId" not in call for call in client.executed)
+    assert not any("INSERT INTO schema_migrations" in call["sql"] for call in client.executed)
+
+
 def test_pending_with_no_tracking_table_lists_everything_without_creating_it(
     monkeypatch, tmp_path, capsys
 ):

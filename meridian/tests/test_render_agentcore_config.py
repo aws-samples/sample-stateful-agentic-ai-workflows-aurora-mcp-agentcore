@@ -391,7 +391,8 @@ def test_main_writes_the_first_pass_before_any_deploy(
     assert spec["policyEngines"] == []
     assert "MERIDIAN_POLICY_ENGINE_ID" not in runtime_env(spec)
     out = capsys.readouterr().out
-    assert f"account {ACCOUNT}, region us-west-2" in out
+    assert "account <acct>, region us-west-2" in out
+    assert ACCOUNT not in out
     assert "Build stage: gateway (1 of 4)" in out
     assert "python scripts/release_identity.py deploy" in out
     assert "then run this script again" in out
@@ -989,3 +990,20 @@ def test_render_carries_the_configured_budget_to_both_runtimes(ceiling):
     spec, _, _ = render_config.render(*templates(), values)
     for name in ("MeridianConcierge", "MeridianWorkflow"):
         assert runtime_env(spec, name)["MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"] == ceiling
+
+
+def test_the_summary_never_prints_the_account_id(capsys):
+    values = {
+        "AWS_ACCOUNT_ID": "123456789012",
+        "AWS_REGION": "us-east-1",
+        render_config.AUTH_MODE_ENV: render_config.IAM,
+    }
+
+    render_config.print_summary(
+        values, stages.STAGES[0], {}, [],
+        tighten=False, staged=3, concierge_copy="concierge_definition.py",
+    )
+
+    out = capsys.readouterr().out
+    assert "account <acct>, region us-east-1" in out
+    assert not re.search(r"\d{12}", out)

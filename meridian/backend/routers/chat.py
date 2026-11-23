@@ -72,6 +72,7 @@ from backend.search_utils import (
     search_title,
 )
 from backend.tools import catalog_tools
+from backend.turn_capacity import refuse_if_full, turn_slot
 from backend.product_shape import row_to_api_product
 
 # MCP client - Phase 2 runs one MCP server, meridian-concierge
@@ -90,6 +91,9 @@ from backend.agents.phase_04_production.write_outcome import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+# Phases 1 and 2 answer from SQL and MCP tools; from phase 3 a turn calls Amazon Bedrock.
+MODEL_PHASE_FLOOR = 3
 
 
 class ChatRequest(BaseModel):
@@ -170,6 +174,10 @@ class ChatResponse(BaseModel):
     # pure tool result and no model wrote any part of it - the frontend must show no model
     # badge in that case.
     model_label: Optional[str] = None
+    # Set where a turn is decided to have failed (the catch blocks of `chat`). Never sent:
+    # an `error` activity alone is not failure, because the Runtime reports a tool failure the
+    # model recovered from as one.
+    failed: bool = Field(default=False, exclude=True)
 
 
 def _complete_chat_turn(
@@ -188,6 +196,8 @@ def _complete_chat_turn(
         started_at=started_at,
         error=error,
     )
+    if error is not None:
+        response.failed = True
     return response
 
 
@@ -1772,6 +1782,7 @@ async def stream_chat(
         raise HTTPException(status_code=422, detail="Streaming is available for phases 4 and 5.")
     # Authorize before sending headers, including when context is disabled.
     await authorize_traveler(principal, request.customer_id)
+    refuse_if_full()
     started = clock()
     first_delta = False
 
@@ -1787,11 +1798,10 @@ async def stream_chat(
             response = await chat(request, principal)
         finally:
             chat_event_sink.reset(token)
-        # Only the Concierge turns an error activity into a failure; the ladder and the
-        # workflow answer with the response, as the plain route does.
-        if request.experience == "concierge" and any(
-            entry.activity_type == "error" for entry in response.activities
-        ):
+        # Only a turn `chat` decided had failed is a failure, and only for the Concierge; the
+        # ladder answers with the response, as the plain route does. An error activity in a
+        # finished turn is a recovered tool failure and streams as complete.
+        if request.experience == "concierge" and response.failed:
             return {"type": "error", "message": response.message}
         return {"type": "complete", "response": response.model_dump(mode="json")}
 
@@ -1803,6 +1813,14 @@ async def chat(
     request: ChatRequest,
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> ChatResponse:
+    """Process a chat message; phases 3 to 5 call a model, so they take a turn slot."""
+    if request.phase < MODEL_PHASE_FLOOR:
+        return await _run_chat_turn(request, principal)
+    async with turn_slot():
+        return await _run_chat_turn(request, principal)
+
+
+async def _run_chat_turn(request: ChatRequest, principal: HttpPrincipal) -> ChatResponse:
     """
     Process a chat message with the AI travel concierge.
 
@@ -2339,9 +2357,10 @@ class OrderRequest(BaseModel):
     phase: Literal[1, 2, 3, 4, 5]
     traveler_id: str = Field(default=CURRENT_TRAVELER, min_length=1, max_length=50)
     action: Literal["hold"] = "hold"
-    # Phase 4 holds run inside the conversation's AgentCore Memory session, so
-    # the showcase passes the active conversation id along with the hold.
-    conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    # Phase 4 holds run inside the conversation's AgentCore Memory session, and the hold's
+    # request id derives from this id, so a retry of the same hold is the same request. A hold
+    # without one would open a new conversation each time and a retry would place a second hold.
+    conversation_id: str = Field(min_length=1, max_length=128)
     # The terms the traveler saw on the Hold action. An older client sends none and is told to
     # review the current price (409 quote_required); an unseen price is never approved.
     quote: Optional[HoldQuote] = None
@@ -2729,7 +2748,8 @@ async def confirm_booking(
     """
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
-    return await production_booking(request, authorization_subject=_audit_subject(principal))
+    async with turn_slot():
+        return await production_booking(request, authorization_subject=_audit_subject(principal))
 
 
 @router.post("/order", response_model=OrderResponse)
@@ -2745,7 +2765,8 @@ async def process_order(
     """
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
-    return await production_hold(request, authorization_subject=_audit_subject(principal))
+    async with turn_slot():
+        return await production_hold(request, authorization_subject=_audit_subject(principal))
 
 
 @router.post("/order/stream")
@@ -2756,9 +2777,12 @@ async def stream_order(
     """The hold of ``/order``, streamed so a long Runtime turn never leaves the page waiting."""
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
+    refuse_if_full()
 
     async def run(_publish):
-        response = await production_hold(request, authorization_subject=_audit_subject(principal))
+        async with turn_slot():
+            response = await production_hold(
+                request, authorization_subject=_audit_subject(principal))
         return {"type": "complete", "response": response.model_dump(mode="json")}
 
     return _event_stream(run)
@@ -2772,10 +2796,12 @@ async def stream_book(
     """The confirmation of ``/book``, streamed like ``/order/stream``."""
     traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
+    refuse_if_full()
 
     async def run(_publish):
-        response = await production_booking(
-            request, authorization_subject=_audit_subject(principal))
+        async with turn_slot():
+            response = await production_booking(
+                request, authorization_subject=_audit_subject(principal))
         return {"type": "complete", "response": response.model_dump(mode="json")}
 
     return _event_stream(run)
