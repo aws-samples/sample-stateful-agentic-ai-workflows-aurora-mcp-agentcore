@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError, EndpointConnectionError
+from botocore.exceptions import (
+    ClientError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    SSLError,
+)
 
 from backend.authorization import (
     AuthorizationContext,
@@ -53,9 +58,16 @@ _RETRYABLE_ERROR_CODES = frozenset({
 })
 
 
+# Failures where the request never reached the Data API: no endpoint, no connection in time, or
+# a TLS handshake that broke (a fresh AgentCore microVM once lost one with "EOF occurred in
+# violation of protocol"). A connection closed or a read that timed out after sending is not
+# here: the statement may have run, and some calls outside a transaction are writes.
+NOT_SENT_ERRORS = (EndpointConnectionError, ConnectTimeoutError, SSLError)
+
+
 def is_retryable(exc: Exception) -> bool:
     """Whether the Data API refused the call before running it, or could not be reached."""
-    if isinstance(exc, EndpointConnectionError):
+    if isinstance(exc, NOT_SENT_ERRORS):
         return True
     return (
         isinstance(exc, ClientError)
@@ -81,7 +93,7 @@ def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
     for attempt in range(1, attempts + 1):
         try:
             return func(**kwargs)
-        except (ClientError, EndpointConnectionError) as exc:
+        except (ClientError, *NOT_SENT_ERRORS) as exc:
             if attempt == attempts or not is_retryable(exc):
                 raise
             delay = DATA_API_RETRY_BACKOFF_SECONDS[attempt - 1]
