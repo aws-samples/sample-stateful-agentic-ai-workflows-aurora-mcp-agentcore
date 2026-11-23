@@ -232,6 +232,24 @@ async def test_a_run_cleans_up_after_a_lease_closeout_fails(gateway):
     assert problems == ["closing lease exe_1 failed (RuntimeError)"]
 
 
+async def test_the_run_leases_close_before_any_hold_is_released(gateway):
+    """The holds Lambda refuses a release with no execution id while the run's lease is live."""
+    db = _Db({"HLD-1": True}, threads={"t1": ["HLD-1"]})
+    made = gateway(db)
+    closed_when_released = []
+    call_tool = made.call_tool
+
+    def release(name, args):
+        closed_when_released.append(any("UPDATE journey_executions" in s for s in db.statements))
+        return call_tool(name, args)
+    made.call_tool = release
+    problems = await live_support.cleanup_run(db, live_support.JORDAN, test="t", threads=["t1"],
+                                              executions=["exe_1"])
+    assert problems == []
+    assert closed_when_released == [True]
+    assert db.active["HLD-1"] is False
+
+
 async def test_a_failed_lookup_does_not_stop_the_other_threads(gateway):
     db = _Db({"HLD-2": True}, threads={"t2": ["HLD-2"]}, lookup_fails={"t1"})
     gateway(db)

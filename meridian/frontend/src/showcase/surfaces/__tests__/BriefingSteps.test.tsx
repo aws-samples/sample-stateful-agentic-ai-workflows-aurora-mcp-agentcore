@@ -58,6 +58,15 @@ describe('briefing step data', () => {
     expect(captions[captions.length - 1]).toMatch(/^In this example, BCH-003 ranks first/u);
   });
 
+  it('names what the traveler confirms in Phase 4, in the deck words, not an undefined "terms"', () => {
+    for (const step of Object.values(PHASE_PATHS).flatMap(path => path.steps)) {
+      expect(`${step.chip} ${step.caption}`).not.toMatch(/\bterms?\b|receipt/iu);
+    }
+    const captions = PHASE_PATHS[4].steps.map(step => step.caption).join(' ');
+    expect(captions).toMatch(/clicks Hold to confirm the trip shown: package, nights, party size and price/u);
+    expect(captions).toMatch(/The Runtime, not the model, calls the hold tool/u);
+  });
+
   it('says the MCP server converts currency from sample rates, not Aurora', () => {
     expect(PHASE_PATHS[2].steps.map(step => step.caption).join(' ')).toMatch(/server .*fixed table of sample rates/u);
   });

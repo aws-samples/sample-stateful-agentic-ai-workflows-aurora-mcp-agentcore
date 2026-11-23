@@ -50,7 +50,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <p>The workflow keeps its saved steps in Amazon Aurora snapshots. A saved step is separate from the booking receipt.</p>
         </Detail>
         <Detail title="Tool contracts & Cedar policies">
-          <p>The model chooses discovery tools and writes grounded replies. Hold and Confirm buttons execute the exact approved terms through Gateway; the model narrates the result. Application code pins identity, explicit confirmation and saved budget, and validates returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
+          <p>The model chooses discovery tools and writes grounded replies. The Hold and Confirm buttons send exactly what the traveler confirmed through Gateway; the model narrates the result. Application code pins identity, explicit confirmation and saved budget, and validates returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
           <h3>{toolsHeading()}</h3>
           <p>Runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker searches the catalog, places its hold and gives back a failed run&rsquo;s hold through the same Gateway under Cedar.</p>
           <dl className="mds-brief-tools">{TOOLS.map(([name, kind, body]) => <div key={name}><dt><span>{kind}</span><code>{name}</code></dt><dd>{body}</dd></div>)}</dl>

@@ -32,6 +32,7 @@ from botocore.exceptions import (
     ConnectionClosedError,
     ConnectTimeoutError,
     ReadTimeoutError,
+    SSLError,
 )
 from strands.types.exceptions import StorageError
 
@@ -94,12 +95,12 @@ def _like_prefix(prefix: str) -> str:
 def _transient(exc: Exception) -> bool:
     """Whether the Data API failure is worth a whole-transaction retry.
 
-    The client's own set (throttling, 5xx, endpoint unreachable) plus a connection that
-    dropped or timed out mid-call. The last two can follow a commit that landed, which the
-    duplicate check on the retry covers.
+    The client's own set (throttling, 5xx, a request that never arrived) plus a connection that
+    dropped, timed out or broke its TLS session mid-call. Those can follow a commit that landed,
+    which the duplicate check on the retry covers.
     """
     return is_retryable(exc) or isinstance(
-        exc, (ConnectionClosedError, ReadTimeoutError, ConnectTimeoutError)
+        exc, (ConnectionClosedError, ReadTimeoutError, ConnectTimeoutError, SSLError)
     )
 
 

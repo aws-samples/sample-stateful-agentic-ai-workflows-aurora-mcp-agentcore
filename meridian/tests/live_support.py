@@ -306,19 +306,22 @@ async def cleanup_run(client, traveler_id: str, *, test: str, threads=(), bookin
     """Clean up one live test's holds without stopping at the first failure.
 
     In order: find every hold the run owns (on its journey threads and its tracked bookings),
-    release the active ones through the governed path, close the run's worker leases, then
-    record the ids. Each step runs whatever happened in the one before. Nothing is deleted.
+    close the run's worker leases, release the active holds through the governed path, then
+    record the ids. The leases close first because the holds Lambda refuses a release that
+    carries no execution id while the journey's run still holds a live lease
+    (``execution_lease_held``). Each step runs whatever happened in the one before. Nothing is
+    deleted.
 
     Returns:
         The problems, each with a sanitized cause; empty when everything was cleaned up.
     """
     problems: list[str] = []
     holds = await _run_holds(client, traveler_id, threads, bookings, problems)
+    await _close_leases(client, executions, problems)
     try:
         await release_active_holds(client, traveler_id, holds)
     except AssertionError as exc:
         problems.append(str(exc))
-    await _close_leases(client, executions, problems)
     _log_ids(test, holds, executions, problems)
     return problems
 

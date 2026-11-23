@@ -79,13 +79,13 @@ export const PHASE_PATHS: Record<1 | 2 | 3 | 4, StepPathData> = {
     ],
     steps: [
       { hop: 0, chip: 'access token', caption: 'The traveler signs in, and Amazon Cognito issues an access token.' },
-      { hop: 1, chip: 'approved terms', caption: 'The traveler approves the hold terms.' },
-      { hop: 1, chip: 'pinned terms', caption: 'The Runtime sends exactly those terms, with the traveler, confirmation and saved budget pinned.' },
+      { hop: 1, chip: 'confirmed', caption: 'The traveler clicks Hold to confirm the trip shown: package, nights, party size and price.' },
+      { hop: 1, chip: 'pinned call', caption: 'The Runtime, not the model, calls the hold tool with exactly those values, and pins the traveler, the confirmation and the saved budget.' },
       { hop: 2, chip: 'token checked', caption: 'The Gateway checks the token and pins the traveler.' },
       { hop: 2, chip: 'Cedar decision', caption: 'Cedar decides whether the hold may run.' },
       { hop: 3, chip: 'grant checked', caption: 'The holds Lambda checks its grant for this traveler.' },
       { hop: 4, chip: 'inventory', caption: 'Aurora checks inventory, ownership and expiry.' },
-      { hop: 4, chip: 'receipt', caption: 'Aurora commits the hold with its action audit row.' },
+      { hop: 4, chip: 'audit row', caption: 'Aurora commits the hold with its action audit row.' },
     ],
   },
 };

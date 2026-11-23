@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import re
+import ssl
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 import boto3
 from botocore.config import Config
 from botocore.exceptions import (
+    BotoCoreError,
     ClientError,
     ConnectTimeoutError,
     EndpointConnectionError,
@@ -58,16 +60,45 @@ _RETRYABLE_ERROR_CODES = frozenset({
 })
 
 
-# Failures where the request never reached the Data API: no endpoint, no connection in time, or
-# a TLS handshake that broke (a fresh AgentCore microVM once lost one with "EOF occurred in
-# violation of protocol"). A connection closed or a read that timed out after sending is not
-# here: the statement may have run, and some calls outside a transaction are writes.
-NOT_SENT_ERRORS = (EndpointConnectionError, ConnectTimeoutError, SSLError)
+# No connection to the Data API, or none in time: the request never left this process.
+CONNECT_ERRORS = (EndpointConnectionError, ConnectTimeoutError)
 
 
-def is_retryable(exc: Exception) -> bool:
-    """Whether the Data API refused the call before running it, or could not be reached."""
-    if isinstance(exc, NOT_SENT_ERRORS):
+def _ended_by_tls_eof(exc: BaseException) -> bool:
+    """Whether ``ssl.SSLEOFError`` is in the error's chain (botocore keeps it in ``error``)."""
+    pending: List[BaseException] = [exc]
+    seen: set = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLEOFError):
+            return True
+        linked = [current.__cause__, current.__context__, *current.args,
+                  *(getattr(current, "kwargs", None) or {}).values()]
+        pending.extend(item for item in linked if isinstance(item, BaseException))
+    return False
+
+
+def never_sent(exc: BaseException) -> bool:
+    """Whether the request provably never reached the Data API, so a repeat cannot run twice.
+
+    True for no connection, a connect timeout, and a TLS session that ended before the request
+    went out whole (an ``SSLError`` caused by ``ssl.SSLEOFError``; a fresh AgentCore microVM once
+    lost a handshake this way). Python reports an EOF while reading a reply as a closed
+    connection, and a broken TLS record in a reply is an ``SSLError`` of another kind: after
+    either, the statement may have run. tests/test_data_api_tls_drop.py proves all three against
+    a local TLS server.
+    """
+    if isinstance(exc, CONNECT_ERRORS):
+        return True
+    return isinstance(exc, SSLError) and _ended_by_tls_eof(exc)
+
+
+def is_retryable(exc: BaseException) -> bool:
+    """Whether a call that is safe to repeat should be: throttling, 5xx, or never sent."""
+    if never_sent(exc):
         return True
     return (
         isinstance(exc, ClientError)
@@ -75,26 +106,15 @@ def is_retryable(exc: Exception) -> bool:
     )
 
 
-def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
-    """Call a Data API method, retrying throttling, 5xx and connection errors.
-
-    Only for calls that are safe to repeat: a statement outside a transaction, or a
-    transaction begin or rollback. Never use it for a statement inside a transaction
-    or for a commit. Runs in a worker thread, so it sleeps with ``time.sleep``.
-
-    Args:
-        func: The boto client method.
-        **kwargs: Its keyword arguments.
-
-    Returns:
-        What ``func`` returned.
-    """
+def _call_retrying(
+    func: Callable[..., Any], retryable: Callable[[BaseException], bool], kwargs: Dict[str, Any]
+) -> Any:
     attempts = len(DATA_API_RETRY_BACKOFF_SECONDS) + 1
     for attempt in range(1, attempts + 1):
         try:
             return func(**kwargs)
-        except (ClientError, *NOT_SENT_ERRORS) as exc:
-            if attempt == attempts or not is_retryable(exc):
+        except (ClientError, BotoCoreError) as exc:
+            if attempt == attempts or not retryable(exc):
                 raise
             delay = DATA_API_RETRY_BACKOFF_SECONDS[attempt - 1]
             logger.warning(
@@ -103,6 +123,40 @@ def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
                 attempt, attempts - 1, delay,
             )
             time.sleep(delay)
+
+
+def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
+    """Call a Data API method, retrying throttling, 5xx and calls that were never sent.
+
+    Only for calls that are safe to repeat: a statement outside a transaction, or a
+    transaction begin or rollback. A statement inside a transaction and a commit use
+    ``call_unless_sent``. Runs in a worker thread, so it sleeps with ``time.sleep``.
+
+    Args:
+        func: The boto client method.
+        **kwargs: Its keyword arguments.
+
+    Returns:
+        What ``func`` returned.
+    """
+    return _call_retrying(func, is_retryable, kwargs)
+
+
+def call_unless_sent(func: Callable[..., Any], /, **kwargs: Any) -> Any:
+    """Call a Data API method, repeating it only when the request never reached the service.
+
+    Safe for a statement inside a transaction and for a commit: a request that never arrived
+    ran nothing, so the transaction is as it was. Any other failure is raised at once. Runs in
+    a worker thread, so it sleeps with ``time.sleep``.
+
+    Args:
+        func: The boto client method.
+        **kwargs: Its keyword arguments.
+
+    Returns:
+        What ``func`` returned.
+    """
+    return _call_retrying(func, never_sent, kwargs)
 
 
 async def run_blocking_shielded(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
@@ -413,14 +467,12 @@ class RDSDataClient:
             parameters=parameters,
             includeResultMetadata=True,
         )
+        # Inside a transaction only a request that never arrived is sent again: a repeat of
+        # one that ran would run its statement twice in the same transaction.
+        call = call_unless_sent if transaction_id else call_with_retry
         if transaction_id:
             kwargs["transactionId"] = transaction_id
-        if transaction_id:
-            response = await run_blocking_shielded(self.client.execute_statement, **kwargs)
-        else:
-            response = await run_blocking_shielded(
-                call_with_retry, self.client.execute_statement, **kwargs
-            )
+        response = await run_blocking_shielded(call, self.client.execute_statement, **kwargs)
 
         # Extract column names from metadata
         column_metadata = response.get("columnMetadata", [])
@@ -449,7 +501,9 @@ class RDSDataClient:
         return response["transactionId"]
 
     def commit_transaction(self, transaction_id: str) -> None:
-        self.client.commit_transaction(
+        """Commit, sending the commit again only if it never reached the Data API."""
+        call_unless_sent(
+            self.client.commit_transaction,
             resourceArn=self.cluster_arn,
             secretArn=self.secret_arn,
             transactionId=transaction_id,
