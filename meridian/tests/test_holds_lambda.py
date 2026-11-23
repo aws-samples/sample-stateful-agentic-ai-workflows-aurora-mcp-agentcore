@@ -421,6 +421,79 @@ def test_a_lost_commit_acknowledgement_does_not_claim_a_rollback(
     assert result == {"error": code}
 
 
+class DropsOnce(FakeDataApi):
+    """Fails the first call of one kind (a SQL marker, "begin" or "commit") with ``error``.
+
+    A request that never arrived is not recorded; one that ran is recorded before it fails.
+    """
+
+    def __init__(self, rows_by_marker, *, where, error, arrived=False):
+        super().__init__(rows_by_marker)
+        self.where, self.error, self.arrived, self.dropped = where, error, arrived, False
+
+    def _drop(self, kind):
+        if kind == self.where and not self.dropped:
+            self.dropped = True
+            raise self.error
+
+    def begin_transaction(self, **kwargs):
+        self._drop("begin")
+        return super().begin_transaction(**kwargs)
+
+    def commit_transaction(self, **kwargs):
+        self._drop("commit")
+        return super().commit_transaction(**kwargs)
+
+    def execute_statement(self, **kwargs):
+        if self.where.startswith("FROM ") and self.where in kwargs["sql"] and not self.dropped:
+            if self.arrived:
+                super().execute_statement(**kwargs)
+            self._drop(self.where)
+        return super().execute_statement(**kwargs)
+
+
+HOLD_ROWS = {
+    **CATALOG_PRICE,
+    **SAVED_BUDGET,
+    "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+    "FROM journey_threads": [{"journey_id": "jrn_1"}],
+    "FROM create_courtesy_hold": [{"booking_id": "HLD-1", "status": "held", "replayed": False}],
+    "FROM bookings": RECEIPT,
+}
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(holds.time, "sleep", lambda _seconds: None)
+
+
+@pytest.mark.parametrize("where", ["begin", "FROM create_courtesy_hold", "commit"])
+def test_a_call_that_never_reached_the_data_api_is_sent_again_and_holds_once(
+    config, monkeypatch, no_sleep, where
+):
+    """A TLS session that ended before the request went out ran nothing, inside or outside."""
+    from tests.test_data_api_call_retry import tls_eof
+    api = DropsOnce(HOLD_ROWS, where=where, error=tls_eof())
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert api.dropped
+    assert result["hold"]["bookingId"] == "HLD-1"
+    assert api.tx == ["begin", "commit"]
+    assert api.statements.count(holds.HOLD_SQL) == 1
+
+
+def test_a_hold_statement_that_may_have_run_is_not_sent_again(config, monkeypatch, no_sleep):
+    """A broken TLS record in the reply can follow a statement that ran: it rolls back instead."""
+    from tests.test_data_api_call_retry import tls_broken_record
+    api = DropsOnce(HOLD_ROWS, where="FROM create_courtesy_hold", error=tls_broken_record(),
+                    arrived=True)
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "hold_failed"}
+    assert api.statements.count(holds.HOLD_SQL) == 1
+    assert api.tx == ["begin", "rollback"]
+
+
 def test_confirm_booking_sets_scope_steps_down_and_returns_the_confirmed_row(config, monkeypatch):
     api = FakeDataApi({
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],

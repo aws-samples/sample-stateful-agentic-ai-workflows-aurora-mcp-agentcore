@@ -27,6 +27,8 @@ import json
 import math
 import os
 import re
+import ssl
+import time
 import uuid
 from dataclasses import dataclass
 from contextvars import ContextVar
@@ -35,6 +37,7 @@ from decimal import Decimal
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError, SSLError
 
 PARAMETERS = (
     "/meridian/aurora/cluster_arn",
@@ -93,6 +96,13 @@ MAX_REQUEST_CHAIN = 50
 DATA_API_CONFIG = Config(
     retries={"mode": "standard", "total_max_attempts": 1}, connect_timeout=5, read_timeout=25
 )
+# A call that provably never reached the Data API is sent again after these pauses: no
+# connection, a connect timeout, or a TLS session that ended before the request went out (an
+# SSLError caused by ssl.SSLEOFError; Python reports an EOF while reading a reply as a closed
+# connection). Nothing else is repeated. The same rule as never_sent in
+# backend/db/rds_data_client.py, repeated here because this function deploys alone;
+# tests/test_never_sent_parity.py holds both to one table of errors.
+UNSENT_RETRY_DELAYS = (0.2, 0.4)
 # The ceiling derivation in backend/agents/budget.py, repeated here because this
 # function deploys alone. tests/test_budget_parity.py runs one table of cases against both.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
@@ -245,6 +255,43 @@ def _parameters(values: dict) -> list[dict]:
     return params
 
 
+def _ended_by_tls_eof(error: BaseException) -> bool:
+    pending, seen = [error], set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLEOFError):
+            return True
+        linked = [current.__cause__, current.__context__, *current.args,
+                  *(getattr(current, "kwargs", None) or {}).values()]
+        pending.extend(item for item in linked if isinstance(item, BaseException))
+    return False
+
+
+def _never_sent(error: BaseException) -> bool:
+    """Whether the request provably never reached the Data API, so a repeat cannot run twice."""
+    if isinstance(error, (EndpointConnectionError, ConnectTimeoutError)):
+        return True
+    return isinstance(error, SSLError) and _ended_by_tls_eof(error)
+
+
+def _unless_sent(method, **kwargs):
+    """Call a Data API method, sending it again only when the request never arrived.
+
+    Safe inside a transaction and for a commit: a request that never arrived ran nothing.
+    """
+    for delay in UNSENT_RETRY_DELAYS:
+        try:
+            return method(**kwargs)
+        except (EndpointConnectionError, ConnectTimeoutError, SSLError) as error:
+            if not _never_sent(error):
+                raise
+            time.sleep(delay)
+    return method(**kwargs)
+
+
 def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[dict]:
     kwargs = {
         "resourceArn": CONFIG.cluster_arn,
@@ -256,7 +303,7 @@ def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[d
     }
     if tx:
         kwargs["transactionId"] = tx
-    response = RDS.execute_statement(**kwargs)
+    response = _unless_sent(RDS.execute_statement, **kwargs)
     rows = json.loads(response.get("formattedRecords") or "[]")
     for row in rows:
         for key in ("durations", "availability", "highlights", "loyalty_programs"):
@@ -267,7 +314,7 @@ def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[d
 
 def _transaction(operation: str, tx: str) -> None:
     method = getattr(RDS, f"{operation}_transaction")
-    method(resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, transactionId=tx)
+    _unless_sent(method, resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, transactionId=tx)
 
 
 def _business_query(statement: str, values: dict, tx: str) -> list[dict]:
@@ -293,6 +340,13 @@ def _commit_action(tx: str, kind: str) -> None:
     except Exception as error:
         # A later rollback cannot undo a commit the server has already accepted.
         raise ActionOutcomeUnknown(f"{kind}_outcome_unknown") from error
+
+
+def _begin() -> str:
+    return _unless_sent(
+        RDS.begin_transaction,
+        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database,
+    )["transactionId"]
 
 
 def _rollback_quietly(tx: str) -> None:
@@ -754,9 +808,7 @@ def create_courtesy_hold(args: dict) -> dict:
     traveler_id = str(args["travelerId"])
     hold = _hold_terms(args)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=int(args["holdMinutes"]))
-    tx = RDS.begin_transaction(
-        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
-    )["transactionId"]
+    tx = _begin()
     try:
         governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
@@ -825,9 +877,7 @@ def confirm_booking(args: dict) -> dict:
     traveler_id = str(args["travelerId"])
     booking_id = str(args["bookingId"]).strip()
     total = str((Decimal(int(args["totalCents"])) / Decimal(100)).quantize(Decimal("0.01")))
-    tx = RDS.begin_transaction(
-        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
-    )["transactionId"]
+    tx = _begin()
     try:
         governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
@@ -914,9 +964,7 @@ def _release_row(args: dict, tx: str) -> dict:
 def release_hold(args: dict) -> dict:
     """Give back one hold of the pinned traveler. Cedar decided on the arguments already."""
     traveler_id = str(args["travelerId"])
-    tx = RDS.begin_transaction(
-        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
-    )["transactionId"]
+    tx = _begin()
     try:
         governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
@@ -1077,9 +1125,7 @@ def loyalty_balance(args: dict) -> dict:
     """
     traveler_id = str(args["travelerId"])
     program = str(args.get("program", ""))
-    tx = RDS.begin_transaction(
-        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
-    )["transactionId"]
+    tx = _begin()
     try:
         governance = _check_traveler_grant(traveler_id, tx)
         if not governance["allowed"]:
