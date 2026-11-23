@@ -38,11 +38,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
       <details name="solution-briefing" className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
         <summary className="mds-brief-section-heading"><div><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Check permission, committed outcomes and recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
         <div className="mds-brief-section-body">
-        <Facts items={[
-          ['Identity', 'Sign-in names the traveler; the platform pins traveler and saved budget.'],
-          ['Permission', 'Cedar decides whether a tool may run.'],
-          ['Outcome', 'Aurora records what actually committed.'],
-        ]} />
+        <p>Meridian runs five checks before acting for a user. Choose a hold request to see where it stops; Aurora records what actually committed.</p>
         <BoundaryScenarios />
         <Detail title="Implementation reference">
           <Facts items={[
@@ -68,9 +64,9 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
         <Detail title="Recovery guarantees & evidence">
           <p>On the recovery route the workflow runs classify → search → availability → prepare_hold → hold → synthesize; other requests skip steps or use memory_recall. Before the write, prepare_hold saves the request and booking IDs as a step. The worker renews its lease in <code>journey_executions</code>; the worker checks the lease before each Gateway call, and the Lambda checks it again inside the write transaction.</p>
           <Facts items={[
-            ['Before the hold', 'After lease release or expiry, resume the saved graph with the intended request and booking IDs.'],
-            ['Write committed, response lost', 'Retry the same intent. Aurora returns the existing booking with its original expiry. A permitted call alone does not prove that the write committed.'],
-            ['A step fails after the hold', 'The runner releases the hold through the Gateway under Cedar. The Lambda refuses the release when the run\u2019s lease or journey is not the caller\u2019s, and the hold is left in place.'],
+            ['Before the hold', 'Once the lease is free or has lapsed, a new worker resumes from the saved steps with the same request and booking IDs.'],
+            ['Write committed, response lost', 'Retry with the same saved request ID. Aurora returns the existing booking with its original expiry. A permitted call alone does not prove that the write committed.'],
+            ['A step fails after the hold', 'The worker gives the hold back through the Gateway under Cedar. The Lambda refuses the release unless the caller still holds the lease for this recovery, and the hold is left in place.'],
             ['After the hold step is saved', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
           ]} />
           <p>A saved step and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>

@@ -85,7 +85,7 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
       <Phase number={5} name="Workflow" claim="Resume the work after a worker stops." onOpen={onOpenPhase} busy={busy}>
         <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>Strands Graph in its own AgentCore Runtime</strong><span>Saved steps in Amazon Aurora through the RDS Data API</span></p>
         <WorkflowSteps />
-        <p>After lease release or expiry, resume the same thread with the same request and booking IDs. If a later step fails, the runner releases the hold through the Gateway under Cedar, fenced by the run&rsquo;s lease and journey.</p>
+        <p>Once the lease is free or has lapsed, a new worker can resume with the same request and booking IDs. If a later step fails, the worker gives the hold back through the Gateway under Cedar, and Lambda refuses that unless the worker still holds the lease.</p>
         <p className="mds-brief-phase-evidence">Check the hold record, the same booking ID and the original expiry. Saved steps in Aurora restore work; Phase 4 keeps conversation context in AgentCore Memory.</p>
       </Phase>
     </div>

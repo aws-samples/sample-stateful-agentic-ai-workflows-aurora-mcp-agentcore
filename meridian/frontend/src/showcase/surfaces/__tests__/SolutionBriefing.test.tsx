@@ -25,10 +25,10 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Merge candidates by package ID')).toBeVisible();
     expect(screen.getByText('Illustrative query, seeded catalog example')).toBeVisible();
     expect(screen.getByRole('img', { name: 'Green rice terraces and palms in Bali' })).toHaveAttribute('src', '/travel/catalog/BCH-003.jpg');
-    expect(screen.getByText('Prepare hold', { exact: true })).not.toBeVisible();
+    expect(screen.getByText('Save hold IDs', { exact: true })).not.toBeVisible();
     fireEvent.click(screen.getByRole('heading', { name: 'Phase 5 - Workflow' }));
-    expect(screen.getByText('Prepare hold', { exact: true })).toBeVisible();
-    expect(screen.getByText('Confirm, then save intent')).toBeVisible();
+    expect(screen.getByText('Save hold IDs', { exact: true })).toBeVisible();
+    expect(screen.getByText('prepare_hold', { exact: true })).toBeVisible();
   });
 
   it('draws sign-in and the checked token without naming a signing scheme', () => {
@@ -84,7 +84,8 @@ describe('SolutionBriefing', () => {
     fireEvent.click(screen.getByText('Verify the boundaries'));
     fireEvent.click(screen.getByRole('button', { name: 'Over the saved budget' }));
     expect(screen.getByText('Refused by Cedar')).toBeVisible();
-    for (const fact of ['Identity', 'Permission', 'Outcome']) expect(screen.getAllByText(fact).length).toBeGreaterThan(1);
+    for (const verb of ['Verify', 'Bind', 'Decide', 'Execute', 'Enforce']) expect(screen.getByText(verb)).toBeVisible();
+    expect(screen.getByText(/^Meridian runs five checks before acting for a user\./)).toBeVisible();
   });
 
   it('reveals policy details only after opening the verification section', () => {
@@ -112,8 +113,8 @@ describe('SolutionBriefing', () => {
     for (const text of ['Before the hold', 'Write committed, response lost', 'A step fails after the hold', 'After the hold step is saved']) {
       expect(screen.getByText(text)).toBeVisible();
     }
-    expect(screen.getByText(/^The runner releases the hold through the Gateway under Cedar/)).toBeVisible();
-    expect(screen.getByText(/lease or journey is not the caller/)).toBeVisible();
+    expect(screen.getByText(/^The worker gives the hold back through the Gateway under Cedar/)).toBeVisible();
+    expect(screen.getByText(/unless the caller still holds the lease for this recovery/)).toBeVisible();
     expect(screen.getByText(/separate transactions/)).toBeVisible();
   });
 

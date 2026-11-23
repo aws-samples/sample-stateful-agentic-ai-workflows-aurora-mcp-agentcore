@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import {
-  BOUNDARY_HOPS, BOUNDARY_LABELS, PHASE_PATHS, SCENARIOS, WORKFLOW_NODES, WORKFLOW_STEPS,
+  BOUNDARY_CHECKS, LEASE_NOTE, PHASE_PATHS, SCENARIOS, WORKFLOW_NODES, WORKFLOW_STEPS,
 } from '../briefingSteps';
 import { BoundaryScenarios } from '../BoundaryScenarios';
 import { StepPath } from '../StepPath';
@@ -23,7 +23,7 @@ describe('briefing step data', () => {
       }
     }
     for (const scenario of SCENARIOS) {
-      if (scenario.stopAt !== null) expect(scenario.stopAt).toBeLessThan(BOUNDARY_HOPS.length);
+      if (scenario.stopAt !== null) expect(scenario.stopAt).toBeLessThan(BOUNDARY_CHECKS.length);
     }
   });
 
@@ -70,13 +70,13 @@ describe('briefing step data', () => {
 
   it('releases the lease when the run pauses and claims a new one on resume', () => {
     const pause = WORKFLOW_STEPS.findIndex(step => step.paused);
-    const release = WORKFLOW_STEPS.findIndex(step => /releases its lease/u.test(step.caption));
+    const release = WORKFLOW_STEPS.findIndex(step => /gives up its lease/u.test(step.caption));
     const resume = WORKFLOW_STEPS.findIndex(step => step.session2);
     expect(pause).toBeGreaterThan(0);
     expect(release).toBeGreaterThan(pause);
-    expect(WORKFLOW_STEPS[release].lease).toBe('Free, run paused');
-    expect(WORKFLOW_STEPS.slice(0, resume).every(step => !step.lease.includes('session 2'))).toBe(true);
-    expect(WORKFLOW_STEPS[resume].lease).toBe('Held by session 2');
+    expect(WORKFLOW_STEPS[release].lease).toBe('Free while paused');
+    expect(WORKFLOW_STEPS.slice(0, resume).every(step => !step.lease.includes('worker 2'))).toBe(true);
+    expect(WORKFLOW_STEPS[resume].lease).toBe('Held by worker 2');
     expect(WORKFLOW_STEPS[resume].saved).toBe(WORKFLOW_STEPS[pause].saved);
     expect(WORKFLOW_STEPS[WORKFLOW_STEPS.length - 1].saved).toBe(WORKFLOW_NODES.length);
   });
@@ -84,9 +84,34 @@ describe('briefing step data', () => {
   it('stops the over-budget hold at Cedar and the second traveler at the grant check', () => {
     const byId = Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, scenario]));
     expect(byId.within.stopAt).toBeNull();
-    expect(BOUNDARY_HOPS[byId.budget.stopAt ?? -1].title).toBe('Gateway and Cedar');
-    expect(BOUNDARY_HOPS[byId.other.stopAt ?? -1].title).toBe('Holds Lambda');
-    expect(BOUNDARY_LABELS).toEqual(['Identity', 'Permission', 'Grant', 'Outcome']);
+    expect(BOUNDARY_CHECKS[byId.budget.stopAt ?? -1]).toMatchObject({ verb: 'Decide', service: 'AgentCore Gateway' });
+    expect(BOUNDARY_CHECKS[byId.other.stopAt ?? -1]).toMatchObject({ verb: 'Execute', service: 'AWS Lambda' });
+    expect(byId.other.text).toMatch(/passes Cedar/u);
+  });
+
+  it('names the five checks, each with its control', () => {
+    expect(BOUNDARY_CHECKS.map(check => check.verb)).toEqual(['Verify', 'Bind', 'Decide', 'Execute', 'Enforce']);
+    expect(BOUNDARY_CHECKS.map(check => check.pill))
+      .toEqual(['Cognito JWT', 'JWT authorizer', 'Cedar policy', 'Grant table', 'RLS policies']);
+  });
+
+  it('names each Phase 5 step plainly, with its graph node in code', () => {
+    expect(WORKFLOW_NODES.map(node => [node.title, node.code])).toEqual([
+      ['Classify', 'classify'], ['Find alternatives', 'search'], ['Check places', 'availability'],
+      ['Save hold IDs', 'prepare_hold'], ['Place hold', 'hold'], ['Show results', 'synthesize'],
+    ]);
+  });
+
+  it('introduces no Phase 5 terms the path does not explain', () => {
+    const text = WORKFLOW_STEPS.map(step => `${step.caption} ${step.lease}`).join(' ');
+    expect(text).not.toMatch(/\b(execution|attempt|intent|thread|journey|fenced|session [12])\b/iu);
+    expect(LEASE_NOTE).toMatch(/one worker at a time .* 60 seconds without a heartbeat/u);
+  });
+
+  it('says Classify picks the recovery route, since recovery skips the keyword rules', () => {
+    const classify = WORKFLOW_STEPS.find(step => step.caption.startsWith('Classify'));
+    expect(classify?.caption).toMatch(/recovery route/u);
+    expect(classify?.caption).not.toMatch(/keyword/u);
   });
 });
 
@@ -146,8 +171,9 @@ describe('WorkflowSteps', () => {
 
   it('keeps the six nodes and their wording', () => {
     render(<WorkflowSteps />);
-    expect(screen.getByText('Prepare hold', { exact: true })).toBeInTheDocument();
-    expect(screen.getByText('Confirm, then save intent')).toBeInTheDocument();
+    expect(screen.getByText('Save hold IDs', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('prepare_hold', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(LEASE_NOTE)).toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: 'Phase 5 durable workflow path' })).getAllByRole('listitem')).toHaveLength(6);
   });
 
@@ -157,20 +183,22 @@ describe('WorkflowSteps', () => {
     stepTo(pause);
     expect(screen.getByText('Paused for review')).toBeInTheDocument();
     stepTo(1);
-    expect(screen.getByText('Free, run paused')).toBeInTheDocument();
+    expect(screen.getByText('Free while paused')).toBeInTheDocument();
     const resume = WORKFLOW_STEPS.findIndex(step => step.restored);
     stepTo(resume - pause - 1);
-    expect(screen.getByText('Runtime session 2, new microVM')).toBeInTheDocument();
+    expect(screen.getByText('Worker 2, new microVM')).toBeInTheDocument();
     const store = screen.getByRole('complementary', { name: 'Saved steps in Amazon Aurora' });
-    expect(within(store).getByText('Saved step: Search').closest('li')).toHaveClass('is-restored');
+    expect(within(store).getByText('Saved step: Find alternatives').closest('li')).toHaveClass('is-restored');
   });
 
-  it('labels finished nodes Saved, not by color alone', () => {
-    render(<WorkflowSteps />);
+  it('marks finished nodes with a check and the microVM that saved them, not color alone', () => {
+    const { container } = render(<WorkflowSteps />);
     stepTo(2);
-    expect(screen.getAllByText('Saved', { exact: true })).toHaveLength(1);
+    expect(container.querySelectorAll('.mds-step-node.is-done .mds-step-mark')).toHaveLength(1);
+    expect(container.querySelector('.mds-step-node.is-done .mds-step-node-pill')).toHaveTextContent('microVM 1');
     stepTo(WORKFLOW_STEPS.length);
-    expect(screen.getAllByText('Saved', { exact: true })).toHaveLength(6);
+    const pills = [...container.querySelectorAll('.mds-step-node-pill')].map(pill => pill.textContent);
+    expect(pills).toEqual([...Array(2).fill('microVM 1, saved'), ...Array(4).fill('microVM 2, saved')]);
   });
 
   it('ends with all six steps saved and the lease released', () => {
@@ -178,7 +206,7 @@ describe('WorkflowSteps', () => {
     stepTo(WORKFLOW_STEPS.length);
     const store = screen.getByRole('complementary', { name: 'Saved steps in Amazon Aurora' });
     expect(within(store).getAllByText(/^Saved step:/u)).toHaveLength(6);
-    expect(screen.getByText('Released, run succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Released, run finished')).toBeInTheDocument();
   });
 });
 
@@ -191,17 +219,22 @@ describe('BoundaryScenarios', () => {
     expect(stopped()).toBe('none');
     expect(screen.getByText('Committed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Over the saved budget' }));
-    expect(stopped()).toContain('Gateway and Cedar');
+    expect(stopped()).toContain('AgentCore Gateway');
     expect(screen.getByText('Refused by Cedar')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Second traveler' }));
-    expect(stopped()).toContain('Holds Lambda');
-    expect(lane.querySelector('.is-stopped .mds-step-mark')).toHaveTextContent('\u2715');
+    expect(stopped()).toContain('AWS Lambda');
+    expect(stopped()).toContain('Stopped here');
+    expect(lane.querySelector('.is-stopped .mds-check-mark')).toHaveTextContent('\u2715');
+    expect(lane.querySelectorAll('.mds-check-row.is-done')).toHaveLength(3);
     expect(screen.getByText('Refused by the grant check')).toBeInTheDocument();
   });
 
   it('labels every check, the configuration shown and that the scenarios are illustrative', () => {
     render(<BoundaryScenarios />);
-    for (const label of BOUNDARY_LABELS) expect(screen.getByText(label)).toBeInTheDocument();
+    for (const check of BOUNDARY_CHECKS) {
+      expect(screen.getByText(check.verb)).toBeInTheDocument();
+      expect(screen.getByText(check.pill)).toBeInTheDocument();
+    }
     expect(screen.getByText(/^Signed-in release shown\. Illustrative scenarios/u)).toBeInTheDocument();
   });
 });

@@ -91,13 +91,15 @@ export const PHASE_PATHS: Record<1 | 2 | 3 | 4, StepPathData> = {
 };
 
 // The recovery route through the graph; memory_recall, the seventh node, serves other requests.
-export const WORKFLOW_NODES: [title: string, detail: string][] = [
-  ['Classify', 'Keyword rules, no model'],
-  ['Search', 'Gateway search, may pause'],
-  ['Availability', 'Recheck stock in Aurora'],
-  ['Prepare hold', 'Confirm, then save intent'],
-  ['Hold', 'Gateway to Lambda'],
-  ['Synthesize', 'Read the saved result'],
+// Plain step names; the small line names the graph node in code.
+export type WorkflowNode = { title: string; code: string; note?: string; worker: 1 | 2 };
+export const WORKFLOW_NODES: WorkflowNode[] = [
+  { title: 'Classify', code: 'classify', worker: 1 },
+  { title: 'Find alternatives', code: 'search', note: 'may pause', worker: 1 },
+  { title: 'Check places', code: 'availability', worker: 2 },
+  { title: 'Save hold IDs', code: 'prepare_hold', worker: 2 },
+  { title: 'Place hold', code: 'hold', worker: 2 },
+  { title: 'Show results', code: 'synthesize', worker: 2 },
 ];
 
 export type WorkflowStep = {
@@ -113,31 +115,38 @@ export type WorkflowStep = {
 
 const live = { session1: 'live', session2: false } as const;
 const resumed = { session1: 'stopped', session2: true } as const;
+const stopped = { session1: 'stopped', session2: false } as const;
+
+// LEASE_SECONDS and HEARTBEAT_SECONDS in backend/agents/phase_05_workflow/runner.py: 60 and 10.
+export const LEASE_NOTE = 'The lease lets one worker at a time run this recovery. It lapses after 60 seconds without a heartbeat.';
 
 export const WORKFLOW_STEPS: WorkflowStep[] = [
-  { ...live, saved: 0, lease: 'Not claimed yet', caption: 'The traveler starts recovery for the canceled flight.' },
-  { ...live, saved: 0, next: 0, lease: 'Held by session 1', caption: 'Runtime session 1 claims the worker lease.' },
-  { ...live, saved: 1, next: 1, lease: 'Held by session 1', caption: 'Classify runs with keyword rules, and the step is saved.' },
-  { ...live, saved: 2, next: 2, lease: 'Held by session 1', caption: 'Search runs through the Gateway, and the step is saved.' },
-  { ...live, saved: 2, paused: true, lease: 'Held by session 1', caption: 'The run pauses so the traveler can review the shortlist.' },
-  { ...live, saved: 2, paused: true, lease: 'Free, run paused', caption: 'The paused execution releases its lease.' },
-  { session1: 'stopped', session2: false, saved: 2, paused: true, lease: 'Free, run paused', caption: 'Stop runtime session: the microVM is gone.' },
-  { session1: 'stopped', session2: false, saved: 2, paused: true, lease: 'Free, run paused', caption: 'The saved steps are still in Aurora.' },
-  { ...resumed, saved: 2, lease: 'Held by session 2', caption: 'Resume: a new microVM claims the next attempt.' },
-  { ...resumed, saved: 2, next: 2, restored: true, lease: 'Held by session 2', caption: 'It restores the newest saved step and continues at Availability.' },
-  { ...resumed, saved: 3, next: 3, lease: 'Held by session 2', caption: 'Availability rechecks stock in Aurora, and the step is saved.' },
-  { ...resumed, saved: 4, next: 4, lease: 'Held by session 2', caption: 'Prepare hold saves the request and booking IDs before the write.' },
-  { ...resumed, saved: 5, next: 5, lease: 'Held by session 2', caption: 'Hold goes through the Gateway to Lambda, which checks the lease inside the transaction.' },
-  { ...resumed, saved: 6, lease: 'Released, run succeeded', caption: 'Synthesize reads the hold back from Aurora, and the run ends with one hold under the booking ID saved before the write.' },
+  { ...live, saved: 0, lease: 'Not taken yet', caption: 'The traveler starts recovery for the canceled flight.' },
+  { ...live, saved: 0, next: 0, lease: 'Held by worker 1', caption: 'Worker 1 takes the lease, so no other worker can run this recovery at the same time.' },
+  { ...live, saved: 1, next: 1, lease: 'Held by worker 1', caption: 'Classify picks the recovery route, and the step is saved.' },
+  { ...live, saved: 2, next: 2, lease: 'Held by worker 1', caption: 'Find alternatives searches through the Gateway, and the step is saved.' },
+  { ...live, saved: 2, paused: true, lease: 'Held by worker 1', caption: 'The run pauses so the traveler can review and confirm the shortlist.' },
+  { ...live, saved: 2, paused: true, lease: 'Free while paused', caption: 'While it waits, the run gives up its lease.' },
+  { ...stopped, saved: 2, paused: true, lease: 'Free while paused', caption: 'The Runtime session is stopped: worker 1 and its microVM are gone.' },
+  { ...stopped, saved: 2, paused: true, lease: 'Free while paused', caption: 'The saved steps are still in Aurora.' },
+  { ...resumed, saved: 2, lease: 'Held by worker 2', caption: 'Resume: worker 2 starts in a new microVM and takes the lease.' },
+  { ...resumed, saved: 2, next: 2, restored: true, lease: 'Held by worker 2', caption: 'It loads the newest saved step and continues at Check places.' },
+  { ...resumed, saved: 3, next: 3, lease: 'Held by worker 2', caption: 'Check places rechecks stock in Aurora, and the step is saved.' },
+  { ...resumed, saved: 4, next: 4, lease: 'Held by worker 2', caption: 'Save hold IDs stores the request and booking IDs before the write, so a retry finds the same hold instead of making a second one.' },
+  { ...resumed, saved: 5, next: 5, lease: 'Held by worker 2', caption: 'Place hold goes through the Gateway to Lambda, which writes the hold only if worker 2 still holds the lease.' },
+  { ...resumed, saved: 6, lease: 'Released, run finished', caption: 'Show results reads the hold back from Aurora, and the run ends with one hold under the booking ID saved before the write.' },
 ];
 
-export const BOUNDARY_LABELS = ['Identity', 'Permission', 'Grant', 'Outcome'];
-
-export const BOUNDARY_HOPS: Hop[] = [
-  { service: 'cognito', title: 'Sign-in', detail: 'Token names the traveler' },
-  { service: 'agentcore-policy', title: 'Gateway and Cedar', detail: 'May this tool run?' },
-  { service: 'lambda', title: 'Holds Lambda', detail: 'Grant for this traveler' },
-  { service: 'aurora', title: 'Amazon Aurora', detail: 'What actually committed' },
+// The five checks, one row each, with the control that makes the decision.
+export type BoundaryCheck = {
+  verb: string; service: string; mark: ServiceMarkName; question: string; line: string; pill: string;
+};
+export const BOUNDARY_CHECKS: BoundaryCheck[] = [
+  { verb: 'Verify', service: 'Application', mark: 'app-runner', question: 'Who is asking?', line: 'Validate the token and identify the user', pill: 'Cognito JWT' },
+  { verb: 'Bind', service: 'AgentCore Runtime', mark: 'agentcore-runtime', question: 'Whose request is this?', line: 'Bind the request to the verified user', pill: 'JWT authorizer' },
+  { verb: 'Decide', service: 'AgentCore Gateway', mark: 'agentcore-gateway', question: 'Is this action allowed?', line: 'Check identity and action limits with Cedar', pill: 'Cedar policy' },
+  { verb: 'Execute', service: 'AWS Lambda', mark: 'lambda', question: 'May this service act for the user?', line: 'Check the service\u2019s grant before acting', pill: 'Grant table' },
+  { verb: 'Enforce', service: 'Amazon Aurora', mark: 'aurora', question: 'Which rows may it touch?', line: 'Apply a least-privilege role and row-level security', pill: 'RLS policies' },
 ];
 
 // Where each staged refusal stops, read from Aurora on 22 Nov 2026 (dbstage R): the over-budget hold
@@ -156,14 +165,14 @@ export type Scenario = {
 export const SCENARIOS: Scenario[] = [
   {
     id: 'within', label: 'Hold within budget', stopAt: null, chip: 'hold request', title: 'Committed',
-    text: 'Signed in and within the saved budget, the hold passes Cedar and the Lambda’s grant check, and Aurora commits it with its action audit row.',
+    text: 'Signed in and within the saved budget, the hold passes all five checks, and Aurora commits it with its action audit row.',
   },
   {
-    id: 'budget', label: 'Over the saved budget', stopAt: 1, chip: 'over budget', title: 'Refused by Cedar',
+    id: 'budget', label: 'Over the saved budget', stopAt: 2, chip: 'over budget', title: 'Refused by Cedar',
     text: 'The total is over the traveler’s saved budget, so no Cedar permit matches and the call is denied by default. The Lambda never runs, and the traveler’s turn records the refusal.',
   },
   {
-    id: 'other', label: 'Second traveler', stopAt: 2, chip: 'second traveler', title: 'Refused by the grant check',
-    text: 'A second traveler signs in as themselves and asks for a hold. The holds Lambda has no grant for that traveler, so it refuses before writing, and the deny is recorded in traveler_access_audit.',
+    id: 'other', label: 'Second traveler', stopAt: 3, chip: 'second traveler', title: 'Refused by the grant check',
+    text: 'A second traveler signs in as themselves and asks for a hold. The call passes Cedar, but the holds Lambda has no grant for that traveler, so it refuses before writing, and the deny is recorded in traveler_access_audit.',
   },
 ];

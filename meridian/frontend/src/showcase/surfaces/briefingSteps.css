@@ -44,13 +44,15 @@
 .mds-step-workflow-main { display:grid; gap:16px; align-content:start; min-width:0; }
 .mds-step-nodes { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px; }
 .mds-step-node { position:relative; display:grid; align-content:start; gap:4px; min-width:0; padding:12px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); transition:border-color 300ms ease-out, background-color 300ms ease-out; }
-.mds-step-node strong { font:var(--mds-type-body); font-weight:var(--mds-weight-semibold); color:var(--mds-label); overflow-wrap:anywhere; }
+.mds-step-node strong { padding-right:22px; font:var(--mds-type-body); font-weight:var(--mds-weight-semibold); color:var(--mds-label); overflow-wrap:anywhere; }
 .mds-brief .mds-step-node p { margin:0; font:var(--mds-type-footnote); color:var(--mds-label); }
-.mds-step-node-number { font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label-2); }
+.mds-brief .mds-step-node code { font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label); }
 .mds-step-node.is-done { border-color:var(--mds-green); background:var(--mds-state-done-fill); }
 .mds-step-node.is-next { border-color:var(--mds-tint); background:var(--mds-blue-fill); }
 .mds-step-node.is-paused { border-color:var(--mds-yellow); background:var(--mds-state-paused-fill); }
-.mds-step-node-flag { font:var(--mds-type-footnote); font-weight:var(--mds-weight-semibold); color:var(--mds-label); }
+/* The microVM that saved the step; the paused node says why it waits. */
+.mds-step-node-pill { justify-self:start; margin-top:6px; padding:3px 12px; border:2px solid var(--mds-label); border-radius:var(--mds-radius-full); font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label); white-space:nowrap; }
+.mds-step-node-pill.is-paused { font-family:inherit; font-weight:var(--mds-weight-semibold); white-space:normal; }
 .mds-step-store { display:grid; gap:12px; padding:16px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); }
 .mds-step-store-head { display:flex; align-items:center; gap:12px; }
 .mds-step-store-head strong { display:block; font:var(--mds-type-headline); color:var(--mds-label); }
@@ -61,6 +63,23 @@
 .mds-step-saved li.is-empty { color:var(--mds-label-2); }
 .mds-brief .mds-step-lease { margin:0; padding-top:10px; border-top:1px solid var(--mds-separator); font:var(--mds-type-footnote); color:var(--mds-label-2); }
 .mds-step-lease strong { color:var(--mds-label); }
+.mds-brief .mds-step-lease-note { margin:0; font:var(--mds-type-footnote); color:var(--mds-label-2); }
+
+/* Verify the boundaries: the five checks as rows, with the control that decides each one. */
+.mds-check-rows { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.mds-check-row { display:grid; grid-template-columns:52px 32px minmax(150px, 210px) minmax(0, 1fr) auto 24px; grid-template-areas:'tab icon who what pill mark'; align-items:center; gap:16px; padding:12px 16px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-separator); transition:border-color 300ms ease-out, background-color 300ms ease-out; }
+.mds-check-row.is-done { border-color:var(--mds-green); background:var(--mds-state-done-fill); }
+.mds-check-row.is-stopped { border-color:var(--mds-red); background:var(--mds-red-fill); }
+.mds-check-tab { grid-area:tab; display:grid; place-items:center; height:40px; border-radius:var(--mds-radius-s); background:var(--mds-label); color:var(--mds-ground); font:var(--mds-type-headline); font-family:var(--mds-font-mono); }
+.mds-check-row > .mds-service-mark { grid-area:icon; }
+.mds-check-who { grid-area:who; display:grid; gap:2px; min-width:0; font:var(--mds-type-body); color:var(--mds-label); }
+.mds-check-verb { font:var(--mds-type-footnote); font-family:var(--mds-font-mono); font-weight:var(--mds-weight-semibold); text-transform:uppercase; color:var(--mds-label); }
+.mds-check-what { grid-area:what; display:grid; gap:2px; min-width:0; }
+.mds-check-what strong { font:var(--mds-type-headline); color:var(--mds-label); }
+.mds-check-what span { font:var(--mds-type-footnote); color:var(--mds-label); }
+.mds-check-pill { grid-area:pill; justify-self:start; padding:6px 14px; border:2px solid var(--mds-label); border-radius:var(--mds-radius-full); font:var(--mds-type-footnote); font-family:var(--mds-font-mono); color:var(--mds-label); white-space:nowrap; }
+.mds-check-mark { grid-area:mark; text-align:center; font:var(--mds-type-headline); color:var(--mds-green); }
+.mds-check-mark.is-stopped { color:var(--mds-red); }
 
 /* Verify the boundaries: the outcome of the selected scenario. */
 .mds-step-outcome { display:grid; gap:4px; padding:16px 18px; border-radius:var(--mds-radius-m); background:var(--mds-surface); border:2px solid var(--mds-green); }
@@ -84,7 +103,8 @@
   .mds-step-workflow-grid { grid-template-columns:minmax(0, 1fr); }
   .mds-step-nodes { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .mds-step-image { max-width:320px; }
+  .mds-check-row { grid-template-columns:44px 32px minmax(0, 1fr) 24px; grid-template-areas:'tab icon who mark' 'what what what what' 'pill pill pill pill'; gap:10px 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mds-step-chip,.mds-step-hop,.mds-step-node { transition:none; }
+  .mds-step-chip,.mds-step-hop,.mds-step-node,.mds-check-row { transition:none; }
 }
