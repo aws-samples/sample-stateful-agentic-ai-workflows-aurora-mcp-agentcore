@@ -1181,12 +1181,44 @@ def test_release_hold_refuses_a_lapsed_or_foreign_lease_and_updates_nothing(
     assert not any("error_type" in line for line in capsys.readouterr().out.splitlines())
 
 
-def test_release_hold_without_an_execution_id_never_touches_the_lease(config, monkeypatch):
-    api = _fenced_release_api()
+def test_release_hold_without_an_execution_id_checks_the_journeys_lease_and_claims_nothing(
+    config, monkeypatch
+):
+    api = _fenced_release_api(lease=False)
     result = _release(api, monkeypatch)
     assert result["release"]["status"] == "released"
-    assert _executed(api, "FROM journey_executions") == []
+    [(lease_sql, lease_params)] = _executed(api, "FROM journey_executions")
+    assert "status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP" in lease_sql
+    assert "FOR UPDATE" not in lease_sql and lease_params == {"j": "jrn_1"}
     assert not any("app.execution_id" in sql for sql in api.statements)
+    order = ("FROM hold_requests hr", "FROM journey_executions", "FROM release_courtesy_hold")
+    marks = [next(i for i, sql in enumerate(api.statements) if marker in sql) for marker in order]
+    assert marks == sorted(marks), "the lease check follows the ownership read and precedes the update"
+
+
+def test_release_hold_without_an_execution_id_is_refused_while_a_worker_holds_the_lease(
+    config, monkeypatch
+):
+    api = _fenced_release_api()
+    result = _release(api, monkeypatch)
+    assert result == {"error": "execution_lease_held"}
+    assert api.tx == ["begin", "rollback"]
+    assert _executed(api, "FROM release_courtesy_hold") == []
+
+
+def test_a_release_that_replays_is_not_refused_by_a_live_lease(config, monkeypatch):
+    api = _fenced_release_api(status="released")
+    result = _release(api, monkeypatch)
+    assert result["release"]["replayed"] is True
+    assert _executed(api, "FROM journey_executions") == []
+
+
+def test_a_hold_that_is_not_the_travelers_stays_hold_not_found_whatever_the_lease(
+    config, monkeypatch
+):
+    api = _fenced_release_api(owned=False)
+    assert _release(api, monkeypatch) == {"error": "hold_not_found"}
+    assert _executed(api, "FROM journey_executions") == []
 
 
 def test_the_release_tool_offers_an_optional_execution_id():

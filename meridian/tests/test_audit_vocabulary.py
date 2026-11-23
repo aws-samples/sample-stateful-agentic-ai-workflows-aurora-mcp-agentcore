@@ -144,6 +144,7 @@ def test_other_texts_are_not_identity_refusals(text):
 EXPECTED_CLASSES = {
     "caller_identity_missing": "identity_check",
     "execution_lease_lost": "error",
+    "execution_lease_held": "error",
     "insufficient_inventory": "business_rule",
     "invalid_package_inventory": "error",
     "journey_not_owned": "database_guard",

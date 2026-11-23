@@ -336,8 +336,12 @@ the continuity rail. The backend takes the thread from the journey under RLS, so
 a caller can stop only their own journey's session. It answers 403 when the
 traveler grant is denied, 404 when the
 journey is not the traveler's, 409 when nothing is paused or running or the
-session was already stopped, and 503 when the Runtime is not configured or the
-stop failed.
+session was already stopped or recording the stop timed out on a row lock (try
+again), and 503 when the Runtime is not configured or the stop failed. When a
+resume claimed a newer attempt before the stop landed, the stop is still recorded
+for the original execution and the reply carries `newer_attempt` and a `notice`:
+the shared Runtime session ended, so the newer attempt may have been stopped too,
+and it is left to its lease.
 
 Each stop is recorded in `workflow_session_stops` with the journey, thread,
 Runtime session ID, who asked, and:
@@ -391,7 +395,7 @@ the write idempotent and the execution resumable:
 | A second worker while the lease is live | The second execution is refused | HTTP 409 and one running execution |
 | Runtime session stopped by an operator | The next resume starts a new microVM on the same session and restores the newest snapshot | A `workflow_session_stops` row, a new execution attempt and the same hold |
 | Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
-| A step fails after the hold | The runner releases the hold through the Gateway's `release_hold` tool, for the hold this run placed only, with the run's execution ID | The booking reads `released` and its places count again. The Runtime's error event carries a `hold_release` phrase when the hold was left in place; read it in the Runtime output or log, because the backend log and the traveler see only the fixed reference message. `lost_response_proof.py` ends by doing this |
+| A step fails after the hold | The runner releases the hold through the Gateway's `release_hold` tool, for the hold this run placed only, with the run's execution ID | The booking reads `released` and its places count again. The Runtime's error event carries a `hold_release` phrase when the hold was left in place; the backend adds a plain sentence about the hold to the 409 or 503 the traveler sees, and the Runtime output carries the phrase itself. `lost_response_proof.py` ends by doing this |
 
 **Stop the session from the browser.** Open the Recovery desk and click **Start recovery**
 once; the workflow pauses after `search`. Choose **Stop runtime session** on the

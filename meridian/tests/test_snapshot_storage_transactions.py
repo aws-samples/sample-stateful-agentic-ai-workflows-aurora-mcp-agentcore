@@ -7,11 +7,17 @@ import pytest
 from botocore.exceptions import ClientError, ReadTimeoutError
 from strands.types.exceptions import StorageError
 
+from backend.agents.phase_05_workflow import snapshot_storage as storage_module
 from backend.agents.phase_05_workflow.snapshot_storage import (
     PIN_TRAVELER_SQL,
     AuroraSnapshotStorage,
 )
 from backend.db.journey_store import ExecutionLeaseLostError
+
+@pytest.fixture(autouse=True)
+def quick_retries(monkeypatch):
+    monkeypatch.setattr(storage_module, "WRITE_RETRY_DELAYS", (0.0, 0.0, 0.0))
+
 
 KEY = "session/t1/scopes/multiAgent/phase5/snapshots/snapshot_latest.json"
 

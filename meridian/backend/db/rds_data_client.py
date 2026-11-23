@@ -53,7 +53,7 @@ _RETRYABLE_ERROR_CODES = frozenset({
 })
 
 
-def _is_retryable(exc: Exception) -> bool:
+def is_retryable(exc: Exception) -> bool:
     """Whether the Data API refused the call before running it, or could not be reached."""
     if isinstance(exc, EndpointConnectionError):
         return True
@@ -82,7 +82,7 @@ def call_with_retry(func: Callable[..., Any], /, **kwargs: Any) -> Any:
         try:
             return func(**kwargs)
         except (ClientError, EndpointConnectionError) as exc:
-            if attempt == attempts or not _is_retryable(exc):
+            if attempt == attempts or not is_retryable(exc):
                 raise
             delay = DATA_API_RETRY_BACKOFF_SECONDS[attempt - 1]
             logger.warning(
@@ -551,6 +551,7 @@ class RDSDataClient:
         agent_type: Optional[str] = None,
         authorization: Optional[AuthorizationContext] = None,
         timings: Optional[ScopeTimings] = None,
+        write_audit: bool = True,
     ):
         """
         Open a transaction with RLS session variables set.
@@ -583,6 +584,10 @@ class RDSDataClient:
 
         When ``timings`` is given, the grant check and the RLS setup are each
         timed around their own Data API calls and recorded on it.
+
+        ``write_audit=False`` still checks the grant but writes no
+        ``traveler_access_audit`` row. A workflow lease renewal uses it: the claim already
+        recorded the decision for the run, and a row per heartbeat would bury that evidence.
         """
         app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
         allow_unscoped = os.getenv("RLS_ALLOW_UNSCOPED_FALLBACK", "").lower() in {
@@ -615,7 +620,7 @@ class RDSDataClient:
                     traveler_id,
                     authorization,
                     transaction_id=tx,
-                    write_audit=True,
+                    write_audit=write_audit,
                 )
                 timings.grant_ms = elapsed_ms(started)
                 if not decision.allowed:

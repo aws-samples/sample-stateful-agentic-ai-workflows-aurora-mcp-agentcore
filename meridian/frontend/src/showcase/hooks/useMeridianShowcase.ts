@@ -348,14 +348,35 @@ function isUnknownWriteOutcome(err: unknown): boolean {
   return !(err instanceof NotSentError || (err instanceof ApiError && err.worded));
 }
 
+/** Error codes the server sends only for a request it refused before starting any work. */
+const REFUSAL_CODES = new Set(['turns_busy']);
+
 /**
  * A well-formed 4xx reply means the route refused the write before committing anything. A 409
  * other than a quote review, a 408 and a 429 can come from a conflict, a timeout or a throttle
- * after the request was accepted, so they stay unknown.
+ * after the request was accepted, so they stay unknown, unless the reply carries a code that
+ * only a refusal uses (`turns_busy` is a 429 from the turn cap, sent before any work starts).
  */
 function isDefinitiveRefusal(err: unknown): boolean {
-  return err instanceof ApiError && err.worded
-    && err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status);
+  if (!(err instanceof ApiError && err.worded)) return false;
+  if (err.code !== undefined && REFUSAL_CODES.has(err.code)) return true;
+  return err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status);
+}
+
+/**
+ * Whether a failed Phase 5 request left nothing running: a failure raised before anything was
+ * sent, or a definitive refusal. Everything else leaves the worker's state unknown, including a
+ * 409 (the recovery is already running) and a worded 5xx, which the server also sends when a
+ * transport timeout interrupts a run that is likely still going.
+ */
+function leavesNoWorker(err: unknown): boolean {
+  return err instanceof NotSentError || isDefinitiveRefusal(err);
+}
+
+/** Whether the server's own words are shown for a failed Phase 5 request. */
+function showsServerWords(err: unknown): boolean {
+  if (leavesNoWorker(err)) return true;
+  return err instanceof ApiError && (err.status === 409 || (err.worded && err.status >= 500));
 }
 
 function writeFailureMessage(err: unknown, done: 'hold was placed' | 'booking was confirmed'): string {
@@ -370,7 +391,7 @@ function chatFailureMessage(
   err: unknown, phase: Phase, aborted: boolean, keepsRunning: boolean,
 ): string {
   if (phase === 5) {
-    if (err instanceof ApiError && err.status === 409) return err.message;
+    if (showsServerWords(err)) return (err as Error).message;
     return keepsRunning
       ? WORKFLOW_STILL_RUNNING_MESSAGE
       : 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.';
@@ -971,8 +992,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
         // A recovery the page stopped waiting for is durable. Unless the server refused the
         // request, it may still be running, and the page reads its saved progress.
-        const refusedByServer = err instanceof ApiError && err.status !== 409;
-        const keepsRunning = requestPhase === 5 && !refusedByServer && !(err instanceof NotSentError);
+        const keepsRunning = requestPhase === 5 && !leavesNoWorker(err);
         if (keepsRunning) setAwaitingWorkflow(true);
         setError(chatFailureMessage(err, requestPhase, controller.signal.aborted, keepsRunning));
       } finally {

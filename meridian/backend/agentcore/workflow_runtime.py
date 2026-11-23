@@ -38,6 +38,7 @@ from backend.agents.phase_05_workflow.runner import (
 )
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
+from backend.security.redaction import mask_account_ids
 from backend.turn_capacity import run_runtime_call
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,14 @@ class WorkflowGatewayError(RuntimeError):
     """The Workflow Runtime reported that a Gateway tool refused or failed its call."""
 
 
+class WorkflowCallerTokenError(RuntimeError):
+    """The Runtime had no caller token to forward, so the backend did not pass it on.
+
+    A server fault, not a sign-in problem: the browser's token is fine, so the route answers
+    503 and never 401, which would sign the traveler out.
+    """
+
+
 ERRORS = {
     "request": WorkflowRequestError,
     "authorization": WorkflowAuthorizationError,
@@ -57,8 +66,32 @@ ERRORS = {
     "lease_lost": ExecutionLeaseLostError,
     "hold_unknown": HoldOutcomeUnknown,
     "token_expired": CallerTokenExpired,
+    "caller_token_missing": WorkflowCallerTokenError,
     "gateway_tool": WorkflowGatewayError,
 }
+HOLD_NOTE_LIMIT = 200
+HOLD_NOTE_SENTENCES = (
+    ("hold left in place: ", "The hold on this trip was left in place because {reason}. "
+                             "It lapses at its expiry."),
+    ("hold not released: ", "The hold on this trip was not released ({reason}). "
+                            "It lapses at its expiry."),
+    ("hold release unconfirmed: ", "Whether the hold was released is not confirmed ({reason}). "
+                                   "Read the saved journey for the booking status."),
+)
+
+
+def hold_release_sentence(error: BaseException) -> str:
+    """The traveler-facing sentence for the hold release note a Runtime error carried.
+
+    Returns an empty string when the error carries no note.
+    """
+    note = getattr(error, "hold_release", None)
+    if not isinstance(note, str) or not note:
+        return ""
+    for prefix, sentence in HOLD_NOTE_SENTENCES:
+        if note.startswith(prefix):
+            return sentence.format(reason=note[len(prefix):].rstrip("."))
+    return f"Hold status: {note.rstrip('.')}."
 
 
 def workflow_session_id(traveler_id: str, thread_id: str) -> str:
@@ -84,6 +117,16 @@ class SessionStop:
 
     runtime_session_id: str
     outcome: str
+
+
+def _error_from_event(event: Dict[str, Any]) -> Exception:
+    """The domain exception for a Runtime error event, carrying its hold release note."""
+    error = ERRORS.get(event.get("code"), RuntimeError)
+    failure = error(event.get("message") or "The workflow Runtime reported an error.")
+    note = event.get("hold_release")
+    if isinstance(note, str) and note:
+        failure.hold_release = mask_account_ids(note)[:HOLD_NOTE_LIMIT]
+    return failure
 
 
 class WorkflowRuntimeClient:
@@ -193,8 +236,7 @@ class WorkflowRuntimeClient:
                 if kind == "result":
                     return event.get("state") or {}
                 if kind == "error":
-                    error = ERRORS.get(event.get("code"), RuntimeError)
-                    raise error(event.get("message") or "The workflow Runtime reported an error.")
+                    raise _error_from_event(event)
         finally:
             chunks.close()
         raise RuntimeError(

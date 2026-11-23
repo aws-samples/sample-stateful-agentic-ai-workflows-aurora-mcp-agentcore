@@ -185,6 +185,44 @@ async def test_release_hold_with_a_lapsed_lease_leaves_the_hold_held(holds):
     assert rows == [{"status": "held"}]
 
 
+async def _release_without_execution_id(holds, *, run_ended):
+    """Place a hold, claim an execution, optionally end it, release with no execution id."""
+    master = get_rds_data_client()
+    journey_ref = f"relhold-{uuid.uuid4().hex[:10]}"
+    request_id, booking_id = f"hrq_{uuid.uuid4().hex[:12]}", ""
+    try:
+        _, _, _, hold, _ = await _held(holds, journey_ref, request_id)
+        booking_id = hold["bookingId"]
+        claim = await claim_execution(master, hold["journeyId"], journey_ref, "worker-live", 30)
+        assert claim.claimed
+        if run_ended:
+            await master.execute(
+                "UPDATE journey_executions SET status = 'succeeded', lease_expires_at = NULL "
+                "WHERE execution_id = %s", (claim.execution_id,))
+        result = holds.release_hold(
+            {"travelerId": JORDAN, "holdRequestId": request_id, "journeyId": hold["journeyId"]})
+        rows = await master.execute(
+            "SELECT status FROM bookings WHERE booking_id = %s", (booking_id,))
+        return result, rows
+    finally:
+        await master.execute("DELETE FROM journey_executions WHERE thread_id = %s", (journey_ref,))
+        await _give_back(booking_id, journey_ref)
+
+
+async def test_release_hold_without_an_execution_id_is_refused_while_a_worker_holds_the_lease(
+    holds,
+):
+    result, rows = await _release_without_execution_id(holds, run_ended=False)
+    assert result == {"error": "execution_lease_held"}
+    assert rows == [{"status": "held"}]
+
+
+async def test_release_hold_without_an_execution_id_works_after_the_run_ended(holds):
+    result, rows = await _release_without_execution_id(holds, run_ended=True)
+    assert result["release"]["status"] == "released", result
+    assert rows == [{"status": "released"}]
+
+
 async def test_release_hold_by_a_worker_that_was_taken_over_leaves_the_hold_held(holds):
     master = get_rds_data_client()
     journey_ref = f"relhold-{uuid.uuid4().hex[:10]}"

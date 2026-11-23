@@ -178,11 +178,13 @@ async def test_expiry_leaves_the_journey_alone_and_a_fresh_token_resumes():
     assert boto.mock_calls == []
 
 
-async def test_a_missing_token_error_event_is_an_authorization_error():
+async def test_a_missing_token_error_event_is_a_server_fault_not_an_authorization_error():
     from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 
     assert wr.ERRORS["authorization"] is WorkflowAuthorizationError
     assert wr.ERRORS["token_expired"] is CallerTokenExpired
+    assert wr.ERRORS["caller_token_missing"] is wr.WorkflowCallerTokenError
+    assert not issubclass(wr.WorkflowCallerTokenError, WorkflowAuthorizationError)
 
 
 async def test_iam_mode_still_signs_with_boto_and_never_uses_https(monkeypatch):

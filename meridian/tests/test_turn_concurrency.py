@@ -151,7 +151,10 @@ def test_a_slot_is_given_back_when_the_turn_ends_or_fails():
 
 def test_a_phase_that_never_calls_a_model_takes_no_slot(monkeypatch, client):
     monkeypatch.setattr(turn_capacity, "_in_flight", turn_capacity.MAX_CONCURRENT_TURNS)
+    search = AsyncMock(return_value=([], []))
+    monkeypatch.setattr(chat_router, "sql_search", search)
 
     response = client.post("/api/chat", json={"message": "Tokyo", "phase": 1})
 
     assert response.status_code != 429
+    search.assert_awaited_once()

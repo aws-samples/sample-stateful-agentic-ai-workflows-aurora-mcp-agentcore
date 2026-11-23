@@ -166,11 +166,11 @@ describe('a failure the server worded after the write was placed', () => {
     expect(readBooking).toHaveBeenCalledTimes(1);
   });
 
-  it('does not keep reading a recovery the server answered with a worded failure', async () => {
+  it('keeps reading a recovery the server answered with a worded 5xx', async () => {
     vi.mocked(sendChatMessage).mockRejectedValueOnce(placed('hold'));
     const { result } = await ready();
     await act(async () => { await result.current.submitPrompt('Plan a recovery', 5); });
-    expect(result.current.awaitingWorkflow).toBe(false);
+    expect(result.current.awaitingWorkflow).toBe(true);
   });
 });
 
@@ -235,6 +235,45 @@ describe('a recovery the page stopped waiting for', () => {
     const { result } = await ready();
     await act(async () => { await result.current.submitPrompt('Plan a recovery', 5); });
     expect(result.current.awaitingWorkflow).toBe(false);
+  });
+
+  describe.each([
+    ['422', new ApiError('Choose one of the reviewed packages: CTY-001.', 422, true), true],
+    ['429 turns_busy', new ApiError('The concierge is handling as many conversations as it can.', 429, true, 'turns_busy'), true],
+    ['403', new ApiError('Not your recovery.', 403, true), true],
+  ])('a %s refusal', (_name, refusal, settled) => {
+    it('shows the server words and does not wait for a worker', async () => {
+      vi.mocked(sendChatMessage).mockRejectedValueOnce(refusal);
+      const { result } = await ready();
+      await act(async () => { await result.current.submitPrompt('Plan a recovery', 5); });
+      expect(result.current.error).toBe(refusal.message);
+      expect(result.current.awaitingWorkflow).toBe(!settled);
+    });
+  });
+
+  it('shows a worded 503 as written and keeps reading the saved recovery', async () => {
+    const interrupted = new ApiError('Recovery was interrupted. Re-read the saved journey before retrying.', 503, true);
+    vi.mocked(sendChatMessage).mockRejectedValueOnce(interrupted);
+    const { result } = await ready();
+    await act(async () => { await result.current.submitPrompt('Plan a recovery', 5); });
+    expect(result.current.error).toBe(interrupted.message);
+    expect(result.current.awaitingWorkflow).toBe(true);
+  });
+
+  describe.each([
+    ['uncoded 503', new ApiError('Request failed (503).', 503, false)],
+    ['uncoded 429', new ApiError('Request failed (429).', 429, true)],
+    ['proxy 403 page', new ApiError('Request failed (403).', 403, false)],
+    ['network error', new TypeError('Failed to fetch')],
+    ['timeout', tookTooLong()],
+  ])('an unknown outcome (%s)', (_name, failure) => {
+    it('says the worker may still be running and waits for it', async () => {
+      vi.mocked(sendChatMessage).mockRejectedValueOnce(failure);
+      const { result } = await ready();
+      await act(async () => { await result.current.submitPrompt('Plan a recovery', 5); });
+      expect(result.current.error).toMatch(/keeps running|may still be running/);
+      expect(result.current.awaitingWorkflow).toBe(true);
+    });
   });
 
   it('stops reading after five minutes if the recovery never finishes', async () => {

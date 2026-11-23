@@ -8,15 +8,20 @@ claim is authorized against it, and the journey's persisted owner is checked
 inside the scoped session. A journey id grants nothing on its own.
 """
 
-from typing import Any, Dict, Optional, Tuple
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.workflow_runtime import get_workflow_runtime
+from backend.agents.phase_05_workflow.finished import run_finished as finished_nodes
 from backend.agents.phase_05_workflow.graph import snapshot_key
 from backend.db.journey_document import assemble_journey_document
+from backend.db.journey_store import JOURNEY_SETTLED_SQL
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal, authorize_traveler, require_http_principal
 
@@ -40,7 +45,8 @@ SELECT EXISTS (SELECT 1 FROM workflow_session_stops
 """
 SNAPSHOT_SQL = """
 SELECT snapshot #>> '{data,state,execution_order,-1}' AS last_step,
-       snapshot #>> '{data,state,status}' AS graph_status
+       snapshot #>> '{data,state,status}' AS graph_status,
+       snapshot #>> '{data,state,completed_nodes}' AS completed_nodes
   FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
  ORDER BY snapshot_seq DESC LIMIT 1
 """
@@ -79,7 +85,67 @@ def _scoped(client, owner: str):
     )
 
 
-async def _stop_target(client, journey_id: str, owner: str) -> Tuple[str, str]:
+NEWER_ATTEMPT_NOTICE = (
+    "A newer attempt started while the stop was in flight. The stop ended the shared "
+    "Runtime session, so that attempt may have been stopped too. It was left to its lease, "
+    "so a resume may be refused until the lease expires."
+)
+LOCK_TIMEOUT_DETAIL = (
+    "The stop reached the Runtime, but recording it waited too long for another update "
+    "to this journey. Try again in a few seconds."
+)
+
+
+@dataclass(frozen=True)
+class StopTarget:
+    """The thread and the execution a stop was issued against, and that execution's status."""
+
+    thread_id: str
+    execution_id: str
+    status: str
+
+
+@dataclass(frozen=True)
+class Settled:
+    """What the stop found: when it landed, the execution it closed, and any replacement."""
+
+    during: str
+    released_execution_id: Optional[str] = None
+    newer_attempt: bool = False
+
+
+def run_finished(snapshot: Optional[Dict[str, Any]]) -> bool:
+    """Whether the run saved in this snapshot row finished: its synthesize node completed.
+
+    It parses the row's column and applies the workflow's own rule
+    (``phase_05_workflow.finished.run_finished``). A run whose held step was
+    retried can end with a persisted status of ``failed`` after synthesize completed, so
+    the graph status alone is not the rule.
+    """
+    raw = (snapshot or {}).get("completed_nodes")
+    try:
+        nodes = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return False
+    return isinstance(nodes, list) and finished_nodes(nodes)
+
+
+def _is_lock_timeout(exc: BaseException) -> bool:
+    """Whether the Data API reported PostgreSQL 55P03 (lock_timeout expired).
+
+    The Data API raises ``BadRequestException`` and carries the database's own message,
+    ``canceling statement due to lock timeout``, with ``SQLState: 55P03``.
+    """
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    message = str(error.get("Message", ""))
+    return error.get("Code") == "BadRequestException" and (
+        "SQLState: 55P03" in message or "due to lock timeout" in message
+    )
+
+
+async def _stop_target(client, journey_id: str, owner: str) -> StopTarget:
     """Return the thread and the execution to stop, refusing a journey with nothing live.
 
     The execution is the one live when the stop is issued; the settle step fences on it.
@@ -99,53 +165,51 @@ async def _stop_target(client, journey_id: str, owner: str) -> Tuple[str, str]:
             )
         if latest[0]["already_stopped"]:
             raise HTTPException(status_code=409, detail="This session was already stopped.")
-    return thread_id, latest[0]["execution_id"]
+    return StopTarget(thread_id, latest[0]["execution_id"], latest[0]["status"])
 
 
-async def _settle_execution(tx_execute, journey_id: str, thread_id: str,
-                            stopped_execution_id: str, graph_status: Optional[str]):
+async def _settle_execution(tx_execute, journey_id: str, target: StopTarget,
+                            snapshot: Optional[Dict[str, Any]]) -> Settled:
     """Lock the thread's newest execution and close it as the stop found it.
 
-    The newest execution must still be ``stopped_execution_id``, the one live when the
-    stop was issued. A different one was claimed after that, by another tab's resume, so
-    the stop did not reach it: it is left running and the stop is refused with 409.
+    Returns what the stop caught. The newest execution is read here, under the lock,
+    because a worker may have paused, finished or been replaced by a resume while the
+    Runtime call was in flight. The lock also serialises concurrent stops: the one that
+    gets the lock second sees the first stop's row and is refused with 409 before it
+    records anything.
 
-    Returns ``(stopped_during, released_execution_id)``. The newest execution
-    is read here, under the lock, because a worker may have paused, finished or
-    been replaced by a resume while the Runtime call was in flight. The lock
-    also serialises concurrent stops: the one that gets the lock second sees
-    the first stop's row and is refused with 409 before it records anything.
-    A failed or abandoned execution that never completed its graph means the
-    worker died mid-run: that is a ``running`` stop with nothing released.
+    When the newest execution is not ``target.execution_id``, a resume claimed a new one
+    after the stop was issued. The stop still ended the shared Runtime session, so it is
+    recorded against the original execution, the newer one is left to its lease, and the
+    caller is told it may have been affected.
+    A failed or abandoned execution that never finished its graph means the worker died
+    mid-run: that is a ``running`` stop with nothing released.
     """
-    rows = await tx_execute(LOCK_LATEST_EXECUTION_SQL, (thread_id,))
+    rows = await tx_execute(LOCK_LATEST_EXECUTION_SQL, (target.thread_id,))
     latest = rows[0] if rows else None
-    if latest and latest["execution_id"] != stopped_execution_id:
-        raise HTTPException(
-            status_code=409,
-            detail="A newer workflow session started while the stop was in flight, "
-            "so it was left running. Stop it again to end it.",
-        )
     if latest:
         # A separate statement: the lock query's snapshot predates the wait, so a stop
         # committed by the lock's previous holder is only visible to a fresh statement.
         newer = await tx_execute(NEWER_STOP_SQL, (journey_id, latest["started_at"]))
         if newer[0]["already_stopped"]:
             raise HTTPException(status_code=409, detail="This session was already stopped.")
-    finished = graph_status == "completed"
+    if latest and latest["execution_id"] != target.execution_id:
+        return Settled("waiting" if target.status == "paused" else "running", None, True)
+    finished = run_finished(snapshot)
     if latest and latest["status"] == "running":
         outcome = "succeeded" if finished else "abandoned"
         await tx_execute(CLOSE_LEASE_SQL, (outcome, latest["execution_id"]))
-        return ("finished" if finished else "running"), latest["execution_id"]
+        await tx_execute(JOURNEY_SETTLED_SQL, (outcome, journey_id, journey_id))
+        return Settled("finished" if finished else "running", latest["execution_id"])
     if latest and latest["status"] != "paused" and finished:
-        return "finished", None
+        return Settled("finished")
     if latest and latest["status"] in ("failed", "abandoned"):
-        return "running", None
-    return "waiting", None
+        return Settled("running")
+    return Settled("waiting")
 
 
-async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
-                       stop: Any, *, execution_id: str, requested_by: str) -> Dict[str, Any]:
+async def _record_stop(client, owner: str, journey_id: str, target: StopTarget,
+                       stop: Any, *, requested_by: str) -> Dict[str, Any]:
     """Settle the execution the stop was issued against and record the stop in one transaction.
 
     Settling is safe once StopRuntimeSession has returned. The stopped worker
@@ -155,30 +219,32 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
     reused on resume through the same holdRequestId.
 
     Nothing here trusts the read made before the stop, except which execution it was
-    issued against. The newest execution is locked and read after the stop and must still
-    be that one: a replacement claimed since was not stopped and is left running (409).
-    The snapshot is read just before that lock, and a
-    stopped worker cannot write another. A running execution whose
-    snapshot shows the graph completed only lost its release, so it closes as
-    ``succeeded`` and the stop is ``finished``. Any other running execution is
-    abandoned and the stop is ``running``. Otherwise the run was waiting. A stop
-    that finds a newer stop row after taking the lock is refused with 409.
+    issued against. The snapshot is read just before the lock, and a stopped worker
+    cannot write another. A running execution whose snapshot shows the run finished
+    only lost its release, so it closes as ``succeeded`` and the stop is ``finished``.
+    Any other running execution is abandoned and the stop is ``running``; either way
+    the journey takes the same status the workflow's own release would give it. Otherwise
+    the run was waiting. A stop that finds a newer stop row after taking the lock is
+    refused with 409.
     """
     async with _scoped(client, owner) as tx:
         async def tx_execute(sql, params):
             return await client.execute(sql, params, transaction_id=tx)
 
-        snap = await tx_execute(SNAPSHOT_SQL, (thread_id, snapshot_key(thread_id)))
+        snap = await tx_execute(SNAPSHOT_SQL, (target.thread_id, snapshot_key(target.thread_id)))
         last_step = snap[0]["last_step"] if snap else None
-        graph_status = snap[0]["graph_status"] if snap else None
-        during, released_id = await _settle_execution(
-            tx_execute, journey_id, thread_id, execution_id, graph_status)
+        settled = await _settle_execution(tx_execute, journey_id, target,
+                                          snap[0] if snap else None)
         row = (await tx_execute(
             RECORD_STOP_SQL,
-            (journey_id, thread_id, stop.runtime_session_id, stop.outcome,
-             requested_by, during, last_step, released_id),
+            (journey_id, target.thread_id, stop.runtime_session_id, stop.outcome,
+             requested_by, settled.during, last_step, settled.released_execution_id),
         ))[0]
-    return {"stopped_at": row["stopped_at"], "stopped_during": during, "last_step": last_step}
+    recorded = {"stopped_at": row["stopped_at"], "stopped_during": settled.during,
+                "last_step": last_step}
+    if settled.newer_attempt:
+        recorded.update(newer_attempt=True, notice=NEWER_ATTEMPT_NOTICE)
+    return recorded
 
 
 @router.get("")
@@ -263,26 +329,30 @@ async def stop_session(
     Raises:
         HTTPException: 404 when the journey is not this traveler's or has no
             thread, 409 when the latest execution is neither running nor
-            paused or its session was already stopped, 503 when the Runtime is
-            not configured or the stop failed.
+            paused, its session was already stopped, or recording the stop timed
+            out on a row lock (retry), 503 when the Runtime is not configured or
+            the stop failed.
     """
     owner = await authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
     try:
-        thread_id, execution_id = await _stop_target(client, journey_id, owner)
+        target = await _stop_target(client, journey_id, owner)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
-        stop = await get_workflow_runtime().stop_session(owner, thread_id)
+        stop = await get_workflow_runtime().stop_session(owner, target.thread_id)
     except (AgentCoreNotConfiguredError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc).splitlines()[0]) from exc
     try:
         recorded = await _record_stop(
-            client, owner, journey_id, thread_id, stop,
-            execution_id=execution_id, requested_by=principal.subject_id
+            client, owner, journey_id, target, stop, requested_by=principal.subject_id
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ClientError as exc:
+        if _is_lock_timeout(exc):
+            raise HTTPException(status_code=409, detail=LOCK_TIMEOUT_DETAIL) from exc
+        raise
     return {
         "stopped": True,
         "runtime_session_id": stop.runtime_session_id,

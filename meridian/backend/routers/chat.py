@@ -1443,6 +1443,13 @@ def _refuse_unusable_workflow_request(request: ChatRequest, resume: bool) -> Non
         )
 
 
+def _hold_note(error: BaseException) -> str:
+    """What the Runtime reported about the hold when the run failed, in plain words."""
+    from backend.agentcore.workflow_runtime import hold_release_sentence
+
+    return hold_release_sentence(error)
+
+
 async def run_workflow_turn(
     query: str,
     traveler_id: str,
@@ -1462,7 +1469,7 @@ async def run_workflow_turn(
     story is "explicit edges and saved steps" rather than different search code.
     """
     from backend.agentcore.errors import AgentCoreNotConfiguredError
-    from backend.agentcore.workflow_runtime import get_workflow_runtime
+    from backend.agentcore.workflow_runtime import WorkflowCallerTokenError, get_workflow_runtime
     from backend.agents.phase_05_workflow.runner import (
         WorkflowCommand,
         WorkflowConflictError,
@@ -1495,8 +1502,17 @@ async def run_workflow_turn(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkflowRequestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WorkflowCallerTokenError as exc:
+        logger.error("workflow Runtime had no caller token to forward: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail=("The workflow Runtime did not pass your sign-in on to the Gateway. "
+                    "Your session is fine; this is a server fault. Try again, and report it "
+                    "if it repeats."),
+        ) from exc
     except (WorkflowConflictError, ExecutionLeaseLostError) as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        detail = " ".join(part for part in (str(exc), _hold_note(exc)) if part)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
 
     raw_activities = final_state.get("activities", []) or []
     activities = [_dict_to_activity_entry(a) for a in raw_activities]
@@ -2099,7 +2115,10 @@ async def _run_chat_turn(request: ChatRequest, principal: HttpPrincipal) -> Chat
             log_error("run_workflow_turn", error=str(e))
             raise HTTPException(
                 status_code=503,
-                detail=f"{e} Re-read the saved journey before retrying.",
+                detail=" ".join(part for part in (
+                    f"{e} Re-read the saved journey before retrying.",
+                    _hold_note(e),
+                ) if part),
             ) from e
         except TravelerAuthorizationError as e:
             log_error("workflow_authorization", error=str(e))
@@ -2114,8 +2133,11 @@ async def _run_chat_turn(request: ChatRequest, principal: HttpPrincipal) -> Chat
             log_error("run_workflow_turn", error=str(e), ref=error_ref)
             raise HTTPException(
                 status_code=503,
-                detail=("Recovery was interrupted. Re-read the saved journey before retrying. "
-                        f"Reference {error_ref}."),
+                detail=" ".join(part for part in (
+                    "Recovery was interrupted. Re-read the saved journey before retrying. "
+                    f"Reference {error_ref}.",
+                    _hold_note(e),
+                ) if part),
             ) from e
 
     phase_configs = {

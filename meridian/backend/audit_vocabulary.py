@@ -73,6 +73,7 @@ WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
 CODE_CLASSES = {
     "caller_identity_missing": IDENTITY_CHECK,
     "execution_lease_lost": ERROR,
+    "execution_lease_held": ERROR,
     "insufficient_inventory": BUSINESS_RULE,
     "invalid_package_inventory": ERROR,
     "journey_not_owned": DATABASE_GUARD,

@@ -40,6 +40,14 @@ UPDATE journey_executions
         AND lease_expires_at <= CURRENT_TIMESTAMP
       FOR UPDATE SKIP LOCKED
  )
+RETURNING journey_id
+"""
+
+# The workflow's release (lease.py) settles with this same rule; a test holds the two equal.
+JOURNEY_SETTLED_SQL = """
+UPDATE journeys SET status = %s, updated_at = CURRENT_TIMESTAMP
+ WHERE journey_id = %s
+   AND NOT EXISTS (SELECT 1 FROM journey_executions WHERE journey_id = %s AND status = 'running')
 """
 
 NEXT_ATTEMPT_SQL = """
@@ -54,9 +62,9 @@ SELECT COALESCE(MAX(attempt), 0) + 1 AS next_attempt
 CLAIM_SQL = """
 INSERT INTO journey_executions
     (execution_id, journey_id, thread_id, attempt, worker_id, status,
-     lease_expires_at)
+     lease_expires_at, started_at)
 VALUES (%s, %s, %s, %s, %s, 'running',
-        CURRENT_TIMESTAMP + (%s || ' seconds')::interval)
+        CURRENT_TIMESTAMP + (%s || ' seconds')::interval, clock_timestamp())
 ON CONFLICT (thread_id) WHERE status = 'running' DO NOTHING
 RETURNING execution_id
 """
@@ -217,7 +225,9 @@ async def claim_execution(
         Exception: Any database error other than losing the race. Losing is
             not an error: the insert declines and returns no row.
     """
-    await db.execute(ABANDON_EXPIRED_SQL, (thread_id,))
+    abandoned = await db.execute(ABANDON_EXPIRED_SQL, (thread_id,))
+    for journey in {row["journey_id"] for row in abandoned or []}:
+        await db.execute(JOURNEY_SETTLED_SQL, ("abandoned", journey, journey))
     # A killed Data API worker may leave a short-lived transaction lock.
     # Do not wait on its unique-index entry while Aurora rolls that back.
     owner = await db.execute(CURRENT_OWNER_SQL, (thread_id,))

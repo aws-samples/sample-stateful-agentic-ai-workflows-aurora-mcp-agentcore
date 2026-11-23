@@ -54,7 +54,7 @@ RESULT_KEYS = (
 GATEWAY_MESSAGE_LIMIT = 300
 ERROR_CODES: Tuple[Tuple[type, str], ...] = (
     (CallerTokenExpired, "token_expired"),
-    (CallerTokenMissing, "authorization"),
+    (CallerTokenMissing, "caller_token_missing"),
     (WorkflowRequestError, "request"),
     (WorkflowAuthorizationError, "authorization"),
     (PermissionError, "authorization"),

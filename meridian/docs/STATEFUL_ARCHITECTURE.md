@@ -193,25 +193,33 @@ The workflow searches the catalog, places holds and gives holds back through the
 
 - `search` calls `MeridianCatalog___hybrid_trip_search`. The trace shows one Gateway span in place of the embedding, vector, lexical and rerank spans, because those steps run inside the catalog Lambda. A refusal or an outage fails the run with a code or a fixed phrase (the Runtime's `gateway_tool` error). The Gateway's own text goes only to a masked, shortened log line, and the workflow never searches in process instead.
 - `hold` calls `MeridianHolds___create_courtesy_hold`, as above. A refusal shows as a fixed phrase such as `the Gateway policy denied the call`, not the Gateway's message.
-- When a later step fails, the runner calls `MeridianHolds___release_hold` with the saved request ID, the journey ID and this run's execution ID, for the hold this run placed. In one transaction the Lambda sets the traveler's row security scope, claims the worker's lease for that journey, reads the hold and releases it only while it is held. Another traveler's hold reads as `hold_not_found`; a confirmed booking is refused as `booking_not_held`; a lapsed lease or a lease on another journey answers `execution_lease_lost` or `journey_not_owned` and leaves the hold in place.
-- A release that did not happen never replaces the error that triggered it. The Runtime's error event for the failed run carries a `hold_release` phrase (the backend does not copy it; the traveler sees the fixed reference message and the journey read shows the booking status): `hold not released: <code>` for a refusal, `hold left in place: another worker owns this run`, `hold not released: the release call was not sent`, `hold not released: the saved state has no hold request id` or `hold not released: the saved state has no journey id` (no call is made), or `hold release unconfirmed: the release call failed` when the outcome is not known. A run that lost its lease, or whose hold outcome is unknown, makes no release call. An unreleased hold lapses at its expiry.
+- When a later step fails, the runner calls `MeridianHolds___release_hold` with the saved request ID, the journey ID and this run's execution ID, for the hold this run placed. In one transaction the Lambda sets the traveler's row security scope, claims the worker's lease for that journey, reads the hold and releases it only while it is held. Another traveler's hold reads as `hold_not_found`; a confirmed booking is refused as `booking_not_held`; a lapsed lease or a lease on another journey answers `execution_lease_lost` or `journey_not_owned` and leaves the hold in place. A release that names no execution is refused as `execution_lease_held` while the journey has a running execution with an unexpired lease, and is allowed once the run ended (the cleanup scripts rely on this).
+- A release that did not happen never replaces the error that triggered it. The Runtime's error event for the failed run carries a `hold_release` phrase (the backend copies it onto the error it raises and adds one plain sentence about the hold to the 409 or 503 the traveler sees; the journey read shows the booking status): `hold not released: <code>` for a refusal, `hold left in place: another worker owns this run`, `hold not released: the release call was not sent`, `hold not released: the saved state has no hold request id` or `hold not released: the saved state has no journey id` (no call is made), or `hold release unconfirmed: the release call failed` when the outcome is not known. A run that lost its lease, or whose hold outcome is unknown, makes no release call. An unreleased hold lapses at its expiry.
 - Each run that starts writes one `agent_audit_log` row through `MemoryStore.write_audit`, when the run ends: `operation = 'workflow_run'`, `authorization_subject` is the verified Cognito subject in `jwt` mode (in `iam` mode, the Runtime role's workload identity), `tool_calls` lists every Gateway call in the order it finished under its bare tool name with how it ended (`allowed`, `refused` by `policy`, `identity_check`, `workload_grant`, `database_guard`, `business_rule` or `runtime_guard`, or `error`), and `turn_error` names the error that ended a failed run, with credentials and account ids masked. `authorization_decision` follows from those two by `audit_vocabulary.authorization_decision`: `deny`, `error` or `allow`. A malformed request and a thread another run holds write no row. A thread that belongs to another traveler writes a row for the caller with no calls and `WorkflowAuthorizationError` in `turn_error`. A cancelled run writes its row. The write is bounded at 10 seconds; a failed or timed out write is logged and does not change the run's result. A process that dies hard writes no row, and a Gateway call still running when a run is cancelled is missing from it.
 
 ### Resume gaps closed in the code
 
-Two Strands 1.57.2 behaviors would otherwise break a resume:
+Two Strands 1.57.2 behaviors would otherwise break a resume, and they are handled in
+different places:
 
 - Strands saves the snapshot of the node that consumed the traveler's answer
   before it deactivates the interrupt state. A worker that dies in the next node
   leaves that snapshot as the latest, with every interrupt answered but the state
-  still active, and a restore asks for the answers again. `ResumableStorage`
-  repairs the snapshot on read, rewriting that state to the deactivated shape
-  Strands saves one node later. The runner reads such a snapshot as the
-  traveler's consent.
+  still active, and a restore asks for the answers again. This one is a repair on
+  read: `ResumableStorage` rewrites that state to the deactivated shape Strands
+  saves one node later, and the runner reads such a snapshot as the traveler's
+  consent.
 - A step that was retried can leave the Graph result marked failed even though
-  its work completed. The runner treats a run as finished only when `synthesize`
-  is among the completed nodes.
-
+  its work completed. This is not repaired on read. The runner decides the outcome
+  with one rule, `run_finished` in `backend/agents/phase_05_workflow/finished.py`:
+  a run is finished when `synthesize` is among the completed nodes, whatever the
+  Graph's own status says. The same rule guards a resume (a finished thread answers
+  "already finished", not "no pending saved step"), and it decides what a failed
+  save means. If the save Strands makes when the invocation ends fails after
+  `synthesize` completed, the run still reports its result, keeps its hold and
+  leaves the newest snapshot marked `executing` with no next step; `snapshot_finished`
+  reads that snapshot as a finished run. A failed save before `synthesize` gives the
+  hold back as before.
 ### The Strands pin
 
 The pin is `strands-agents==1.57.2` in `requirements.in`, and both AgentCore
@@ -232,8 +240,13 @@ row lock and records the stop in `workflow_session_stops` as:
   waiting for the traveler's review.
 - `running`: a worker was mid-run. The stop closes its lease as abandoned, so a
   resume claims at once.
-- `finished`: the saved snapshot shows the Graph completed and only the lease
+- `finished`: the saved snapshot shows the synthesize step completed (the run
+  finished, even if a retried hold left its status `failed`) and only the lease
   release was outstanding. The stop closes the execution as succeeded.
+
+A stop that closes a running execution also settles the journey's status with the
+workflow's own release rule: the execution's outcome, unless another execution is
+still running. A claim that abandons an expired lease settles the journey the same way.
 
 The record includes the last saved step. A stopped worker cannot save another
 snapshot, because the insert is fenced on a running execution, and it cannot

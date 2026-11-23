@@ -26,7 +26,7 @@ def test_the_401_body_is_constant_and_the_exception_text_is_only_logged_by_class
             raise error(REMOTE_TEXT)
 
     async def stop_target(client, journey_id, owner):
-        return "thread-1", "exe_1"
+        return journeys.StopTarget("thread-1", "exe_1", "running")
 
     monkeypatch.setattr(journeys, "_stop_target", stop_target)
     monkeypatch.setattr(journeys, "get_rds_data_client", lambda: object())

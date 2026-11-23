@@ -33,7 +33,7 @@ def test_the_journeys_stop_route_answers_401_not_503(monkeypatch, error):
             raise error("token problem")
 
     async def stop_target(client, journey_id, owner):
-        return "thread-1", "exe_1"
+        return journeys.StopTarget("thread-1", "exe_1", "running")
 
     monkeypatch.setattr(journeys, "_stop_target", stop_target)
     monkeypatch.setattr(journeys, "get_rds_data_client", lambda: object())

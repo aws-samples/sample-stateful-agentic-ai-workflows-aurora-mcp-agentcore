@@ -1,4 +1,4 @@
-import { ApiError, QuoteReviewRequired, isServerReply, readHoldQuote } from './request';
+import { ApiError, QuoteReviewRequired, isServerReply, readErrorCode, readHoldQuote } from './request';
 
 export type ChatStreamEvent =
   | { type: 'delta' | 'status'; text: string }
@@ -50,13 +50,15 @@ export async function readEventStream<T extends StreamedResult>(
   if (!response.ok) {
     let detail = `Request failed (${response.status}).`;
     let worded = false;
+    let code: string | undefined;
     try {
       const body = await response.json();
+      code = readErrorCode(body);
       if (typeof body.error === 'string') detail = body.error;
       else if (typeof body.detail === 'string') detail = body.detail;
       worded = isServerReply(body, response.status);
     } catch { /* Keep the HTTP status. */ }
-    throw new ApiError(detail, response.status, worded);
+    throw new ApiError(detail, response.status, worded, code);
   }
   if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) {
     throw new Error('The concierge did not return a live stream. Check the connection and try again.');
@@ -97,7 +99,8 @@ export async function readEventStream<T extends StreamedResult>(
             }
             if (typeof event.status === 'number') {
               throw new ApiError(message, event.status, isServerReply(
-                { error: message, ...(typeof event.code === 'string' ? { code: event.code } : {}) }, event.status));
+                { error: message, ...(typeof event.code === 'string' ? { code: event.code } : {}) }, event.status),
+                readErrorCode(event));
             }
             throw new Error(message);
           }

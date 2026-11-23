@@ -102,13 +102,22 @@ export const GOVERNED_WRITE_CODE = 'governed_write';
 export class ApiError extends Error {
   readonly status: number;
   readonly worded: boolean;
+  /** The server's machine-readable error code, when the reply carried one. */
+  readonly code?: string;
 
-  constructor(message: string, status: number, worded = true) {
+  constructor(message: string, status: number, worded = true, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.worded = worded;
+    this.code = code;
   }
+}
+
+/** The `code` string of a server error body, or undefined when it has none. */
+export function readErrorCode(body: unknown): string | undefined {
+  const code = (body as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 export type QuoteReviewCode = 'price_changed' | 'quote_required';
@@ -258,13 +267,15 @@ export async function requestJson<T>(url: string, init: RequestInit = {}): Promi
     if (!response.ok) {
       let detail = `Request failed (${response.status}).`;
       let worded = false;
+      let code: string | undefined;
       try {
         const body = await response.json();
+        code = readErrorCode(body);
         if (typeof body.error === 'string') detail = body.error;
         else if (typeof body.detail === 'string') detail = body.detail;
         worded = isServerReply(body, response.status);
       } catch { /* Non-JSON proxy failures still have a useful HTTP status. */ }
-      throw new ApiError(detail, response.status, worded);
+      throw new ApiError(detail, response.status, worded, code);
     }
     // DELETE endpoints legitimately return no JSON body.
     if (response.status === 204) return undefined as T;

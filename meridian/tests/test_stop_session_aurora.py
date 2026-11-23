@@ -177,6 +177,8 @@ async def test_a_running_journey_is_released_at_once_and_can_be_claimed(journey_
     rows = await _stop_rows(journey)
     assert rows[0]["stopped_during"] == "running" and rows[0]["last_step"] == "plan"
     assert rows[0]["released_execution_id"] == before["execution_id"]
+    settled = await _master("SELECT status FROM journeys WHERE journey_id = %s", (journey,))
+    assert settled[0]["status"] == "abandoned"
     fresh = await claim_execution(get_rds_data_client(), journey, thread, "resumer")
     assert fresh.claimed is True and fresh.attempt == 2
 
@@ -284,17 +286,17 @@ async def test_a_replacement_claimed_during_the_stop_keeps_its_lease(journey_wit
             (f"exec-{uuid.uuid4().hex[:12]}", journey, thread_id))
 
     runtime.while_stopping = another_tab_resumes
-    with pytest.raises(HTTPException) as caught:
-        await journeys.stop_session(journey, JORDAN, None)
-    assert caught.value.status_code == 409
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["newer_attempt"] is True and reply["stopped_during"] == "waiting"
     rows = await _statuses(thread)
     assert [r["status"] for r in rows] == ["paused", "running"]
     assert rows[1]["lease_expires_at"] is not None
-    assert await _stop_rows(journey) == []
-    runtime.while_stopping = None  # the other tab resumed once; this stop races nothing
-    again = await journeys.stop_session(journey, JORDAN, None)
-    assert again["stopped_during"] == "running"
-    assert [r["status"] for r in await _statuses(thread)] == ["paused", "abandoned"]
+    stops = await _stop_rows(journey)
+    assert [s["released_execution_id"] for s in stops] == [None]
+    runtime.while_stopping = None
+    with pytest.raises(HTTPException) as again:  # the newer attempt is left to its lease
+        await journeys.stop_session(journey, JORDAN, None)
+    assert again.value.status_code == 409
 
 
 async def test_a_repeat_stop_is_refused_and_adds_no_row(journey_with):

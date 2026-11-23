@@ -10,12 +10,15 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Set
 
 from strands.session import SnapshotSessionManager
+from strands.types.exceptions import StorageError
 
+from backend.agents.phase_05_workflow.finished import run_finished, snapshot_finished
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.graph import (
     CONFIRM_INTERRUPT,
@@ -58,6 +61,16 @@ WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
 # The longest the run waits for its audit row. The Data API client allows 60 s per attempt and
 # retries, so a stalled write would otherwise hold the run's exit.
 AUDIT_WRITE_SECONDS = 10
+# Missed beats a run survives before it stops: the heartbeat gives up this many beats before the
+# lease would lapse. A renew that started at t extends the lease to at least t + LEASE_SECONDS,
+# so the run stops at t + LEASE_SECONDS - 2 beats and has two beats (20 s at the defaults) to
+# cancel its work before another worker may take the thread. That still allows three missed
+# renews (the first retry is on the next beat, 10 s later) after the last good one.
+HEARTBEAT_SAFETY_BEATS = 2
+# Release retries: four attempts spaced 0.5, 1 and 2 s, all inside RELEASE_SECONDS, well under
+# the 60 s lease, so a resume that follows a pause finds the lease released or about to lapse.
+RELEASE_RETRY_DELAYS = (0.5, 1.0, 2.0)
+RELEASE_SECONDS = 15
 SNAPSHOT_PREFIX = "Snapshot saved: "
 CONSENT_INTERRUPTS = frozenset({REVIEW_INTERRUPT, CONFIRM_INTERRUPT})
 
@@ -269,6 +282,11 @@ def _check_against(
             "saved step, or start a new recovery."
         )
     if command.resume and not next_nodes(prior):
+        if snapshot_finished(prior):
+            raise WorkflowConflictError(
+                "This workflow already finished, so it has no pending saved step to resume. "
+                "Read its journey."
+            )
         raise WorkflowConflictError("This workflow has no pending saved step to resume.")
 
 
@@ -475,19 +493,44 @@ class WorkflowRunner:
     async def _release(
         self, command: WorkflowCommand, journey_id: str, claim: ExecutionClaim, terminal: str
     ) -> None:
-        """Release the lease; a failure is logged and never replaces what the run raised.
+        """Release the lease, retrying briefly; a failure is logged, never raised.
 
-        A dead process cannot run this: its lease expires and the next claimant
-        marks it abandoned, so an unreleased lease only delays a retry.
+        The release must land before the run reports ``paused``: a lease left ``running``
+        refuses a resume as "already running" until it lapses. Attempts are spaced by
+        ``RELEASE_RETRY_DELAYS`` and bounded together by ``RELEASE_SECONDS``. A dead process
+        cannot run this at all: its lease expires and the next claimant marks it abandoned.
         """
+        attempts = 0
+        failure: Optional[Exception] = None
         try:
-            await self._lease.release(command.traveler_id, journey_id, claim.execution_id, terminal)
-        except Exception:
-            logger.exception(
-                "execution_id=<%s>, thread_id=<%s>, status=<%s> | lease release failed; "
-                "the lease expires on its own",
-                claim.execution_id, command.thread_id, terminal,
+            async with asyncio.timeout(RELEASE_SECONDS):
+                for delay in (*RELEASE_RETRY_DELAYS, None):
+                    attempts += 1
+                    try:
+                        await self._lease.release(
+                            command.traveler_id, journey_id, claim.execution_id, terminal
+                        )
+                        return
+                    except Exception as exc:
+                        failure = exc
+                        if delay is not None:
+                            await asyncio.sleep(delay)
+        except TimeoutError:
+            logger.error(
+                "execution_id=<%s>, thread_id=<%s>, status=<%s> | lease release failed: gave "
+                "up after %d attempts in %d s; the lease lapses on its own within %g s, and a "
+                "resume before then is refused as already running",
+                claim.execution_id, command.thread_id, terminal, attempts, RELEASE_SECONDS,
+                self._lease_seconds,
             )
+            return
+        logger.error(
+            "execution_id=<%s>, thread_id=<%s>, status=<%s> | lease release failed after %d "
+            "attempts; the lease lapses on its own within %g s, and a resume before then is "
+            "refused as already running",
+            claim.execution_id, command.thread_id, terminal, attempts, self._lease_seconds,
+            exc_info=failure,
+        )
 
     async def _audit(
         self, command: WorkflowCommand, calls: List[ToolCall], *, rows: int,
@@ -510,15 +553,49 @@ class WorkflowRunner:
             )
 
     async def _heartbeat(self, command: WorkflowCommand, claim: ExecutionClaim) -> None:
-        while True:
-            await asyncio.sleep(self._heartbeat_seconds)
-            async with asyncio.timeout(self._heartbeat_seconds * 2):
-                if not await self._lease.renew(
-                    command.traveler_id, claim.execution_id, self._lease_seconds
-                ):
+        """Renew the lease every beat; raise when the lease is lost or cannot be confirmed.
+
+        A renew that returns False means another worker took the thread: stop at once. A renew
+        that raises is logged and tried again on the next beat. The run stops when no renew has
+        succeeded since ``lease_seconds - HEARTBEAT_SAFETY_BEATS`` beats after the start of the
+        last good one (or of the claim). Each renew runs as its own task and is never awaited
+        past the deadline, because a database call that stalls cannot be interrupted.
+
+        Raises:
+            ExecutionLeaseLostError: The lease was taken over, or could not be renewed in time.
+        """
+        beat = self._heartbeat_seconds
+        budget = max(beat, self._lease_seconds - HEARTBEAT_SAFETY_BEATS * beat)
+        deadline = time.monotonic() + budget
+        inflight: Optional[asyncio.Task] = None
+        started = deadline
+        try:
+            while True:
+                await asyncio.sleep(beat)
+                if inflight is None:
+                    started = time.monotonic()
+                    inflight = asyncio.create_task(self._lease.renew(
+                        command.traveler_id, claim.execution_id, self._lease_seconds
+                    ))
+                wait_for = max(0.0, min(beat, deadline - time.monotonic()))
+                await asyncio.wait({inflight}, timeout=wait_for)
+                if inflight.done():
+                    renewed, inflight = _renewed(inflight, command.thread_id, claim), None
+                    if renewed is False:
+                        raise ExecutionLeaseLostError(
+                            "The recovery worker lost its lease. Re-read the saved journey."
+                        )
+                    if renewed:
+                        deadline = started + budget
+                if time.monotonic() >= deadline:
                     raise ExecutionLeaseLostError(
-                        "The recovery worker lost its lease. Re-read the saved journey."
+                        "The recovery worker could not renew its lease in time and stopped. "
+                        "Re-read the saved journey."
                     )
+        finally:
+            if inflight is not None and not inflight.done():
+                inflight.cancel()
+                inflight.add_done_callback(_consume_result)
 
     async def _execute(self, command, journey_id, claim, after_pause) -> Dict[str, Any]:
         # The pre-claim read only refuses obvious conflicts; every decision below
@@ -555,15 +632,7 @@ class WorkflowRunner:
         completed_before = set(
             (prior or {}).get("data", {}).get("state", {}).get("completed_nodes") or []
         )
-        try:
-            await graph.invoke_async(self._task(command, journey_id, prior))
-        except (ExecutionLeaseLostError, HoldOutcomeUnknown):
-            raise
-        except Exception as exc:
-            note = await self._compensate(graph, command.thread_id, claim.execution_id)
-            if note is not None:
-                _attach_release_note(exc, note)
-            raise
+        await self._invoke(graph, self._task(command, journey_id, prior), command, claim)
         previous = (
             await self._lease.previous_worker(
                 command.traveler_id, command.thread_id, claim.execution_id
@@ -582,6 +651,33 @@ class WorkflowRunner:
         if after_pause is not None and result["workflow_status"] == "paused":
             await after_pause(result, claim)
         return result
+
+    async def _invoke(
+        self, graph: Any, task: Any, command: WorkflowCommand, claim: ExecutionClaim
+    ) -> None:
+        """Run the graph; a failure gives back the run's hold unless the run already finished.
+
+        A failed save after ``synthesize`` cannot undo a finished run, and giving the hold
+        back would contradict the answer the traveler is about to read. The run stands as
+        finished (see ``run_finished``) and the failure is logged.
+        """
+        try:
+            await graph.invoke_async(task)
+        except (ExecutionLeaseLostError, HoldOutcomeUnknown):
+            raise
+        except Exception as exc:
+            completed = (node.node_id for node in graph.state.completed_nodes)
+            if isinstance(exc, StorageError) and run_finished(completed):
+                logger.error(
+                    "execution_id=<%s>, thread_id=<%s> | the last saved step failed to save "
+                    "after the run finished; the run stands as finished and its hold is kept",
+                    claim.execution_id, command.thread_id, exc_info=True,
+                )
+                return
+            note = await self._compensate(graph, command.thread_id, claim.execution_id)
+            if note is not None:
+                _attach_release_note(exc, note)
+            raise
 
     @staticmethod
     async def _record_choice(
@@ -662,7 +758,7 @@ class WorkflowRunner:
             "worker_instance_id": self._worker_id,
             "plan_package_id": _plan_package(state),
         }
-        finished = "synthesize" in {node.node_id for node in graph.state.completed_nodes}
+        finished = run_finished(node.node_id for node in graph.state.completed_nodes)
         if not finished:
             pending = sorted(node.node_id for node in graph.state.interrupted_nodes)
             if not pending:
@@ -701,6 +797,25 @@ class WorkflowRunner:
                 "The summary below describes the whole journey.\n\n" + state.get("response", "")
             ),
         }
+
+
+def _consume_result(task: "asyncio.Task[Any]") -> None:
+    """Retrieve an abandoned renew's outcome so asyncio never reports it as unretrieved."""
+    if not task.cancelled():
+        task.exception()
+
+
+def _renewed(task: "asyncio.Task[Any]", thread_id: str, claim: ExecutionClaim) -> Optional[bool]:
+    """A finished renew's answer: True, False (lease lost), or None when it raised."""
+    try:
+        return bool(task.result())
+    except Exception:
+        logger.warning(
+            "execution_id=<%s>, thread_id=<%s> | lease renewal failed; trying again on the "
+            "next beat",
+            claim.execution_id, thread_id, exc_info=True,
+        )
+        return None
 
 
 def _attach_release_note(exc: BaseException, note: str) -> None:

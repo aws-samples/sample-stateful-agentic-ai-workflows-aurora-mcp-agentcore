@@ -83,8 +83,9 @@ async def test_a_failed_commit_in_a_scoped_session_rolls_back():
 
 
 async def test_a_failed_snapshot_commit_rolls_back_once_and_raises_storage_error():
+    """A commit refused for a reason a retry cannot fix is not retried."""
     boto = SlowBoto(delay=0)
-    error = ClientError({"Error": {"Code": "ThrottlingException"}}, "CommitTransaction")
+    error = ClientError({"Error": {"Code": "DatabaseErrorException"}}, "CommitTransaction")
     boto.commit_transaction = MagicMock(side_effect=error)
     rollbacks = MagicMock(side_effect=boto.rollback_transaction)
     boto.rollback_transaction = rollbacks

@@ -9,25 +9,48 @@ Each read and write pins that traveler in its own transaction, so the row-level
 security policies decide what the Runtime's login sees and appends.
 A write lands only while its execution is still the thread's running one and its
 lease has not lapsed. The write locks that execution row until it commits, so a
-takeover either finishes first and the write is refused, or waits for the write
-and finds the execution still running. A worker that stalled past its lease
-therefore cannot append an older state after another worker took the thread over.
+takeover and a write never interleave. When the write holds the row first, the
+takeover's claim is declined while the write is in flight and succeeds on a retry
+after the write commits. When a takeover locked the row first, a stale write that
+starts afterwards waits for it and is then refused. A worker that stalled past its
+lease therefore cannot append an older state after another worker took the thread over.
+A write that fails with a transient Data API error (throttling, a 5xx, a dropped
+connection) is retried as a whole transaction, and every attempt passes the same
+fence, so a retry after the lease lapsed is refused like any stale write.
 """
 
+import asyncio
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Callable, List, Optional
 
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    ReadTimeoutError,
+)
 from strands.types.exceptions import StorageError
 
 from backend.db.journey_store import ExecutionLeaseLostError
-from backend.db.rds_data_client import begin_transaction_shielded, run_blocking_shielded
+from backend.db.rds_data_client import (
+    is_retryable,
+    begin_transaction_shielded,
+    run_blocking_shielded,
+)
 
 # The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
 # Live tests read back ASCII, multibyte and escape-dense snapshots just under this cap.
 MAX_SNAPSHOT_BYTES = 900_000
+
+# A write is retried as a unit: up to four attempts spaced 0.5, 1 and 2 s, and no new attempt
+# starts once 20 s have passed since the first. The lease lasts 60 s and the runner stops at
+# 40 s without a good renew, so a write that retries for its whole budget finishes first.
+WRITE_RETRY_DELAYS = (0.5, 1.0, 2.0)
+WRITE_RETRY_BUDGET_SECONDS = 20.0
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +75,10 @@ READ_SQL = """
 SELECT snapshot::TEXT AS snapshot FROM workflow_snapshots
  WHERE storage_key = %s ORDER BY snapshot_seq DESC LIMIT 1
 """
+NEWEST_SQL = """
+SELECT execution_id, snapshot::TEXT AS snapshot FROM workflow_snapshots
+ WHERE storage_key = %s ORDER BY snapshot_seq DESC LIMIT 1
+"""
 LIST_SQL = """
 SELECT DISTINCT storage_key FROM workflow_snapshots
  WHERE session_id = %s AND storage_key LIKE %s
@@ -62,6 +89,18 @@ SELECT DISTINCT storage_key FROM workflow_snapshots
 def _like_prefix(prefix: str) -> str:
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"{escaped}%"
+
+
+def _transient(exc: Exception) -> bool:
+    """Whether the Data API failure is worth a whole-transaction retry.
+
+    The client's own set (throttling, 5xx, endpoint unreachable) plus a connection that
+    dropped or timed out mid-call. The last two can follow a commit that landed, which the
+    duplicate check on the retry covers.
+    """
+    return is_retryable(exc) or isinstance(
+        exc, (ConnectionClosedError, ReadTimeoutError, ConnectTimeoutError)
+    )
 
 
 def _failure(exc: Exception) -> str:
@@ -131,23 +170,61 @@ class AuroraSnapshotStorage:
             )
         owned = self._owned(key)
         started = time.perf_counter()
-        try:
-            async with self._pinned() as tx:
-                rows = await self._client.execute(INSERT_SQL, (
-                    self._execution_id, self._session_id,
-                    owned, self._session_id, self._traveler_id,
-                    self._worker_id, data.decode("utf-8"),
-                ), transaction_id=tx)
-                if not rows:
-                    raise ExecutionLeaseLostError(
-                        f"Execution {self._execution_id} no longer runs thread "
-                        f"{self._session_id}, or its lease lapsed; its snapshot was not saved. "
-                        "Re-read the saved journey."
-                    )
-        except (ClientError, BotoCoreError) as exc:
-            raise StorageError(f"writing {owned!r} failed: {_failure(exc)}") from exc
+        await self._write_with_retry(owned, data)
         if self._on_write is not None:
             self._on_write(round((time.perf_counter() - started) * 1000))
+
+    async def _write_with_retry(self, owned: str, data: bytes) -> None:
+        """Run ``_write_once`` again, from a fresh transaction, after a transient failure.
+
+        A fence refusal (``ExecutionLeaseLostError``) is not an Aurora failure and is never
+        retried. Each retry first checks whether an earlier attempt's commit landed.
+        """
+        deadline = time.monotonic() + WRITE_RETRY_BUDGET_SECONDS
+        for attempt, delay in enumerate((*WRITE_RETRY_DELAYS, None), start=1):
+            try:
+                await self._write_once(owned, data, retry=attempt > 1)
+                return
+            except (ClientError, BotoCoreError) as exc:
+                if delay is None or not _transient(exc) or time.monotonic() + delay >= deadline:
+                    raise StorageError(f"writing {owned!r} failed: {_failure(exc)}") from exc
+                logger.warning(
+                    "key=<%s>, attempt=<%d>, error=<%s> | snapshot write failed; retrying in "
+                    "%.1fs", owned, attempt, _failure(exc), delay,
+                )
+                await asyncio.sleep(delay)
+
+    async def _write_once(self, owned: str, data: bytes, *, retry: bool) -> None:
+        async with self._pinned() as tx:
+            if retry and await self._already_saved(owned, data, tx):
+                return
+            rows = await self._client.execute(INSERT_SQL, (
+                self._execution_id, self._session_id,
+                owned, self._session_id, self._traveler_id,
+                self._worker_id, data.decode("utf-8"),
+            ), transaction_id=tx)
+            if not rows:
+                raise ExecutionLeaseLostError(
+                    f"Execution {self._execution_id} no longer runs thread "
+                    f"{self._session_id}, or its lease lapsed; its snapshot was not saved. "
+                    "Re-read the saved journey."
+                )
+
+    async def _already_saved(self, owned: str, data: bytes, tx: str) -> bool:
+        """Whether the newest row for ``owned`` is this execution's write of ``data``.
+
+        A commit whose reply was lost may have landed, and inserting again would leave a
+        second identical row that every count of the thread's snapshots would include.
+        This execution is the thread's only writer while it holds the lease, so its own
+        identical newest row means the lost attempt committed.
+        """
+        rows = await self._client.execute(NEWEST_SQL, (owned,), transaction_id=tx)
+        if not rows or rows[0]["execution_id"] != self._execution_id:
+            return False
+        try:
+            return json.loads(rows[0]["snapshot"]) == json.loads(data)
+        except ValueError:
+            return False
 
     async def read(self, key: str) -> Optional[bytes]:
         """Return the newest snapshot for ``key``, or None.

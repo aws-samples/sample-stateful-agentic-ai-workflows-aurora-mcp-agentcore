@@ -5,6 +5,7 @@ import dataclasses
 import json
 import logging
 import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,6 +14,7 @@ from strands.storage import InMemoryStorage
 
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.graph import run_task, snapshot_key
+from backend.agents.phase_05_workflow import runner as runner_module
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
@@ -24,6 +26,12 @@ from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
 from backend.prompt_ladder import PROMPT_LADDER
 from tests.phase5_support import GatewayFake, InMemoryLease, fake_availability, fake_search
+
+@pytest.fixture(autouse=True)
+def no_release_backoff(monkeypatch):
+    """Release retries run at once so a failing release does not slow the suite."""
+    monkeypatch.setattr(runner_module, "RELEASE_RETRY_DELAYS", (0.0, 0.0, 0.0))
+
 
 CANONICAL = PROMPT_LADDER[5].works[0]
 RECOVERY = "My flight was canceled. Rework my Tokyo trip and check availability."
@@ -93,7 +101,7 @@ class World:
 
     def runner(
         self, worker_id="worker-a", *, gateway=None, release=None, synthesize=None,
-        pause_after=None, ceiling=400000,
+        pause_after=None, ceiling=400000, lease_seconds=60, heartbeat_seconds=1,
     ):
         nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=gateway or self.gateway)
         nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", ceiling))
@@ -108,7 +116,8 @@ class World:
             storage_for=self.storage_for,
             lease=self.lease,
             worker_id=worker_id,
-            heartbeat_seconds=1,
+            lease_seconds=lease_seconds,
+            heartbeat_seconds=heartbeat_seconds,
             pause_after=pause_after,
         )
 
@@ -801,3 +810,123 @@ async def test_a_new_start_without_the_intent_never_holds_whatever_it_says():
     world = World()
     await world.runner().run(command(RECOVERY, recovery=False))
     assert world.gateway.calls == []
+
+
+async def _slow_synthesize(state, config=None):
+    await asyncio.sleep(3)
+    return {"response": "late", "activities": state["activities"]}
+
+
+async def test_a_renew_that_raises_once_is_retried_on_the_next_beat():
+    world = World()
+    real = world.lease.renew
+    calls = []
+
+    async def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Data API throttled")
+        return await real(*args, **kwargs)
+
+    world.lease.renew = flaky
+    result = await world.runner(synthesize=_slow_synthesize).run(read_command())
+    assert result["workflow_status"] == "complete"
+    assert len(calls) >= 2
+    assert [e["status"] for e in world.lease.executions] == ["succeeded"]
+
+
+async def test_a_renew_that_returns_false_still_stops_the_run_at_once():
+    world = World()
+    world.lease.renewals_left = 0
+    started = time.monotonic()
+    with pytest.raises(ExecutionLeaseLostError):
+        await world.runner(synthesize=_slow_synthesize, heartbeat_seconds=0.1).run(read_command())
+    assert time.monotonic() - started < 1.5
+
+
+async def test_a_renew_that_never_returns_stops_the_run_within_the_lease():
+    world = World()
+
+    async def stalled(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    world.lease.renew = stalled
+    started = time.monotonic()
+    with pytest.raises(ExecutionLeaseLostError, match="lease"):
+        await world.runner(
+            synthesize=_slow_synthesize, lease_seconds=1.5, heartbeat_seconds=0.25
+        ).run(read_command())
+    assert time.monotonic() - started < 2.0
+    assert [e["status"] for e in world.lease.executions] == ["failed"]
+
+
+async def test_renews_that_keep_raising_stop_the_run_at_the_deadline(caplog):
+    world = World()
+
+    async def throttled(*args, **kwargs):
+        raise RuntimeError("Data API throttled")
+
+    world.lease.renew = throttled
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="backend.agents.phase_05_workflow.runner"):
+        with pytest.raises(ExecutionLeaseLostError):
+            await world.runner(
+                synthesize=_slow_synthesize, lease_seconds=1.5, heartbeat_seconds=0.25
+            ).run(read_command())
+    assert time.monotonic() - started < 2.0
+    assert any("lease renewal failed" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_release_that_fails_twice_is_retried_and_settles_the_lease():
+    world = World()
+    real = world.lease.release
+    attempts = []
+
+    async def flaky(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise RuntimeError("aurora blip during release")
+        await real(*args, **kwargs)
+
+    world.lease.release = flaky
+    result = await world.runner().run(command())
+    assert result["workflow_status"] == "paused"
+    assert len(attempts) == 3
+    assert [e["status"] for e in world.lease.executions] == ["paused"]
+
+
+async def test_a_release_that_always_fails_is_bounded_and_logged(caplog, monkeypatch):
+    monkeypatch.setattr(runner_module, "RELEASE_RETRY_DELAYS", (0.05, 0.05, 0.05))
+    world = World()
+    attempts = []
+
+    async def broken(*args, **kwargs):
+        attempts.append(1)
+        raise RuntimeError("aurora blip during release")
+
+    world.lease.release = broken
+    started = time.monotonic()
+    with caplog.at_level(logging.ERROR, logger="backend.agents.phase_05_workflow.runner"):
+        result = await world.runner().run(command())
+    assert result["workflow_status"] == "paused"
+    assert len(attempts) == 4
+    assert time.monotonic() - started < 2.0
+    assert any(
+        "exe_t1_1" in r.getMessage() and "lease release failed" in r.getMessage()
+        and "4 attempts" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+async def test_a_release_that_hangs_is_cut_off_by_the_overall_timeout(monkeypatch):
+    monkeypatch.setattr(runner_module, "RELEASE_SECONDS", 0.3)
+    world = World()
+
+    async def hung(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    world.lease.release = hung
+    started = time.monotonic()
+    result = await world.runner().run(command())
+    assert result["workflow_status"] == "paused"
+    assert time.monotonic() - started < 2.0

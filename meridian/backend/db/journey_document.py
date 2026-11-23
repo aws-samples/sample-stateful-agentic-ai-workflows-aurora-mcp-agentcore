@@ -415,8 +415,9 @@ async def _conversation(q, thread_id: Optional[str]) -> Dict[str, Any]:
 def _hold_absent(inline: Any) -> Dict[str, Any]:
     """Explain a missing hold row without contradicting the snapshot.
 
-    Releasing a booking deletes its rows, while the snapshot still names
-    the hold the workflow placed. Saying none was placed would be false.
+    Releasing a booking keeps its rows and sets ``status = 'released'`` (migration 027), so
+    rows that are missing were removed some other way, such as a data reset, while the
+    snapshot still names the hold the workflow placed. Saying none was placed would be false.
     """
     hold_id = _channel(inline, "hold_id")
     if not hold_id:

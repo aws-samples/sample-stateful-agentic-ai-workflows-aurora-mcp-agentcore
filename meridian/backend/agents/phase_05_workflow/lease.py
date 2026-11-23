@@ -1,16 +1,20 @@
 """The workflow's journey binding and execution lease, in short scoped transactions.
 
-Each call opens its own traveler-scoped session, so the grant check and RLS
-apply to every lease statement, and a heartbeat never holds a transaction open
-across workflow steps.
+Each call opens its own short transaction, so a heartbeat never holds one open
+across workflow steps. Every call opens a traveler-scoped session, so the grant check
+and RLS apply to it. The claim and the release also write the grant's audit row; a
+renewal does not (``write_audit=False``): the claim recorded the decision for this run,
+and an audit row for every heartbeat (about six a minute) would bury that evidence.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 from backend.db.journey_store import (
+    JOURNEY_SETTLED_SQL,
     ExecutionClaim,
     ScopedDb,
     claim_execution,
@@ -19,6 +23,10 @@ from backend.db.journey_store import (
     renew_lease,
 )
 
+logger = logging.getLogger(__name__)
+
+AGENT_TYPE = "booking_agent"
+
 PREVIOUS_WORKER_SQL = """
 SELECT worker_id FROM journey_executions
  WHERE thread_id = %s AND execution_id <> %s
@@ -26,11 +34,6 @@ SELECT worker_id FROM journey_executions
 """
 JOURNEY_RUNNING_SQL = """
 UPDATE journeys SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE journey_id = %s
-"""
-JOURNEY_SETTLED_SQL = """
-UPDATE journeys SET status = %s, updated_at = CURRENT_TIMESTAMP
- WHERE journey_id = %s
-   AND NOT EXISTS (SELECT 1 FROM journey_executions WHERE journey_id = %s AND status = 'running')
 """
 
 
@@ -41,11 +44,12 @@ class AuroraLeaseStore:
         self._client = client
 
     @asynccontextmanager
-    async def _scoped(self, traveler_id: str) -> AsyncIterator[ScopedDb]:
+    async def _scoped(self, traveler_id: str, write_audit: bool = True) -> AsyncIterator[ScopedDb]:
         async with self._client.scoped_session(
             traveler_id=traveler_id,
-            agent_type="booking_agent",
+            agent_type=AGENT_TYPE,
             authorization=get_agentcore_identity().authorization_context(),
+            write_audit=write_audit,
         ) as tx:
             yield ScopedDb(self._client, tx)
 
@@ -65,8 +69,12 @@ class AuroraLeaseStore:
             return claim
 
     async def renew(self, traveler_id: str, execution_id: str, lease_seconds: int) -> bool:
-        """Extend the lease; False means another worker took the thread."""
-        async with self._scoped(traveler_id) as db:
+        """Extend the lease; False means another worker took the thread.
+
+        The grant is still checked, so a revoked grant stops the run, but no audit row is
+        written: the claim recorded the decision for this run.
+        """
+        async with self._scoped(traveler_id, write_audit=False) as db:
             return await renew_lease(db, execution_id, lease_seconds)
 
     async def release(

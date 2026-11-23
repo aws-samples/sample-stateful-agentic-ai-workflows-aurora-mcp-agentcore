@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from backend.agentcore.errors import CallerTokenMissing
 from backend.agents.phase_05_workflow import runtime_entry as entry
 from backend.authorization import AuthorizationDecision, TravelerAuthorizationError
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
@@ -130,6 +131,7 @@ async def test_heartbeats_flow_while_the_run_works():
     (WorkflowConflictError("busy"), "conflict"),
     (ExecutionLeaseLostError("lost"), "lease_lost"),
     (HoldOutcomeUnknown("unknown"), "hold_unknown"),
+    (CallerTokenMissing("no token"), "caller_token_missing"),
 ])
 async def test_domain_errors_leave_as_codes(error, code):
     out = await events(START, Runner(error=error))

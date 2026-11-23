@@ -93,6 +93,15 @@ it('stops waiting after one idle limit without a chunk', async () => {
   await assertion;
 });
 
+it('carries the server error code on the error', async () => {
+  const body = { error: 'Try again in a few seconds.', code: 'turns_busy' };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 429 })));
+  await expect(requestJson('/chat')).rejects.toMatchObject({ status: 429, worded: true, code: 'turns_busy' });
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    JSON.stringify({ error: 'No code.', code: 7 }), { status: 422 })));
+  await expect(requestJson('/chat')).rejects.toMatchObject({ status: 422, code: undefined });
+});
+
 it('keeps the plain request limit at 55 s and the stream ceiling under the 120 s of App Runner', () => {
   expect(STREAM_HARD_CAP_MS).toBeLessThan(120_000);
   expect(STREAM_IDLE_TIMEOUT_MS).toBeGreaterThan(2 * 10_000);

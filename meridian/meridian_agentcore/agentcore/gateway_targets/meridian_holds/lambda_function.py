@@ -165,6 +165,7 @@ RELEASE_SQL = (
 BUSINESS_ERRORS = (
     "caller_identity_missing",
     "execution_lease_lost",
+    "execution_lease_held",
     "insufficient_inventory",
     "invalid_package_inventory",
     "journey_not_owned",
@@ -614,6 +615,24 @@ def _claim_execution(execution_id: str, tx: str, journey_id: str | None = None) 
     return owner
 
 
+def _refuse_live_lease(journey_id: str, tx: str) -> None:
+    """A release that names no execution must not run while a worker owns the journey.
+
+    A worker that is still running may be about to reuse the hold, so only a release with its
+    own ``executionId`` (checked under the lease lock) may act then. Once the run ended, or its
+    lease lapsed, a release without one is allowed, as the presenter's cleanup scripts do.
+    Runs under the traveler's row security scope, like the lease claim.
+    """
+    rows = query(
+        "SELECT execution_id FROM journey_executions WHERE journey_id = :j "
+        "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP LIMIT 1",
+        {"j": journey_id},
+        tx,
+    )
+    if rows:
+        raise RuntimeError("execution_lease_held")
+
+
 def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
     """The persisted receipt, so a replay reports the original expiry, not a new one."""
     rows = query(
@@ -858,6 +877,8 @@ def _release_row(args: dict, tx: str) -> dict:
 
     A workflow worker passes its ``executionId``; the lease is then locked and checked in this
     transaction, so a worker whose lease lapsed cannot release a hold another worker took over.
+    A release without one is refused as ``execution_lease_held`` while the journey has a running
+    execution with an unexpired lease, and allowed once the run ended.
     The ownership read runs under the traveler's row security scope and also names the
     traveler, so another traveler's hold is invisible and reads as ``hold_not_found``. Cedar
     sees only the arguments; this is the check that the hold exists and belongs to the pinned
@@ -879,6 +900,8 @@ def _release_row(args: dict, tx: str) -> dict:
         return {"booking_id": booking_id, "replayed": True}
     if status != "held":
         raise RuntimeError("booking_not_held")
+    if not args.get("executionId"):
+        _refuse_live_lease(str(args["journeyId"]), tx)
     rows = _business_query(RELEASE_SQL, {
         "journey": str(args["journeyId"]), "request_id": str(args["holdRequestId"]),
         "traveler": traveler_id,
